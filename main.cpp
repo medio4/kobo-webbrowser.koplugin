@@ -9,6 +9,7 @@
 #include "webpage.h"
 #include "pagescroll.h"
 #include "epub.h"
+#include "toc.h"
 #include "memtune.h"
 
 #include <QtWidgets/QApplication>
@@ -375,6 +376,8 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     FlatButton *back = toolButton("<", 90, bh);
     FlatButton *fwd  = toolButton(">", 90, bh);
     FlatButton *rel  = toolButton("Reload", 140, bh);
+    FlatButton *toc  = toolButton("TOC", 100, bh);
+    toc->setToolTip("Jump to a heading on this page");
     FlatButton *kbd  = toolButton("Keys", 110, bh);
     FlatButton *zi   = toolButton("A+", 90, bh);
     FlatButton *zo   = toolButton("A-", 90, bh);
@@ -383,7 +386,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     FlatButton *shot = toolButton("Shot", 100, bh);
     FlatButton *quit = toolButton("Exit", 80, bh);
     QHBoxLayout *row2 = new QHBoxLayout; row2->setSpacing(6);
-    row2->addWidget(back); row2->addWidget(fwd); row2->addWidget(rel);
+    row2->addWidget(back); row2->addWidget(fwd); row2->addWidget(rel); row2->addWidget(toc);
     row2->addStretch(1);
     row2->addWidget(kbd); row2->addWidget(zi); row2->addWidget(zo); row2->addWidget(save); row2->addWidget(shot); row2->addWidget(quit);
     barBox->addLayout(row2);
@@ -450,6 +453,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     connect(zi, SIGNAL(clicked()), this, SLOT(zoomIn()));
     connect(zo, SIGNAL(clicked()), this, SLOT(zoomOut()));
     connect(save, SIGNAL(clicked()), this, SLOT(saveEpub()));
+    connect(toc, SIGNAL(clicked()), this, SLOT(showToc()));
     connect(quit, SIGNAL(clicked()), this, SLOT(quit()));
     connect(shot, SIGNAL(clicked()), this, SLOT(screenshot()));
     connect(m_url, SIGNAL(returnPressed()), this, SLOT(go()));
@@ -701,6 +705,18 @@ void Browser::saveEpub()
 }
 
 void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }
+
+// ---- Table of contents overlay (see toc.cpp)
+
+void Browser::showToc()
+{
+    hideKeyboard();
+    TocOverlay *t = new TocOverlay(m_view, centralWidget());
+    if (m_eink) {
+        connect(t, SIGNAL(beforeJump()), m_eink, SLOT(hintPageTurn()));
+        connect(t, SIGNAL(closed()), this, SLOT(fullRefresh()));
+    }
+}
 
 // "Open now": the handoff line is already written; exit so KOReader (applauncher.koplugin)
 // adds the file to its collection and opens it.
