@@ -105,14 +105,20 @@ void TouchWebView::mouseMoveEvent(QMouseEvent *e)
         // (vertical scroll, or horizontal panning for wide tables / zoomed-in pages).
         if (!m_live && m_pressTime.elapsed() >= m_pager->flickMs()) {
             m_live = true;          // sustained drag: catch up with the finger, then follow it
-            if (m_horizontal) page()->mainFrame()->scroll(-fromPress.x(), 0);
-            else page()->mainFrame()->scroll(0, -fromPress.y());
+            if (m_horizontal) {
+                // Pan the wide thing under the finger (table, image box, inner frame),
+                // or the page when nothing there scrolls sideways.
+                m_hTarget = m_pager->findHScrollable(m_pressPos);
+                m_pager->panHorizontal(m_hTarget, -fromPress.x());
+            } else {
+                page()->mainFrame()->scroll(0, -fromPress.y());
+            }
             m_lastPos = e->pos();
         } else if (m_live) {
             // Scroll in big steps only; e-ink can't follow continuous scrolling well.
             QPoint delta = e->pos() - m_lastPos;
             if (m_horizontal ? qAbs(delta.x()) >= 40 : qAbs(delta.y()) >= 40) {
-                if (m_horizontal) page()->mainFrame()->scroll(-delta.x(), 0);
+                if (m_horizontal) m_pager->panHorizontal(m_hTarget, -delta.x());
                 else page()->mainFrame()->scroll(0, -delta.y());
                 m_lastPos = e->pos();
             }
@@ -133,7 +139,7 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
         if (m_live) {
             // Finish the live drag/pan: scroll by the remaining delta.
             QPoint delta = e->pos() - m_lastPos;
-            if (m_horizontal) { if (delta.x() != 0) page()->mainFrame()->scroll(-delta.x(), 0); }
+            if (m_horizontal) { m_pager->panHorizontal(m_hTarget, -delta.x()); m_hTarget = PageScroller::HTarget(); }
             else if (delta.y() != 0) page()->mainFrame()->scroll(0, -delta.y());
         } else if (m_horizontal) {
             // Quick horizontal flick: page turn, or history from the edges.

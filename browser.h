@@ -11,7 +11,7 @@
 #include <QtCore/QList>
 #include <QtCore/QTimer>
 #include <QtWebKitWidgets/QWebView>
-class PageScroller;
+#include "pagescroll.h"
 class QPushButton;
 
 class KoboEink;
@@ -39,6 +39,7 @@ private:
     bool m_forwarding;
     bool m_horizontal;      // this drag is horizontal (page turn / history swipe)
     bool m_live;            // this drag turned into live scrolling (held past KB_FLICK_MS)
+    PageScroller::HTarget m_hTarget;   // what a horizontal live drag pans
     QElapsedTimer m_pressTime;
     PageScroller *m_pager;
 };

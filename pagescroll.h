@@ -6,6 +6,8 @@
 #include <QtCore/QObject>
 #include <QtCore/QPoint>
 #include <QtCore/QRect>
+#include <QtWebKitWidgets/QWebFrame>
+#include <QtWebKit/QWebElement>
 class QWebView;
 
 class PageScroller : public QObject {
@@ -16,6 +18,12 @@ public:
     // left/right edge goes back/forward in history; any other horizontal swipe turns a
     // page (left = next, right = previous). Returns true when it did something.
     bool handleHorizontalSwipe(const QPoint &press, const QPoint &release);
+    // Horizontal panning of the thing under the finger: the nearest ancestor of the
+    // element at `viewPos` that can scroll sideways (wide table in an overflow box,
+    // scrollable div, inner frame), else the page itself.
+    struct HTarget { QWebElement element; QWebFrame *frame; HTarget() : frame(0) {} };
+    HTarget findHScrollable(const QPoint &viewPos) const;
+    void panHorizontal(const HTarget &t, int dx);   // dx > 0 scrolls content to the left
     int swipeMin() const { return m_swipeMin; }
     int flickMs() const { return m_flickMs; }
 

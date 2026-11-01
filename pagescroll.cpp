@@ -2,6 +2,8 @@
 #include <QtWebKitWidgets/QWebView>
 #include <QtWebKitWidgets/QWebFrame>
 #include <QtWebKitWidgets/QWebPage>
+#include <QtWebKit/QWebElement>
+#include <QtCore/QVariant>
 #include <QtCore/QDebug>
 #include <stdlib.h>
 
@@ -56,4 +58,43 @@ bool PageScroller::turn(int dxScreens, int dyScreens)
     emit pageTurned();
     f->setScrollPosition(target);
     return true;
+}
+
+PageScroller::HTarget PageScroller::findHScrollable(const QPoint &viewPos) const
+{
+    HTarget t;
+    QWebFrame *main = m_view->page() ? m_view->page()->mainFrame() : 0;
+    if (!main) return t;
+    QWebHitTestResult hit = main->hitTestContent(viewPos);
+    t.frame = hit.frame() ? hit.frame() : main;
+    // Walk up from the hit element looking for something that overflows sideways and
+    // is allowed to scroll (overflow-x auto/scroll, or the element already scrolled).
+    for (QWebElement el = hit.element(); !el.isNull(); el = el.parent()) {
+        QVariant v = el.evaluateJavaScript(
+            "(function(e){"
+            " if (!e || !e.clientWidth || e.scrollWidth <= e.clientWidth + 2) return false;"
+            " var cs = window.getComputedStyle(e); var ox = cs ? cs.overflowX : '';"
+            " if (e === document.body || e === document.documentElement) return false;"
+            " return ox === 'auto' || ox === 'scroll' || e.scrollLeft > 0;"
+            "})(this)");
+        if (v.toBool()) { t.element = el; return t; }
+    }
+    return t;
+}
+
+void PageScroller::panHorizontal(const HTarget &t, int dx)
+{
+    if (dx == 0) return;
+    if (!t.element.isNull()) {
+        QWebElement el = t.element;   // evaluateJavaScript is non-const
+        QVariant moved = el.evaluateJavaScript(
+            QString("(function(e,d){var b=e.scrollLeft; e.scrollLeft=b+d; return e.scrollLeft-b;})(this,%1)").arg(dx));
+        if (moved.toInt() != 0) return;   // the element took it; otherwise fall through
+    }
+    QWebFrame *f = t.frame ? t.frame : (m_view->page() ? m_view->page()->mainFrame() : 0);
+    if (!f) return;
+    QPoint before = f->scrollPosition();
+    f->scroll(dx, 0);
+    if (f->scrollPosition() == before && f != m_view->page()->mainFrame())
+        m_view->page()->mainFrame()->scroll(dx, 0);   // inner frame can't move: pan the page
 }
