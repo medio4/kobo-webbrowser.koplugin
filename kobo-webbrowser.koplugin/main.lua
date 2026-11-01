@@ -261,6 +261,17 @@ local KoboWebBrowser = WidgetContainer:extend{
     is_doc_only = false,
 }
 
+-- KOReader's own directory as an absolute path. DataStorage:getDataDir() is "." when
+-- KOReader runs from its folder, and run.sh does a cd before it needs fbink/fbdepth.
+local function koreaderDir()
+    local d = DataStorage:getDataDir() or "."
+    if not d:match("^/") then
+        local cwd = lfs.currentdir() or "/mnt/onboard/.adds/koreader"
+        d = (d == "." or d == "") and cwd or (cwd .. "/" .. d)
+    end
+    return d
+end
+
 function KoboWebBrowser:init()
     -- KOReader hands plugins a path relative to its own directory ("plugins/x.koplugin");
     -- our launch command does a `cd`, so every path we use has to be absolute.
@@ -498,7 +509,7 @@ function KoboWebBrowser:run(extra)
         "rm -f " .. shellQuote(self.rc_file) .. "\n",
         "(",
         " echo; echo \"=== $(date '+%F %T') start\";",
-        " env KOREADER_DIR=" .. shellQuote(DataStorage:getDataDir()),
+        " env KOREADER_DIR=" .. shellQuote(koreaderDir()),
         " SCREEN_W=" .. Screen:getWidth() .. " SCREEN_H=" .. Screen:getHeight(),
         table.concat(env_parts),
         " sh " .. shellQuote(self.script) .. table.concat(arg_parts) .. " </dev/null 3>&- &",

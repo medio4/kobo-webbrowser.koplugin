@@ -23,6 +23,9 @@ export PRODUCT="${PRODUCT:-spaBW}"
 KB_DISPLAY="${KB_DISPLAY:-kobo}"
 # KOReader's own folder (the plugin passes KOREADER_DIR); fbink and fbdepth come from it.
 KOREADER_DIR="${KOREADER_DIR:-/mnt/onboard/.adds/koreader}"
+# A relative KOREADER_DIR (e.g. ".") is useless after the cd below: fall back to the usual place.
+case "$KOREADER_DIR" in /*) ;; *) KOREADER_DIR=/mnt/onboard/.adds/koreader ;; esac
+[ -x "$KOREADER_DIR/fbink" ] || KOREADER_DIR=/mnt/onboard/.adds/koreader
 export KOREADER_DIR
 FBINK="$KOREADER_DIR/fbink"
 FBDEPTH="$KOREADER_DIR/fbdepth"
