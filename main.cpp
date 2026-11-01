@@ -712,12 +712,22 @@ void Browser::saveEpub()
 
 void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }
 
+// "Open now": the handoff line is already written; exit so KOReader (applauncher.koplugin)
+// adds the file to its collection and opens it.
+void Browser::openSavedEpub(const QString &path)
+{
+    m_status->setText("Opening in KOReader: " + path.section('/', -1));
+    QTimer::singleShot(400, qApp, SLOT(quit()));
+}
+
 void Browser::saveFinished(bool ok, const QString &msg)
 {
     if (ok) {
         QString shown = msg;
         if (shown.startsWith("/mnt/onboard/")) shown = shown.mid(13);
         m_status->setText("Saved: " + shown);
+        SavedDialog *d = new SavedDialog(msg, centralWidget());
+        connect(d, SIGNAL(openRequested(QString)), this, SLOT(openSavedEpub(QString)));
     } else {
         m_status->setText("Save failed: " + msg);
     }

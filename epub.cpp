@@ -13,6 +13,16 @@
 #include <QtCore/QUuid>
 #include <QtGui/QImage>
 #include <QtGui/QImageReader>
+#include <QtGui/QResizeEvent>
+#include <QtGui/QMouseEvent>
+#include <QtGui/QFont>
+#include <QtWidgets/QFrame>
+#include <QtWidgets/QLabel>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QVBoxLayout>
+#include <QtWidgets/QHBoxLayout>
+#include <QtCore/QCoreApplication>
+#include <QtCore/QTextStream>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkRequest>
 #include <QtNetwork/QNetworkReply>
@@ -459,8 +469,128 @@ void EpubSaver::writeEpub()
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { fail("Cannot write " + path + ": " + f.errorString()); return; }
     if (f.write(zip) != zip.size()) { f.close(); QFile::remove(path); fail("Write failed (disk full?)"); return; }
     f.close();
+    appendHandoff("saved", path);
     ::sync();
     qDebug() << "epub: wrote" << path << zip.size() << "bytes," << m_images.size() << "images";
     m_running = false;
     emit finished(true, path);
+}
+
+// ------------------------------------------------------------- handoff
+
+QString EpubSaver::handoffFile()
+{
+    const char *env = getenv("KB_HANDOFF_FILE");
+    if (env && *env) return QString::fromLocal8Bit(env);
+    return QDir(QCoreApplication::applicationDirPath()).filePath("epub-handoff.txt");
+}
+
+bool EpubSaver::appendHandoff(const QString &kind, const QString &path)
+{
+    QFile f(handoffFile());
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Append)) {
+        qWarning() << "epub: cannot write handoff file" << f.fileName() << f.errorString();
+        return false;
+    }
+    QTextStream ts(&f);
+    ts.setCodec("UTF-8");
+    ts << kind << '\t' << path << '\n';
+    ts.flush();
+    f.close();
+    return true;
+}
+
+// ------------------------------------------------------------- SavedDialog
+
+SavedDialog::SavedDialog(const QString &epubPath, QWidget *parent)
+    : QWidget(parent), m_path(epubPath)
+{
+    setAttribute(Qt::WA_DeleteOnClose);
+    setAutoFillBackground(false);
+
+    m_box = new QFrame(this);
+    static_cast<QFrame *>(m_box)->setFrameStyle(QFrame::Box | QFrame::Plain);
+    static_cast<QFrame *>(m_box)->setLineWidth(3);
+    m_box->setAutoFillBackground(true);
+    QPalette pal = m_box->palette();
+    pal.setColor(QPalette::Window, Qt::white);
+    pal.setColor(QPalette::WindowText, Qt::black);
+    m_box->setPalette(pal);
+
+    QVBoxLayout *v = new QVBoxLayout(m_box);
+    v->setContentsMargins(30, 30, 30, 30);
+    v->setSpacing(24);
+    QFont f; f.setPixelSize(38);
+    QFont fs; fs.setPixelSize(30);
+
+    QLabel *head = new QLabel("Saved to the library");
+    head->setFont(f);
+    head->setAlignment(Qt::AlignCenter);
+    v->addWidget(head);
+
+    QString shown = epubPath;
+    if (shown.startsWith("/mnt/onboard/")) shown = shown.mid(13);
+    QLabel *name = new QLabel(shown);
+    name->setFont(fs);
+    name->setWordWrap(true);
+    name->setAlignment(Qt::AlignCenter);
+    v->addWidget(name);
+
+    QLabel *q = new QLabel("Open it in KOReader now? The browser will close.");
+    q->setFont(fs);
+    q->setWordWrap(true);
+    q->setAlignment(Qt::AlignCenter);
+    v->addWidget(q);
+
+    QHBoxLayout *row = new QHBoxLayout;
+    row->setSpacing(20);
+    QPushButton *later = new QPushButton("Keep browsing");
+    QPushButton *open = new QPushButton("Open now");
+    foreach (QPushButton *b, QList<QPushButton *>() << later << open) {
+        b->setFont(f);
+        b->setMinimumSize(300, 100);
+        b->setFocusPolicy(Qt::NoFocus);
+        b->setProperty("kb_fast", true);
+    }
+    row->addWidget(later);
+    row->addWidget(open);
+    v->addLayout(row);
+
+    connect(later, SIGNAL(clicked()), this, SLOT(laterClicked()));
+    connect(open, SIGNAL(clicked()), this, SLOT(openClicked()));
+
+    if (parent) resize(parent->size());
+    place();
+    raise();
+    show();
+}
+
+void SavedDialog::place()
+{
+    int w = qMin(width() - 40, 900);
+    m_box->setFixedWidth(w);
+    m_box->adjustSize();
+    m_box->move((width() - m_box->width()) / 2, (height() - m_box->height()) / 2);
+}
+
+void SavedDialog::resizeEvent(QResizeEvent *e)
+{
+    QWidget::resizeEvent(e);
+    place();
+}
+
+// Taps outside the box do nothing (the overlay swallows them).
+void SavedDialog::mousePressEvent(QMouseEvent *e) { e->accept(); }
+
+void SavedDialog::openClicked()
+{
+    EpubSaver::appendHandoff("open", m_path);
+    emit openRequested(m_path);
+    close();
+}
+
+void SavedDialog::laterClicked()
+{
+    emit dismissed();
+    close();
 }

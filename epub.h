@@ -11,8 +11,11 @@
 #include <QtCore/QUrl>
 #include <QtCore/QList>
 #include <QtCore/QTimer>
+#include <QtWidgets/QWidget>
 
 class QWebPage;
+class QResizeEvent;
+class QMouseEvent;
 class QNetworkReply;
 
 class EpubSaver : public QObject {
@@ -27,6 +30,11 @@ public:
     // Folder for saved pages: $KB_LIBRARY_DIR, else <KOReader home>/Web.
     static QString defaultOutDir();
     static QString safeFileName(const QString &title);
+
+    // Handoff to KOReader (read by applauncher.koplugin after the browser exits):
+    // $KB_HANDOFF_FILE, lines "saved\t<path>" for every EPUB written, "open\t<path>" to open one.
+    static QString handoffFile();
+    static bool appendHandoff(const QString &kind, const QString &path);
 
 signals:
     void progress(const QString &message);
@@ -62,6 +70,28 @@ private:
     int m_current;
     QNetworkReply *m_reply;
     QTimer m_timer;
+};
+
+
+// In-window overlay shown after a save: "Open in KOReader now?" with big touch buttons.
+// (A separate top-level window would not reach the e-ink grab path in eink.cpp.)
+class SavedDialog : public QWidget {
+    Q_OBJECT
+public:
+    SavedDialog(const QString &epubPath, QWidget *parent);
+signals:
+    void openRequested(const QString &path);
+    void dismissed();
+private slots:
+    void openClicked();
+    void laterClicked();
+protected:
+    void resizeEvent(QResizeEvent *e);
+    void mousePressEvent(QMouseEvent *e);
+private:
+    void place();
+    QString m_path;
+    QWidget *m_box;
 };
 
 #endif
