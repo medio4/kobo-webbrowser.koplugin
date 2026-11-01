@@ -73,8 +73,8 @@ TocOverlay::TocOverlay(QWebView *view, QWidget *parent)
     QHBoxLayout *row = new QHBoxLayout;
     row->setSpacing(12);
     QFont fb; fb.setPixelSize(34);
-    m_prev = new QPushButton("< Prev");
-    m_next = new QPushButton("Next >");
+    m_prev = new QPushButton("Prev");   // no "<": the Kobo UI font renders it as a clock glyph
+    m_next = new QPushButton("Next");
     QPushButton *close = new QPushButton("Close");
     m_pageLabel = new QLabel;
     m_pageLabel->setFont(fb);

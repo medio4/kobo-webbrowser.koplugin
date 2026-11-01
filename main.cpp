@@ -247,7 +247,7 @@ void OnScreenKeyboard::build()
         }
         if (r == 2) row->addSpacing(keyW / 2);
         if (r == 3) {
-            FlatButton *bs = key("<x", keyW + keyW / 2 + gap / 2, keyH, true, 40);   // backspace (the Kobo fonts lack arrow glyphs)
+            FlatButton *bs = key("Del", keyW + keyW / 2 + gap / 2, keyH, true, 36);   // backspace ("<" renders as a clock glyph in the Kobo UI font; no arrow glyphs)
             bs->setProperty("keycode", (int)Qt::Key_Backspace);
             bs->setAutoRepeat(true); bs->setAutoRepeatDelay(500); bs->setAutoRepeatInterval(120);
             connect(bs, SIGNAL(clicked()), this, SLOT(keyClicked()));
