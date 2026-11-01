@@ -1,4 +1,5 @@
 #include "webpage.h"
+#include "memtune.h"
 #include <QtWebKit/QWebSettings>
 #include <QtWebKitWidgets/QWebFrame>
 #include <QtNetwork/QNetworkRequest>
@@ -25,6 +26,7 @@ static const char *kEinkCss =
 
 KoboWebPage::KoboWebPage(QObject *parent) : QWebPage(parent)
 {
+    setNetworkAccessManager(new KoboNetworkAccessManager(this));
     if (!getenv("KB_NO_EINK_CSS")) {
         QByteArray css(kEinkCss);
         settings()->setUserStyleSheetUrl(QUrl("data:text/css;charset=utf-8;base64," + css.toBase64()));

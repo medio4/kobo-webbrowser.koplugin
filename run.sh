@@ -62,6 +62,11 @@ fi
 export KB_LIBRARY_DIR
 # Saved/open-now EPUBs are reported to KOReader (applauncher.koplugin) through this file
 export KB_HANDOFF_FILE="${KB_HANDOFF_FILE:-$DIR/epub-handoff.txt}"
+# glibc malloc: one arena (WebKit's helper threads would each keep their own heap),
+# and give freed memory back to the kernel instead of keeping it cached in the heap.
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-1}"
+export MALLOC_TRIM_THRESHOLD_="${MALLOC_TRIM_THRESHOLD_:-262144}"
+export MALLOC_MMAP_THRESHOLD_="${MALLOC_MMAP_THRESHOLD_:-262144}"
 # Debug plugin loading: KB_DEBUG=1 sh run.sh
 [ -n "$KB_DEBUG" ] && export QT_DEBUG_PLUGINS=1
 
