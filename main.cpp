@@ -56,6 +56,10 @@ TouchWebView::TouchWebView(QWidget *parent)
     : QWebView(parent), m_pressed(false), m_dragging(false), m_forwarding(false)
 {
     m_pager = new PageScroller(this);
+    m_horizontal = false;
+    // Edge swipes: in from the left = back one page in history, in from the right = forward.
+    connect(m_pager, SIGNAL(goBack()), this, SLOT(back()));
+    connect(m_pager, SIGNAL(goForward()), this, SLOT(forward()));
 }
 
 bool TouchWebView::pageMode() const { return m_pager->enabled(); }
@@ -88,14 +92,20 @@ void TouchWebView::mouseMoveEvent(QMouseEvent *e)
 {
     if (m_forwarding) { QWebView::mouseMoveEvent(e); return; }
     if (!m_pressed) return;
+    if (KoboTouchInput::gestureActive()) { m_pressed = false; m_dragging = false; m_pager->cancel(); e->accept(); return; }
     if (m_pager->handleMove(e->pos())) { e->accept(); return; }   // page mode: no live drag
+    // Live mode. The drag locks to an axis when it starts: vertical drags scroll the
+    // page live; horizontal ones are swipes (page turn, or history from the edges).
     QPoint delta = e->pos() - m_lastPos;
-    if (!m_dragging && (e->pos() - m_pressPos).manhattanLength() > 25)
+    QPoint fromPress = e->pos() - m_pressPos;
+    if (!m_dragging && fromPress.manhattanLength() > 25) {
         m_dragging = true;
-    if (m_dragging) {
+        m_horizontal = qAbs(fromPress.x()) > qAbs(fromPress.y());
+    }
+    if (m_dragging && !m_horizontal) {
         // Scroll in big steps only; e-ink can't follow continuous scrolling well.
-        if (qAbs(delta.y()) >= 40 || qAbs(delta.x()) >= 40) {
-            page()->mainFrame()->scroll(-delta.x(), -delta.y());
+        if (qAbs(delta.y()) >= 40) {
+            page()->mainFrame()->scroll(0, -delta.y());
             m_lastPos = e->pos();
         }
     }
@@ -107,13 +117,17 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
     if (m_forwarding) { QWebView::mouseReleaseEvent(e); return; }
     if (!m_pressed) return;
     m_pressed = false;
+    if (KoboTouchInput::gestureActive() || e->pos().x() < 0) { m_dragging = false; m_pager->cancel(); e->accept(); return; }
     if (m_pager->handleRelease(e->pos())) { m_dragging = false; e->accept(); return; }  // page turned
     if (m_dragging) {
-        // Finish a swipe: scroll by remaining delta.
-        QPoint delta = e->pos() - m_lastPos;
-        if (!delta.isNull())
-            page()->mainFrame()->scroll(-delta.x(), -delta.y());
         m_dragging = false;
+        if (m_horizontal) {
+            m_pager->handleHorizontalSwipe(m_pressPos, e->pos());
+        } else {
+            // Finish a vertical drag: scroll by the remaining delta.
+            QPoint delta = e->pos() - m_lastPos;
+            if (delta.y() != 0) page()->mainFrame()->scroll(0, -delta.y());
+        }
         e->accept();
         return;
     }
@@ -455,6 +469,8 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     // Tapping the URL field shows the keyboard.
     m_url->installEventFilter(this);
     m_view->installEventFilter(this);
+    // Tapping the title/status line forces a full-screen refresh (so does a two-finger tap).
+    m_status->installEventFilter(this);
 
     loadUrlText(m_home);
 }
@@ -465,6 +481,8 @@ bool Browser::eventFilter(QObject *obj, QEvent *e)
         m_lastPageTap.start();
     if (obj == m_url && e->type() == QEvent::MouseButtonRelease)
         QTimer::singleShot(0, this, SLOT(showKeyboard()));
+    if (obj == m_status && e->type() == QEvent::MouseButtonRelease && !KoboTouchInput::gestureActive())
+        fullRefresh();
     return QMainWindow::eventFilter(obj, e);
 }
 
@@ -554,6 +572,7 @@ void Browser::showKeyboard()
 void Browser::hideKeyboard()
 {
     if (!m_kbd->isVisible()) return;
+    if (m_eink) m_eink->hintFull();   // the keys leave ghosts: flash the relayout that follows
     m_kbd->hide();
     // Typing used the rough DU waveform; redraw the toolbar cleanly once it settles.
     QTimer::singleShot(600, this, SLOT(cleanToolbar()));
@@ -566,14 +585,23 @@ void Browser::cleanToolbar()
     m_eink->markDirty(r, m_eink->flagsPartial());
 }
 
+void Browser::fullRefresh()    { if (m_eink) m_eink->refreshAllFull(); }
+void Browser::pinchZoom(double ratio)
+{
+    ratio = qBound(0.5, ratio, 2.0);
+    qreal z = qBound(0.5, m_view->zoomFactor() * ratio, 5.0);
+    if (m_eink) m_eink->hintFull();   // relayout of the whole page: flash it clean
+    m_view->setZoomFactor(z);
+}
+
 void Browser::toggleKeyboard()
 {
     if (m_kbd->isVisible()) hideKeyboard();
     else { if (!QApplication::focusWidget() || QApplication::focusWidget() == m_view) m_url->setFocus(); showKeyboard(); }
 }
 
-void Browser::zoomIn()  { m_view->setZoomFactor(m_view->zoomFactor() * 1.2); }
-void Browser::zoomOut() { m_view->setZoomFactor(m_view->zoomFactor() / 1.2); }
+void Browser::zoomIn()  { if (m_eink) m_eink->hintFull(); m_view->setZoomFactor(m_view->zoomFactor() * 1.2); }
+void Browser::zoomOut() { if (m_eink) m_eink->hintFull(); m_view->setZoomFactor(m_view->zoomFactor() / 1.2); }
 
 void Browser::urlChanged(const QUrl &url) { m_url->setText(url.toString()); }
 void Browser::loadProgress(int p)  { if (p % 25 == 0) m_status->setText(QString("Loading %1%").arg(p)); }
@@ -654,7 +682,13 @@ void Browser::updateSysInfo()
     m_sysTimer->start(msToNextMinute);
 }
 
-void Browser::quit() { qApp->quit(); }
+void Browser::quit()
+{
+    // Instant feedback that the browser is closing: white screen with a full flash.
+    // KOReader repaints itself (another full refresh) once the process has exited.
+    if (m_eink) m_eink->clearScreenForExit();
+    qApp->quit();
+}
 
 void Browser::screenshot()
 {
@@ -765,8 +799,12 @@ int main(int argc, char **argv)
     if (home.isEmpty()) home = "https://lite.duckduckgo.com/lite/";
 
     KoboEink *eink = new KoboEink(&app);
+    // Two-finger tap anywhere = full-screen GC16 refresh (KOReader's gestures can't reach us).
+    if (touchInput) QObject::connect(touchInput, SIGNAL(twoFingerTap()), eink, SLOT(refreshAllFull()));
+    // (pinch-to-zoom is connected to the Browser below, once it exists)
     app.installEventFilter(eink);
     Browser w(home, eink);
+    if (touchInput) QObject::connect(touchInput, SIGNAL(pinch(double)), &w, SLOT(pinchZoom(double)));
     QScreen *scr = app.primaryScreen();
     if (scr) qDebug() << "screen:" << scr->geometry() << "dpi" << scr->logicalDotsPerInch();
     const char *showMode = getenv("KB_SHOWMODE");

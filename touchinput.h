@@ -14,10 +14,19 @@ public:
                    bool swapXY, bool mirrorX, bool mirrorY, bool grab, QObject *parent = 0);
     ~KoboTouchInput();
     bool isOpen() const { return m_fd >= 0; }
+    // True while a multi-finger gesture is in progress: widgets should ignore the
+    // mouse events of the first finger (they get a release at (-10,-10) at the end).
+    static bool gestureActive() { return s_gesture; }
+signals:
+    // Two fingers touched and lifted without moving much: used for a full refresh.
+    void twoFingerTap();
+    // Two fingers moved apart (ratio > 1) or together (ratio < 1) and lifted.
+    void pinch(double ratio);
 private slots:
     void readable();
 private:
     void emitState();
+    static bool s_gesture;
     int m_fd;
     QSocketNotifier *m_notifier;
     int m_screenW, m_screenH;
@@ -31,5 +40,10 @@ private:
     bool m_havePos;
     bool m_sentDown;     // mouse press already sent
     QPoint m_lastPos;
+    bool m_slot1Down;    // a second contact is currently down
+    bool m_multiSeen;    // a second contact was seen during this touch
+    int m_raw1X, m_raw1Y;        // last raw position of the second contact
+    bool m_have1;
+    double m_pinchStart, m_pinchLast;   // finger distance when both were first seen / last
 };
 #endif

@@ -23,6 +23,11 @@ public:
     bool handleMove(const QPoint &p);
     bool handleRelease(const QPoint &p);
     bool inTapZone(const QPoint &p) const;   // left/right edge strips
+    void cancel() { m_pressed = false; m_swiped = false; }   // gesture taken over elsewhere
+    // Horizontal swipe handling shared by both modes: a swipe that starts at the very
+    // left/right edge goes back/forward in history; any other horizontal swipe turns a
+    // page (left = next, right = previous). Returns true when it did something.
+    bool handleHorizontalSwipe(const QPoint &press, const QPoint &release);
 
 public slots:
     void nextPage();
@@ -32,6 +37,8 @@ signals:
     // Emitted right before the page content moves, so the e-ink layer can pick a
     // page-turn waveform for the repaint that follows.
     void pageTurned();
+    void goBack();      // swipe in from the left edge
+    void goForward();   // swipe in from the right edge
 
 private:
     // Scroll by (dx, dy) screens; returns true when the position actually changed.
@@ -45,5 +52,6 @@ private:
     int m_overlapMin;       // but at least this many pixels
     double m_zoneFrac;      // width of the left/right tap zones as a fraction of the view
     int m_swipeMin;         // pixels of movement that make a swipe
+    int m_edgePx;           // a swipe starting within this many px of the edge = history
 };
 #endif
