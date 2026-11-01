@@ -384,7 +384,7 @@ static FlatButton *toolButton(const QString &text, int w, int h)
 }
 
 Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
-    : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_restoreY(-1)
+    : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_restoreY(-1), m_relaunch(false), m_offline(false)
 {
     setWindowTitle("Browser");
 
@@ -536,6 +536,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     m_restoreY = (ry && *ry) ? atoi(ry) : -1;
     const char *rz = getenv("KB_RESTORE_ZOOM");
     if (rz && *rz && atof(rz) > 0.2) m_view->setZoomFactor(atof(rz));
+    m_relaunch = (ry && *ry) || (rz && *rz);
 
     // KB_RESTORE_FILE: the page saved at sleep time (wake screen "Cancel": no connection);
     // shown with its original address as the base so links still work once online.
@@ -544,11 +545,15 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     if (rf && *rf && restore.open(QIODevice::ReadOnly)) {
         QString html = QString::fromUtf8(restore.readAll());
         restore.close();
-        qDebug() << "restore: offline copy" << restore.fileName() << "base" << m_home;
+        qDebug() << "restore: offline copy" << restore.fileName() << html.size() << "chars, base" << m_home
+                 << "scroll" << m_restoreY;
+        m_offline = true;
+        m_relaunch = true;
         m_view->setHtml(html, QUrl(m_home));
         m_status->setText("Offline copy (no connection)");
         return;
     }
+    if (rf && *rf) qDebug() << "restore: can't read" << restore.fileName() << restore.errorString() << "- loading online";
 
     loadUrlText(m_home);
 }
@@ -802,13 +807,25 @@ void Browser::loadStarted()
 }
 void Browser::loadFinished(bool ok)
 {
-    m_status->setText(ok ? m_view->title() : "Failed to load page");
+    if (m_offline) {
+        m_status->setText("Offline copy (no connection)");
+        m_offline = false;   // links followed from here load normally
+    } else {
+        m_status->setText(ok ? m_view->title() : "Failed to load page");
+    }
     if (ok && m_restoreY > 0) {
         m_view->page()->mainFrame()->setScrollPosition(QPoint(0, m_restoreY));
+        qDebug() << "restore: scrolled to" << m_restoreY;
         m_restoreY = -1;
     }
     // WebKit usually does a last layout/paint shortly after loadFinished; give it a moment.
     QTimer::singleShot(250, this, SLOT(releaseLoadHold()));
+    // Back from a sleep (online or the offline copy): once the page and its scroll position
+    // are on screen, flash it clean, since the wake screen ghosts through otherwise.
+    if (m_relaunch) {
+        m_relaunch = false;
+        QTimer::singleShot(250 + 300, this, SLOT(fullRefresh()));
+    }
 }
 // Hand sleep to KOReader: note the page (URL, scroll, zoom) in the handoff file and
 // exit. applauncher.koplugin puts KOReader to sleep with its own screensaver and
@@ -827,12 +844,21 @@ void Browser::sleepToKoreader()
     QString shot = (sf && *sf) ? QString::fromLocal8Bit(sf) : dir + "/sleep-shot.png";
     const char *pf = getenv("KB_SLEEP_PAGE_FILE");
     QString pagePath = (pf && *pf) ? QString::fromLocal8Bit(pf) : dir + "/sleep-page.html";
-    if (m_eink) m_eink->saveScreenshotTo(shot);
+    // Both are written before the handoff line, so the plugin never sees a sleep line
+    // without its files (it SIGKILLs us only after STOP_WAIT_SEC).
+    QElapsedTimer t;
+    t.start();
+    if (!m_eink || !m_eink->saveScreenshotTo(shot))
+        qDebug() << "screenshot: no sleep shot" << shot << (m_eink ? "(save failed)" : "(no e-ink)");
     QFile page(pagePath);
     if (page.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        page.write(m_view->page()->mainFrame()->toHtml().toUtf8());
+        qint64 n = page.write(m_view->page()->mainFrame()->toHtml().toUtf8());
         page.close();
+        qDebug() << "power: sleep page" << pagePath << n << "bytes";
+    } else {
+        qDebug() << "power: can't write sleep page" << pagePath << page.errorString();
     }
+    qDebug() << "power: sleep files took" << t.elapsed() << "ms";
     EpubSaver::appendHandoff("sleep", line);
     qDebug() << "power: sleep handoff" << line;
     qApp->quit();

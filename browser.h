@@ -156,6 +156,8 @@ private:
     QElapsedTimer m_lastPageTap;
     EpubSaver *m_saver;
     int m_restoreY;           // KB_RESTORE_Y: scroll position to restore after the first load (-1 = none)
+    bool m_relaunch;          // started by KOReader after a sleep: flash once the first page is back
+    bool m_offline;           // showing KB_RESTORE_FILE (the copy saved at sleep time)
     KoboTouchInput *m_touch;
     NativeTextEntry *m_native;
     QString m_nativeKind;     // what the pending KOReader text entry is for: url / field / text
