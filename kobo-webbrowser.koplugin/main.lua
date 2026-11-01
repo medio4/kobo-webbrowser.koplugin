@@ -564,6 +564,10 @@ function KoboWebBrowser:installHooks()
         -- KOReader's PowerPress already scheduled its power-off (fires at ~2 s of hold);
         -- cancel it now, or holding a little longer reboots the device.
         if UIManager.poweroff_action then UIManager:unschedule(UIManager.poweroff_action) end
+        -- Instant feedback: kill the browser (so it can't draw again) and flash white,
+        -- before stopBrowser's wait for run.sh (up to 1.5 s) and the full repaint.
+        os.execute("kill -KILL $(pidof kobo-browser) 2>/dev/null")
+        self:flashWhite()
         self:stopBrowser(SIGKILL)
         self:onBrowserGone("escape")
     end
@@ -587,6 +591,21 @@ function KoboWebBrowser:installHooks()
         if saved.PowerRelease then return saved.PowerRelease(...) end
     end
     self.hooks = saved
+end
+
+-- Paint the real framebuffer white and flash it, bypassing the draw guard for a moment.
+function KoboWebBrowser:flashWhite()
+    local saved, screen = self.hooks, Device.screen
+    if not saved then return end
+    local scratch, guard = screen.bb, screen.refreshFull
+    if saved.bb then screen.bb = saved.bb end
+    screen.refreshFull = saved.screen.refreshFull   -- nil: the class method
+    local ok, err = pcall(function()
+        screen.bb:fill(Blitbuffer.COLOR_WHITE)
+        screen:refreshFull()
+    end)
+    if not ok then logger.warn("KoboWebBrowser: white flash failed:", err) end
+    screen.bb, screen.refreshFull = scratch, guard
 end
 
 function KoboWebBrowser:removeHooks()
