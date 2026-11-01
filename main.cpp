@@ -511,7 +511,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     connect(clear, SIGNAL(clicked()), this, SLOT(clearUrl()));
     connect(back, SIGNAL(clicked()), m_view, SLOT(back()));
     connect(fwd, SIGNAL(clicked()), m_view, SLOT(forward()));
-    connect(rel, SIGNAL(clicked()), m_view, SLOT(reload()));
+    connect(rel, SIGNAL(clicked()), this, SLOT(reloadClicked()));
     connect(kbd, SIGNAL(clicked()), this, SLOT(toggleKeyboard()));
     connect(zi, SIGNAL(clicked()), this, SLOT(zoomIn()));
     connect(zo, SIGNAL(clicked()), this, SLOT(zoomOut()));
@@ -566,7 +566,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
         m_relaunch = true;
         m_view->setHtml(html, QUrl(m_home));
         m_status->setText("Offline copy (no connection)");
-        // Every 3 s: once the device is online, the status line offers a reload.
+        // Every 3 s: once the device is online, the status line says to press Reload.
         m_onlineTimer = new QTimer(this);
         connect(m_onlineTimer, SIGNAL(timeout()), this, SLOT(checkOnline()));
         m_onlineTimer->start(3000);
@@ -594,13 +594,7 @@ bool Browser::eventFilter(QObject *obj, QEvent *e)
     if (obj == m_url && e->type() == QEvent::MouseButtonRelease)
         QTimer::singleShot(0, this, SLOT(showKeyboard()));
     if (obj == m_status && e->type() == QEvent::MouseButtonRelease && !KoboTouchInput::gestureActive()) {
-        if (m_offlineShown) {
-            // Offline copy: load the live page (if still offline it just fails to load).
-            qDebug() << "restore: reloading the live page" << m_home;
-            QTimer::singleShot(0, this, SLOT(reloadLive()));
-        } else {
-            fullRefresh();
-        }
+        fullRefresh();
     }
     return QMainWindow::eventFilter(obj, e);
 }
@@ -917,7 +911,7 @@ void Browser::loadProgress(int p)  { if (p % 25 == 0) m_status->setText(QString(
 // show the finished page with one clean full refresh (KoboEink hold, see eink.h).
 void Browser::loadStarted()
 {
-    if (m_offlineShown) {   // any load after the offline copy (reload tap, a link) is live
+    if (m_offlineShown) {   // any load after the offline copy (Reload, a link) is live
         m_offlineShown = false;
         if (m_onlineTimer) m_onlineTimer->stop();
     }
@@ -1009,8 +1003,8 @@ void Browser::checkOnline()
     if (m_offline) return;   // the offline copy is still loading
     if (!m_offlineShown) { if (m_onlineTimer) m_onlineTimer->stop(); return; }
     if (!deviceOnline()) return;
-    qDebug() << "restore: online, offering a reload";
-    m_status->setText(QString("Offline copy ") + QChar(0x00b7) + " tap here to reload");
+    qDebug() << "restore: online, suggesting Reload";
+    m_status->setText(QString("Offline copy ") + QChar(0x00b7) + " back online, press Reload");
     if (m_onlineTimer) m_onlineTimer->stop();
 }
 
@@ -1026,6 +1020,18 @@ void Browser::reloadLive()
 }
 
 void Browser::reloadLiveNow() { loadUrlText(m_home); }
+
+// Reload button: on the offline copy (a setHtml page) reload() would only redisplay that
+// HTML, so leave it for the original address through reloadLive().
+void Browser::reloadClicked()
+{
+    if (m_offline || m_offlineShown) {
+        qDebug() << "restore: reloading the live page" << m_home;
+        reloadLive();
+    } else {
+        m_view->reload();
+    }
+}
 
 void Browser::releaseLoadHold()
 {
@@ -1287,6 +1293,8 @@ int main(int argc, char **argv)
     QTimer::singleShot(1500, eink, SLOT(refreshAllFull()));
     // Test hook: KB_TEST_SAVE=<seconds> triggers Save-as-EPUB automatically.
     if (getenv("KB_TEST_SAVE")) QTimer::singleShot(atoi(getenv("KB_TEST_SAVE")) * 1000, &w, SLOT(saveEpub()));
+    // Test hook: KB_TEST_RELOAD_SEC=<seconds> presses Reload automatically.
+    if (getenv("KB_TEST_RELOAD_SEC")) QTimer::singleShot(atoi(getenv("KB_TEST_RELOAD_SEC")) * 1000, &w, SLOT(reloadClicked()));
     // Test hook: KB_TEST_NAV="url url back ..." loads one entry every KB_TEST_NAV_MS (12000) ms
     // ("back" = history back), logging "testnav:" lines; then quits after one more interval.
     if (getenv("KB_TEST_NAV")) {

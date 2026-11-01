@@ -113,9 +113,10 @@ public slots:
     void zoomOut();
     void urlChanged(const QUrl &url);
     void loadStarted();
-    void checkOnline();          // offline copy: offer a reload once the device is online
+    void checkOnline();          // offline copy: say "press Reload" once the device is online
     void reloadLive();
-    void reloadLiveNow();           // offline copy: status-line tap loads the live page
+    void reloadLiveNow();
+    void reloadClicked();        // Reload button; on the offline copy loads the original URL
     void loadProgress(int p);
     void loadFinished(bool ok);
     void quit();
