@@ -17,6 +17,10 @@ public:
     // True while a multi-finger gesture is in progress: widgets should ignore the
     // mouse events of the first finger (they get a release at (-10,-10) at the end).
     static bool gestureActive() { return s_gesture; }
+    // Hand the touchscreen to another process (KOReader's keyboard): drop the EVIOCGRAB and
+    // discard everything we read until setHandedOff(false) grabs it again.
+    void setHandedOff(bool off);
+    bool handedOff() const { return m_handedOff; }
 signals:
     // Two fingers touched and lifted without moving much: used for a full refresh.
     void twoFingerTap();
@@ -46,5 +50,7 @@ private:
     bool m_have1;
     double m_pinchStart, m_pinchLast;   // finger distance when both were first seen / last
     bool m_haveMT;               // device reports ABS_MT_POSITION_*; ignore ABS_X/ABS_Y then
+    bool m_grab;                 // we were asked to grab the device
+    bool m_handedOff;
 };
 #endif

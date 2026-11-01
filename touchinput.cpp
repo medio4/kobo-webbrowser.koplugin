@@ -44,6 +44,7 @@ KoboTouchInput::KoboTouchInput(const QString &device, int screenW, int screenH,
     }
     if (grab && ioctl(m_fd, EVIOCGRAB, 1) != 0)
         qWarning() << "touch: EVIOCGRAB failed:" << strerror(errno);
+    m_grab = grab; m_handedOff = false;
     qDebug() << "touch: opened" << device << "abs x" << m_minX << m_maxX << "y" << m_minY << m_maxY
              << "swap" << m_swapXY << "mirrorX" << m_mirrorX << "mirrorY" << m_mirrorY;
     m_notifier = new QSocketNotifier(m_fd, QSocketNotifier::Read, this);
@@ -69,6 +70,7 @@ void KoboTouchInput::readable()
             return;
         }
         if (n == 0) return;
+        if (m_handedOff) continue;   // KOReader owns the screen right now: drop our copy
         int count = n / sizeof(struct input_event);
         for (int i = 0; i < count; ++i) {
             const struct input_event &e = ev[i];
@@ -195,4 +197,21 @@ void KoboTouchInput::emitState()
         m_sentDown = false;
     }
     m_down = m_pendingDown;
+}
+
+void KoboTouchInput::setHandedOff(bool off)
+{
+    if (m_fd < 0 || off == m_handedOff) return;
+    m_handedOff = off;
+    if (off) {
+        // Forget any contact in progress so no stale press is completed later.
+        m_pendingDown = false; m_sentDown = false; m_havePos = false;
+        m_slot1Down = false; m_multiSeen = false; s_gesture = false;
+        if (m_grab && ioctl(m_fd, EVIOCGRAB, 0) != 0)
+            qWarning() << "touch: EVIOCGRAB release failed:" << strerror(errno);
+    } else {
+        if (m_grab && ioctl(m_fd, EVIOCGRAB, 1) != 0)
+            qWarning() << "touch: EVIOCGRAB failed:" << strerror(errno);
+    }
+    qDebug() << "touch:" << (off ? "handed off to KOReader" : "taken back");
 }
