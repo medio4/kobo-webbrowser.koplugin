@@ -160,14 +160,10 @@ void KoboEink::flush()
     if (m_pending.isEmpty()) return;
     if (!m_ready) { m_timer.start(200); return; }   // wait until the platform screen is claimed
     if (m_useFbink) {
-        // One refresh per distinct flag value, bounding rect each.
-        QList<QPair<QRect, quint64> > merged;
-        for (int i = 0; i < m_pending.size(); ++i) {
-            bool found = false;
-            for (int j = 0; j < merged.size(); ++j)
-                if (merged[j].second == m_pending[i].second) { merged[j].first |= m_pending[i].first; found = true; break; }
-            if (!found) merged.append(m_pending[i]);
-        }
+        // Merge pending rects per flag value, but only when they overlap or nearly touch:
+        // a bounding box of the address bar and the keyboard would drag the whole page
+        // in between through the DU waveform (seen as a full-screen "DU partial").
+        QList<QPair<QRect, quint64> > merged = mergeRects(m_pending);
         m_pending.clear();
         for (int j = 0; j < merged.size(); ++j) {
             const QRect &r = merged[j].first;
@@ -207,10 +203,10 @@ void KoboEink::flush()
             const bool fastWf = (wf == m_wfFast && !flash);
             if (fastWf) {
                 // DU leaves gray edges and ghosts; once the burst settles, clean the area.
-                m_fastDirty |= r;
+                m_fastDirty += r;
                 m_settleTimer.start();
-            } else if (!m_fastDirty.isEmpty() && r.contains(m_fastDirty)) {
-                m_fastDirty = QRect();   // covered by a proper refresh anyway
+            } else if (!m_fastDirty.isEmpty()) {
+                m_fastDirty -= r;   // that part got a proper refresh anyway
             }
             if (m_hw && m_hw->refresh(r, hwWaveform(wf), flash)) {
                 if (m_logRefresh) qDebug() << "eink: hwtcon" << r << wf << (flash ? "flash" : "partial");
@@ -315,9 +311,49 @@ void KoboEink::cleanRect(const QRect &rIn)
 void KoboEink::settleFast()
 {
     if (m_timer.isActive()) { m_settleTimer.start(); return; }   // more repaints on the way
-    QRect r = m_fastDirty;
-    m_fastDirty = QRect();
-    cleanRect(r);
+    QList<QPair<QRect, quint64> > parts;
+    foreach (const QRect &r, m_fastDirty.rects()) parts.append(qMakePair(r, (quint64)0));
+    m_fastDirty = QRegion();
+    QList<QPair<QRect, quint64> > merged = mergeRects(parts);
+    for (int i = 0; i < merged.size(); ++i) cleanRect(merged[i].first);
+}
+
+// Groups rects by flag; rects of one flag are unioned only when they overlap or come
+// within `gap` px of each other, so disjoint areas stay separate updates. If a flag
+// ends up with too many pieces, they collapse to one bounding rect.
+QList<QPair<QRect, quint64> > KoboEink::mergeRects(const QList<QPair<QRect, quint64> > &in)
+{
+    const int gap = 24;
+    const int maxPieces = 6;
+    QList<QPair<QRect, quint64> > out;
+    for (int i = 0; i < in.size(); ++i) {
+        QRect r = in[i].first;
+        quint64 f = in[i].second;
+        if (r.isEmpty()) continue;
+        bool absorbed = true;
+        while (absorbed) {           // keep absorbing: a union may now touch another piece
+            absorbed = false;
+            for (int j = 0; j < out.size(); ++j) {
+                if (out[j].second != f) continue;
+                if (out[j].first.adjusted(-gap, -gap, gap, gap).intersects(r)) {
+                    r |= out[j].first;
+                    out.removeAt(j);
+                    absorbed = true;
+                    break;
+                }
+            }
+        }
+        out.append(qMakePair(r, f));
+        int pieces = 0;
+        for (int j = 0; j < out.size(); ++j) if (out[j].second == f) ++pieces;
+        if (pieces > maxPieces) {
+            QRect all;
+            for (int j = out.size() - 1; j >= 0; --j)
+                if (out[j].second == f) { all |= out[j].first; out.removeAt(j); }
+            out.append(qMakePair(all, f));
+        }
+    }
+    return out;
 }
 
 void KoboEink::hintPageTurn() { m_nextFlags = m_flagsPage; }
