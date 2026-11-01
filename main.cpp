@@ -184,7 +184,7 @@ OnScreenKeyboard::OnScreenKeyboard(QWidget *parent)
     : QWidget(parent), m_shift(0), m_sym(0), m_shift_on(false), m_symbols(false), m_rows(0)
 {
     setProperty("kb_fast", true);          // refreshed with the fast DU waveform
-    setAttribute(Qt::WA_OpaquePaintEvent);
+    // (no WA_OpaquePaintEvent here: it would stop Qt from filling the white background)
     setAutoFillBackground(true);
     QPalette pal = palette(); pal.setColor(QPalette::Window, Qt::white); setPalette(pal);
     build();
@@ -582,7 +582,7 @@ void Browser::cleanToolbar()
 {
     if (!m_eink) return;
     QRect r = QRect(m_bar->mapTo(this, QPoint(0, 0)), m_bar->size());
-    m_eink->markDirty(r, m_eink->flagsPartial());
+    m_eink->cleanRect(r);
 }
 
 void Browser::fullRefresh()    { if (m_eink) m_eink->refreshAllFull(); }
