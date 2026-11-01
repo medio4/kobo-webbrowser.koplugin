@@ -129,6 +129,7 @@ private:
     QString m_home;
     KoboEink *m_eink;
     FlatButton *m_modeBtn;
+    QElapsedTimer m_lastPageTap;
     void applyScrollMode(bool pageMode, bool save);
     EpubSaver *m_saver;
 };

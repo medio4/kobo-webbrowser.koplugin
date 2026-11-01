@@ -209,7 +209,7 @@ void OnScreenKeyboard::build()
         }
         if (r == 2) row->addSpacing(keyW / 2);
         if (r == 3) {
-            FlatButton *bs = key(QString::fromUtf8("\xE2\x86\x90"), keyW + keyW / 2 + gap / 2, keyH, true, 48);   // ← (backspace; the Kobo fonts lack ⌫)
+            FlatButton *bs = key("<x", keyW + keyW / 2 + gap / 2, keyH, true, 40);   // backspace (the Kobo fonts lack arrow glyphs)
             bs->setProperty("keycode", (int)Qt::Key_Backspace);
             bs->setAutoRepeat(true); bs->setAutoRepeatDelay(500); bs->setAutoRepeatInterval(120);
             connect(bs, SIGNAL(clicked()), this, SLOT(keyClicked()));
@@ -347,8 +347,8 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     barBox->addLayout(row1);
 
     // Ten buttons + 9 gaps of 6 px must fit in 1064 px: widths add up to 1010.
-    FlatButton *back = toolButton(QString::fromUtf8("\xE2\x97\x80"), 90, bh);   // ◀
-    FlatButton *fwd  = toolButton(QString::fromUtf8("\xE2\x96\xB6"), 90, bh);   // ▶
+    FlatButton *back = toolButton("<", 90, bh);
+    FlatButton *fwd  = toolButton(">", 90, bh);
     FlatButton *rel  = toolButton("Reload", 140, bh);
     FlatButton *mode = toolButton("Page", 110, bh);
     m_modeBtn = mode;
@@ -435,12 +435,15 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
 
     // Tapping the URL field shows the keyboard.
     m_url->installEventFilter(this);
+    m_view->installEventFilter(this);
 
     loadUrlText(m_home);
 }
 
 bool Browser::eventFilter(QObject *obj, QEvent *e)
 {
+    if (obj == m_view && (e->type() == QEvent::MouseButtonPress || e->type() == QEvent::MouseButtonRelease))
+        m_lastPageTap.start();
     if (obj == m_url && e->type() == QEvent::MouseButtonRelease)
         QTimer::singleShot(0, this, SLOT(showKeyboard()));
     return QMainWindow::eventFilter(obj, e);
@@ -496,6 +499,9 @@ void Browser::keyboardGo()
 void Browser::pageFocusChanged()
 {
     if (m_kbd->isVisible()) return;
+    // Only pop the keyboard for a focus change caused by a recent tap on the page,
+    // not for scripts focusing a field while the page loads.
+    if (!m_lastPageTap.isValid() || m_lastPageTap.elapsed() > 1500) return;
     QVariant v = m_view->page()->inputMethodQuery(Qt::ImEnabled);
     if (v.isValid() && v.toBool() && QApplication::focusWidget() == m_view)
         showKeyboard();
