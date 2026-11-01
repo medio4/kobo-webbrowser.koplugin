@@ -6,6 +6,7 @@
 #include "crashhandler.h"
 #include "touchinput.h"
 #include "eink.h"
+#include "pagescroll.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QPushButton>
@@ -32,6 +33,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
+#include <QtCore/QSettings>
 #include <QtWebKit/QWebSettings>
 #include <QtWebKitWidgets/QWebFrame>
 #include <QtWebKitWidgets/QWebPage>
@@ -45,7 +47,11 @@
 TouchWebView::TouchWebView(QWidget *parent)
     : QWebView(parent), m_pressed(false), m_dragging(false), m_forwarding(false)
 {
+    m_pager = new PageScroller(this);
 }
+
+bool TouchWebView::pageMode() const { return m_pager->enabled(); }
+void TouchWebView::setPageMode(bool on) { m_pager->setEnabled(on); }
 
 bool TouchWebView::event(QEvent *e)
 {
@@ -66,6 +72,7 @@ void TouchWebView::mousePressEvent(QMouseEvent *e)
     m_pressPos = e->pos();
     m_lastPos = e->pos();
     m_pressTime.start();
+    m_pager->handlePress(e->pos());
     e->accept();
 }
 
@@ -73,6 +80,7 @@ void TouchWebView::mouseMoveEvent(QMouseEvent *e)
 {
     if (m_forwarding) { QWebView::mouseMoveEvent(e); return; }
     if (!m_pressed) return;
+    if (m_pager->handleMove(e->pos())) { e->accept(); return; }   // page mode: no live drag
     QPoint delta = e->pos() - m_lastPos;
     if (!m_dragging && (e->pos() - m_pressPos).manhattanLength() > 25)
         m_dragging = true;
@@ -91,6 +99,7 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
     if (m_forwarding) { QWebView::mouseReleaseEvent(e); return; }
     if (!m_pressed) return;
     m_pressed = false;
+    if (m_pager->handleRelease(e->pos())) { m_dragging = false; e->accept(); return; }  // page turned
     if (m_dragging) {
         // Finish a swipe: scroll by remaining delta.
         QPoint delta = e->pos() - m_lastPos;
@@ -245,18 +254,21 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     row1->addWidget(m_url, 1); row1->addWidget(go);
     barBox->addLayout(row1);
 
-    QPushButton *back = new QPushButton("<");   back->setMinimumSize(110, bh); back->setFont(bf);
-    QPushButton *fwd  = new QPushButton(">");   fwd->setMinimumSize(110, bh);  fwd->setFont(bf);
-    QPushButton *rel  = new QPushButton("Reload"); rel->setMinimumSize(170, bh); rel->setFont(bf);
-    QPushButton *kbd  = new QPushButton("Keys"); kbd->setMinimumSize(150, bh); kbd->setFont(bf);
-    QPushButton *zi   = new QPushButton("A+");  zi->setMinimumSize(110, bh);   zi->setFont(bf);
-    QPushButton *zo   = new QPushButton("A-");  zo->setMinimumSize(110, bh);   zo->setFont(bf);
-    QPushButton *shot = new QPushButton("Shot"); shot->setMinimumSize(130, bh); shot->setFont(bf);
-    QPushButton *quit = new QPushButton("Exit"); quit->setMinimumSize(140, bh); quit->setFont(bf);
-    foreach (QPushButton *b, QList<QPushButton *>() << go << back << fwd << rel << kbd << zi << zo << shot << quit)
+    // Nine buttons + gaps must fit in 1064 px: widths below add up to 1030 + 8 gaps of 4.
+    QPushButton *back = new QPushButton("<");   back->setMinimumSize(100, bh); back->setFont(bf);
+    QPushButton *fwd  = new QPushButton(">");   fwd->setMinimumSize(100, bh);  fwd->setFont(bf);
+    QPushButton *rel  = new QPushButton("Reload"); rel->setMinimumSize(150, bh); rel->setFont(bf);
+    m_modeBtn = new QPushButton("Page"); m_modeBtn->setMinimumSize(120, bh); m_modeBtn->setFont(bf);
+    m_modeBtn->setToolTip("Scroll mode: Page (swipe/edge tap turns a screen) or Live (drag)");
+    QPushButton *kbd  = new QPushButton("Keys"); kbd->setMinimumSize(130, bh); kbd->setFont(bf);
+    QPushButton *zi   = new QPushButton("A+");  zi->setMinimumSize(100, bh);   zi->setFont(bf);
+    QPushButton *zo   = new QPushButton("A-");  zo->setMinimumSize(100, bh);   zo->setFont(bf);
+    QPushButton *shot = new QPushButton("Shot"); shot->setMinimumSize(110, bh); shot->setFont(bf);
+    QPushButton *quit = new QPushButton("Exit"); quit->setMinimumSize(120, bh); quit->setFont(bf);
+    foreach (QPushButton *b, QList<QPushButton *>() << go << back << fwd << rel << m_modeBtn << kbd << zi << zo << shot << quit)
         b->setFocusPolicy(Qt::NoFocus);
     QHBoxLayout *row2 = new QHBoxLayout; row2->setSpacing(4);
-    row2->addWidget(back); row2->addWidget(fwd); row2->addWidget(rel);
+    row2->addWidget(back); row2->addWidget(fwd); row2->addWidget(rel); row2->addWidget(m_modeBtn);
     row2->addStretch(1);
     row2->addWidget(kbd); row2->addWidget(zi); row2->addWidget(zo); row2->addWidget(shot); row2->addWidget(quit);
     barBox->addLayout(row2);
@@ -313,6 +325,15 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     connect(m_view, SIGNAL(loadStarted()), this, SLOT(loadStarted()));
     connect(m_view, SIGNAL(loadProgress(int)), this, SLOT(loadProgress(int)));
     connect(m_view, SIGNAL(loadFinished(bool)), this, SLOT(loadFinished(bool)));
+    connect(m_modeBtn, SIGNAL(clicked()), this, SLOT(toggleScrollMode()));
+    if (m_eink)
+        connect(m_view->pager(), SIGNAL(pageTurned()), m_eink, SLOT(hintPageTurn()));
+
+    // Scroll mode is remembered between runs (settings.ini next to the binary).
+    {
+        QSettings st(QDir(QCoreApplication::applicationDirPath()).filePath("settings.ini"), QSettings::IniFormat);
+        applyScrollMode(st.value("scroll/pageMode", true).toBool(), false);
+    }
 
     // Tapping the URL field shows the keyboard.
     m_url->installEventFilter(this);
@@ -370,11 +391,36 @@ void Browser::zoomIn()  { m_view->setZoomFactor(m_view->zoomFactor() * 1.2); }
 void Browser::zoomOut() { m_view->setZoomFactor(m_view->zoomFactor() / 1.2); }
 
 void Browser::urlChanged(const QUrl &url) { m_url->setText(url.toString()); }
-void Browser::loadStarted()        { m_status->setText("Loading..."); }
 void Browser::loadProgress(int p)  { if (p % 25 == 0) m_status->setText(QString("Loading %1%").arg(p)); }
+
+// E-ink friendly loading: while a page loads, WebKit repaints progressively. We let
+// Qt paint into the backing store but hold the screen updates of the web view, then
+// show the finished page with one clean full refresh (KoboEink hold, see eink.h).
+void Browser::loadStarted()
+{
+    m_status->setText("Loading...");
+    if (m_eink && !getenv("KB_NO_LOAD_HOLD")) m_eink->beginHold(m_view);
+}
 void Browser::loadFinished(bool ok)
 {
     m_status->setText(ok ? m_view->title() : "Failed to load page");
+    // WebKit usually does a last layout/paint shortly after loadFinished; give it a moment.
+    QTimer::singleShot(250, this, SLOT(releaseLoadHold()));
+}
+void Browser::releaseLoadHold()
+{
+    if (m_eink) m_eink->releaseHold(true);
+}
+
+void Browser::toggleScrollMode() { applyScrollMode(!m_view->pageMode(), true); }
+void Browser::applyScrollMode(bool pageMode, bool save)
+{
+    m_view->setPageMode(pageMode);
+    m_modeBtn->setText(pageMode ? "Page" : "Live");   // shows the mode that is active
+    if (save) {
+        QSettings st(QDir(QCoreApplication::applicationDirPath()).filePath("settings.ini"), QSettings::IniFormat);
+        st.setValue("scroll/pageMode", pageMode);
+    }
 }
 
 void Browser::quit() { qApp->quit(); }
