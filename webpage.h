@@ -12,5 +12,8 @@ public:
 protected:
     QString userAgentForUrl(const QUrl &url) const;
     bool acceptNavigationRequest(QWebFrame *frame, const QNetworkRequest &request, NavigationType type);
+private slots:
+    void fixupSite();
+    void runBingFixup();
 };
 #endif
