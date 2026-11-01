@@ -58,6 +58,11 @@ local ESCAPE_HOLD_SEC = 1.5
 -- The UIManager functions everything KOReader draws goes through; they do nothing while
 -- the browser owns the screen.
 local DRAW_FUNCS = { "_repaint", "_refresh", "setDirty" }
+-- Widgets that bypass UIManager (home-screen clocks that paintTo(Screen.bb) and call a
+-- Screen:refresh* method from their own timer) are stopped at the framebuffer: every
+-- refresh method becomes a no-op and Screen.bb is swapped for an offscreen buffer.
+local SCREEN_FUNCS = { "refreshFull", "refreshPartial", "refreshNoMergePartial", "refreshFlashPartial",
+    "refreshUI", "refreshNoMergeUI", "refreshFlashUI", "refreshFast", "refreshA2", "refreshWaitForLast" }
 local function nop() end
 
 local function alive(pid)
@@ -377,6 +382,23 @@ function KoboWebBrowser:installHooks()
         saved[name] = rawget(UIManager, name)
         UIManager[name] = nop
     end
+    local screen = Device.screen
+    saved.screen = {}
+    for _, name in ipairs(SCREEN_FUNCS) do
+        saved.screen[name] = rawget(screen, name)
+        screen[name] = nop
+    end
+    -- Paint into a scratch buffer instead of the real framebuffer while the browser owns it.
+    local ok_bb, Blitbuffer = pcall(require, "ffi/blitbuffer")
+    if ok_bb and screen.bb then
+        local ok_new, scratch = pcall(Blitbuffer.new, screen.bb:getWidth(), screen.bb:getHeight(), screen.bb:getType())
+        if ok_new and scratch then
+            saved.bb = screen.bb
+            screen.bb = scratch
+        else
+            logger.warn("KoboWebBrowser: could not allocate a scratch framebuffer:", scratch)
+        end
+    end
 
     -- Power button / sleep cover / AutoSuspend: stop the browser (it saves its page),
     -- then let KOReader do its normal sleep (screensaver, Wi-Fi off, suspend).
@@ -431,6 +453,16 @@ function KoboWebBrowser:removeHooks()
     self.hooks = nil
     for _, name in ipairs(DRAW_FUNCS) do
         UIManager[name] = saved[name]
+    end
+    if saved.screen then
+        for _, name in ipairs(SCREEN_FUNCS) do
+            Device.screen[name] = saved.screen[name]   -- nil: back to the class method
+        end
+    end
+    if saved.bb then
+        local scratch = Device.screen.bb
+        Device.screen.bb = saved.bb
+        pcall(function() if scratch and scratch.free then scratch:free() end end)
     end
     Device.onPowerEvent = saved.onPowerEvent   -- nil: back to the class method
     UIManager:unschedule(self.escape_action)
