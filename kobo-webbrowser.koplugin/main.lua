@@ -717,16 +717,28 @@ local function isKoreaderUI(w)
     return w and (w.name == "filemanager" or w.name == "ReaderUI")
 end
 
+-- The KOReader screen under our cover (topmost FileManager / ReaderUI below it). Not
+-- self.ui: this plugin instance may belong to a screen that has been replaced since.
+function KoboWebBrowser:uiUnderCover()
+    local stack, ui = UIManager._window_stack, nil
+    for _, win in ipairs(stack) do
+        if win.widget == self.cover then break end
+        if isKoreaderUI(win.widget) then ui = win.widget end
+    end
+    return ui or self.ui
+end
+
 -- The browser froze and handed us the touchscreen: open KOReader's top menu over it.
 function KoboWebBrowser:onMenuRequest()
     os.remove(self.menu_request)
-    local menu = self.ui and self.ui.menu
+    local ui = self:uiUnderCover()
+    local menu = ui and ui.menu
     if not (menu and menu.onShowMenu and self.hooks and self.cover) then
         logger.warn("KoboWebBrowser: menu request, but no menu to show")
         writeAtomically(self.menu_reply, "back\n")
         return
     end
-    logger.info("KoboWebBrowser: opening KOReader's menu over the browser")
+    logger.info("KoboWebBrowser: opening KOReader's menu over the browser, in", tostring(ui.name))
     -- Copy the browser's frozen picture off the real framebuffer: the cover paints it, so
     -- whatever KOReader repaints under its menus (a menu getting shorter, a dialog closing)
     -- shows the page instead of stale menu pixels or the file manager.
@@ -741,7 +753,7 @@ function KoboWebBrowser:onMenuRequest()
         if snap and snap.free then pcall(snap.free, snap) end
         snap = nil
     end
-    self.menu_session = { snap = snap, ui = self.ui, empty_polls = 0 }
+    self.menu_session = { snap = snap, ui = ui, empty_polls = 0 }
     self:liftDrawGuard()
     local cover = self.cover
     if snap then
@@ -846,7 +858,8 @@ end
 -- "Close web browser" in the plugin's menu while the menu is up over the browser.
 function KoboWebBrowser:closeFromMenu()
     if not self.menu_session then return end
-    local menu = self.ui and self.ui.menu
+    local ui = self.menu_session.ui
+    local menu = ui and ui.menu
     local close = menu and (menu.onCloseFileManagerMenu or menu.onCloseReaderMenu)
     if close then pcall(close, menu) end
     self:endMenuSession("quit", "Close web browser")

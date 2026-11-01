@@ -387,7 +387,7 @@ static FlatButton *toolButton(const QString &text, int w, int h)
     return b;
 }
 
-// Swipe down that starts on the toolbar: open KOReader's top menu over the page. Seen on
+// Swipe down that starts on the toolbar or status line: open KOReader's top menu over the page. Seen on
 // the application (whichever toolbar child got the touch); never eats the event.
 static const int kMenuSwipePx = 120;
 
@@ -610,8 +610,9 @@ void Browser::barSwipeEvent(QMouseEvent *me)
     QPoint g = me->globalPos();
     if (me->type() == QEvent::MouseButtonPress) {
         if (m_barTouch.isValid() && m_barTouch.elapsed() < 30 && g == m_barPress) return;   // same press, parent widget
-        QRect bar(m_bar->mapToGlobal(QPoint(0, 0)), m_bar->size());
-        m_barSwipe = bar.contains(g) && !m_kbd->isVisible();
+        // The whole top strip above the page counts: toolbar rows and the status line.
+        int pageTop = m_view->mapToGlobal(QPoint(0, 0)).y();
+        m_barSwipe = g.y() < pageTop && !m_kbd->isVisible();
         m_swipeMenu = false;
         m_barPress = g;
         m_barTouch.start();
@@ -645,7 +646,12 @@ bool Browser::eventFilter(QObject *obj, QEvent *e)
     }
     if (obj == m_url && e->type() == QEvent::MouseButtonRelease)
         QTimer::singleShot(0, this, SLOT(showKeyboard()));
-    if (obj == m_status && e->type() == QEvent::MouseButtonRelease && !KoboTouchInput::gestureActive()) {
+    // Status line: a plain tap forces a full refresh. A drag (a swipe down for KOReader's
+    // menu that started here) doesn't.
+    if (obj == m_status && e->type() == QEvent::MouseButtonPress)
+        m_statusPress = static_cast<QMouseEvent *>(e)->globalPos();
+    if (obj == m_status && e->type() == QEvent::MouseButtonRelease && !KoboTouchInput::gestureActive()
+            && (static_cast<QMouseEvent *>(e)->globalPos() - m_statusPress).manhattanLength() < 40) {
         fullRefresh();
     }
     return QMainWindow::eventFilter(obj, e);

@@ -179,6 +179,7 @@ private:
     bool m_swipeMenu;         // ... and turned into a menu swipe (ignore its release)
     QPoint m_barPress;
     QElapsedTimer m_barTouch;
+    QPoint m_statusPress;     // where the last touch on the status line started
     QString m_nativeKind;     // what the pending KOReader text entry is for: url / field / text
 };
 

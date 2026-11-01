@@ -94,7 +94,7 @@ fills the field (Go = load / Enter in the field). Falls back to the built-in key
 nobody picks the request up within 2.5 s. It is used only when the plugin sets KB_NATIVE_KBD=1 (its experimental "Use KOReader keyboard" option; KOReader must be restarted after a plugin update). KB_NO_NATIVE_KBD=1 forces the built-in keyboard.
 
 KOReader menus over the browser (same hand-off, KB_MENU_FILE/KB_MENU_REPLY, always set by
-the plugin): swipe down at least 120 px starting on the toolbar. The browser freezes and
+the plugin): swipe down at least 120 px starting on the toolbar or the status line (anywhere above the page). The browser freezes and
 releases the touchscreen; the plugin copies the frozen page into its cover, lifts the draw
 guard and opens KOReader's top menu (file manager or reader menu). Menus, their dialogs and
 settings work normally over the page. Once nothing is left open above the page, the reply
