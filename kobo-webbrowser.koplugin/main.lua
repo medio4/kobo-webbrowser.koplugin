@@ -73,7 +73,9 @@ pcall(ffi.cdef, "int kill(int pid, int sig);")   -- may already be declared
 local SIGTERM, SIGKILL = 15, 9
 local POLL_SEC = 0.25        -- how often we check that the browser is still running / wants text
 local ACTIVITY_EVERY = 4     -- polls between the InputEvents that keep AutoSuspend quiet
-local STOP_WAIT_SEC = 1.5    -- SIGTERM grace before SIGKILL when going to sleep
+-- SIGTERM grace before SIGKILL when going to sleep. The browser saves the screen (PNG)
+-- and the page before it writes its sleep line, which can take a second or two.
+local STOP_WAIT_SEC = 4
 -- A resume this soon after a sleep request is a bounced suspend: suspend again (once).
 local BOUNCE_SEC = 8
 -- Power held this long while the browser runs: kill it without sleeping. Must stay under
@@ -174,15 +176,28 @@ function WakeScreen:init()
         },
     }
     local layers = OverlapGroup:new{ dimen = self.dimen:copy() }
-    if self.image_file and lfs.attributes(self.image_file, "mode") == "file" then
-        local ok, img = pcall(ImageWidget.new, ImageWidget, {
-            file = self.image_file,
-            width = sw,
-            height = sh,
-            scale_factor = 0,      -- fit
-            file_do_cache = false,
-        })
-        if ok and img then table.insert(layers, CenterContainer:new{ dimen = self.dimen:copy(), img }) end
+    -- Without the screenshot the box still shows, on white.
+    if not self.image_file then
+        logger.warn("KoboWebBrowser: wake screen: no screenshot file given")
+    elseif lfs.attributes(self.image_file, "mode") ~= "file" then
+        logger.warn("KoboWebBrowser: wake screen: no screenshot at", self.image_file, "(the browser didn't save one)")
+    else
+        local ok, img = pcall(function()
+            local w = ImageWidget:new{
+                file = self.image_file,
+                width = sw,
+                height = sh,
+                scale_factor = 0,      -- fit
+                file_do_cache = false,
+            }
+            w:_render()                -- load now, so a bad PNG fails here and not in paintTo
+            return w
+        end)
+        if ok and img then
+            table.insert(layers, CenterContainer:new{ dimen = self.dimen:copy(), img })
+        else
+            logger.warn("KoboWebBrowser: wake screen: can't load", self.image_file, img)
+        end
     end
     local box_size = self.box:getSize()
     table.insert(layers, CenterContainer:new{
@@ -774,7 +789,9 @@ function KoboWebBrowser:flashWhite()
     screen.refreshFull = saved.screen.refreshFull   -- nil: the class method
     local ok, err = pcall(function()
         screen.bb:fill(Blitbuffer.COLOR_WHITE)
-        screen:refreshFull()
+        -- fb:refreshFull needs the rectangle (UIManager always passes one); without it
+        -- getBoundedRect compares nil and the flash never happens.
+        screen:refreshFull(0, 0, screen:getWidth(), screen:getHeight())
     end)
     if not ok then logger.warn("KoboWebBrowser: white flash failed:", err) end
     screen.bb, screen.refreshFull = scratch, guard
@@ -865,7 +882,7 @@ function KoboWebBrowser:onBrowserGone(reason)
         local Screen = Device.screen
         UIManager:setDirty("all", "full")
         UIManager:forceRePaint()
-        pcall(function() Screen:refreshFull() end)
+        pcall(function() Screen:refreshFull(0, 0, Screen:getWidth(), Screen:getHeight()) end)
         UIManager:scheduleIn(0.6, function()
             UIManager:setDirty("all", "full")
             UIManager:forceRePaint()
@@ -1015,6 +1032,8 @@ function KoboWebBrowser:onResume()
             finish()
             if lfs.attributes(self.sleep_page, "mode") == "file" then
                 extra.env.KB_RESTORE_FILE = self.sleep_page
+            else
+                logger.warn("KoboWebBrowser: no saved page at", self.sleep_page, "- reloading online")
             end
             -- The page file is read at start-up; it's deleted when this session ends.
             self:run(extra)
@@ -1022,6 +1041,11 @@ function KoboWebBrowser:onResume()
     }
     self.wake = wake
     UIManager:show(wake, "full")
+    -- Flash it again once it's all drawn (the first refresh can go out while the
+    -- screensaver is still on the panel and leave it ghosting through).
+    UIManager:scheduleIn(0.5, function()
+        if self.wake == wake then UIManager:setDirty(wake, "full") end
+    end)
 
     local asked_wifi = false
     tick = function()
@@ -1035,8 +1059,9 @@ function KoboWebBrowser:onResume()
             wake:setStatus(_("Connected. Opening the page…"), 1)
             UIManager:forceRePaint()
             finish()
-            self:deleteSleepFiles()   -- reloading online: the saved copy isn't needed
             self:run(extra)
+            -- Reloading online: the saved copy isn't needed once the browser is up.
+            if self.job then self:deleteSleepFiles() end
             return
         end
         -- KOReader restores Wi-Fi by itself when it was on (auto_restore_wifi); if it
