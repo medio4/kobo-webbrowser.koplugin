@@ -9,7 +9,6 @@ pauses while the browser is open and comes back when you exit.
 
 <p align="center">
   <img src="docs/wikipedia.png" width="45%" alt="Wikipedia article in the browser">
-  <img src="docs/keyboard.png" width="45%" alt="DuckDuckGo search with the on-screen keyboard">
 </p>
 
 ## Features
