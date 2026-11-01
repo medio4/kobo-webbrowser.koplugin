@@ -11,7 +11,18 @@ Files
 - run.sh                — device launcher: sets LD_LIBRARY_PATH / Qt plugin paths,
                           runs `kobo-browser -platform kobo`
 - ca-bundle.crt         — CA certificates for HTTPS
+- epub.cpp / epub.h     — "Save" button: runs Mozilla's Readability.js inside the page
+                          (js/Readability.js, transpiled to ES5 for the old JavaScriptCore,
+                          plus js/prelude.js polyfills), fetches the article's images
+                          (downscaled to 1200 px, JPEG/PNG), and writes a stored-zip EPUB to
+                          $KB_LIBRARY_DIR (run.sh: KOReader home folder + /Web, i.e.
+                          /mnt/onboard/Books/Web). Status line shows progress and the result.
 
 Install on the Kobo: copy build/kobo-browser, run.sh and ca-bundle.crt into
 /mnt/onboard/.adds/kobo-browser/ (that is .adds/kobo-browser on the USB drive).
 Log: /mnt/onboard/.adds/kobo-browser/browser.log
+
+Rebuilding js/Readability.js: take mozilla/readability (tag 0.4.4, Apache-2.0, see
+js/LICENSE-Readability.md), transpile with Babel preset-env (targets ie 11, loose) and change
+`_createForOfIteratorHelperLoose(nodeList)` to `_createForOfIteratorHelperLoose(nodeList, true)`
+so NodeLists iterate without Symbol.iterator.

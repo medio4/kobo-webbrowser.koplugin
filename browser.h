@@ -10,6 +10,8 @@
 #include <QtCore/QElapsedTimer>
 #include <QtWebKitWidgets/QWebView>
 
+class EpubSaver;
+
 // QWebView with touch-drag scrolling: a drag scrolls the page, a short tap
 // is forwarded as a click.
 class TouchWebView : public QWebView {
@@ -66,6 +68,9 @@ public slots:
     void loadFinished(bool ok);
     void quit();
     void focusUrl();
+    void saveEpub();
+    void saveProgress(const QString &msg);
+    void saveFinished(bool ok, const QString &msg);
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
 private:
@@ -74,6 +79,7 @@ private:
     OnScreenKeyboard *m_kbd;
     QLabel *m_status;
     QString m_home;
+    EpubSaver *m_saver;
 };
 
 #endif

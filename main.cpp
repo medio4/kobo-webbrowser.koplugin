@@ -6,6 +6,7 @@
 #include "crashhandler.h"
 #include "touchinput.h"
 #include "eink.h"
+#include "epub.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QPushButton>
@@ -221,7 +222,7 @@ void OnScreenKeyboard::toggleSymbols() { m_symbols = !m_symbols; rebuild(); }
 // -------------------------------------------------------------------- Browser
 
 Browser::Browser(const QString &home, QWidget *parent)
-    : QMainWindow(parent), m_home(home)
+    : QMainWindow(parent), m_home(home), m_saver(0)
 {
     setWindowTitle("Browser");
 
@@ -251,13 +252,15 @@ Browser::Browser(const QString &home, QWidget *parent)
     QPushButton *kbd  = new QPushButton("Keys"); kbd->setMinimumSize(150, bh); kbd->setFont(bf);
     QPushButton *zi   = new QPushButton("A+");  zi->setMinimumSize(110, bh);   zi->setFont(bf);
     QPushButton *zo   = new QPushButton("A-");  zo->setMinimumSize(110, bh);   zo->setFont(bf);
+    QPushButton *save = new QPushButton("Save"); save->setMinimumSize(150, bh); save->setFont(bf);
+    save->setToolTip("Save this page as an EPUB in the library");
     QPushButton *quit = new QPushButton("Exit"); quit->setMinimumSize(140, bh); quit->setFont(bf);
-    foreach (QPushButton *b, QList<QPushButton *>() << go << back << fwd << rel << kbd << zi << zo << quit)
+    foreach (QPushButton *b, QList<QPushButton *>() << go << back << fwd << rel << kbd << zi << zo << save << quit)
         b->setFocusPolicy(Qt::NoFocus);
     QHBoxLayout *row2 = new QHBoxLayout; row2->setSpacing(4);
     row2->addWidget(back); row2->addWidget(fwd); row2->addWidget(rel);
     row2->addStretch(1);
-    row2->addWidget(kbd); row2->addWidget(zi); row2->addWidget(zo); row2->addWidget(quit);
+    row2->addWidget(kbd); row2->addWidget(zi); row2->addWidget(zo); row2->addWidget(save); row2->addWidget(quit);
     barBox->addLayout(row2);
     vbox->addWidget(bar);
 
@@ -303,6 +306,7 @@ Browser::Browser(const QString &home, QWidget *parent)
     connect(kbd, SIGNAL(clicked()), this, SLOT(toggleKeyboard()));
     connect(zi, SIGNAL(clicked()), this, SLOT(zoomIn()));
     connect(zo, SIGNAL(clicked()), this, SLOT(zoomOut()));
+    connect(save, SIGNAL(clicked()), this, SLOT(saveEpub()));
     connect(quit, SIGNAL(clicked()), this, SLOT(quit()));
     connect(m_url, SIGNAL(returnPressed()), this, SLOT(go()));
     connect(m_kbd, SIGNAL(goPressed()), this, SLOT(go()));
@@ -376,6 +380,31 @@ void Browser::loadFinished(bool ok)
 }
 
 void Browser::quit() { qApp->quit(); }
+
+// ---- Save as EPUB (see epub.cpp)
+
+void Browser::saveEpub()
+{
+    if (m_saver && m_saver->isRunning()) return;
+    delete m_saver;
+    m_saver = new EpubSaver(m_view->page(), EpubSaver::defaultOutDir(), this);
+    connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
+    connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(saveFinished(bool,QString)));
+    m_saver->start();
+}
+
+void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }
+
+void Browser::saveFinished(bool ok, const QString &msg)
+{
+    if (ok) {
+        QString shown = msg;
+        if (shown.startsWith("/mnt/onboard/")) shown = shown.mid(13);
+        m_status->setText("Saved: " + shown);
+    } else {
+        m_status->setText("Save failed: " + msg);
+    }
+}
 
 // ----------------------------------------------------------------------- main
 
