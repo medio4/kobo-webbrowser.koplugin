@@ -6,6 +6,7 @@
 #include "crashhandler.h"
 #include "touchinput.h"
 #include "eink.h"
+#include "webpage.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QPushButton>
@@ -269,6 +270,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     vbox->addWidget(m_status);
 
     m_view = new TouchWebView;
+    m_view->setPage(new KoboWebPage(m_view));
     vbox->addWidget(m_view, 1);
 
     m_kbd = new OnScreenKeyboard;
@@ -355,7 +357,7 @@ void Browser::loadUrlText(const QString &textIn)
     } else {
         url = QUrl("https://lite.duckduckgo.com/lite/?q=" + QString::fromLatin1(QUrl::toPercentEncoding(text)));
     }
-    m_view->load(url);
+    m_view->load(KoboWebPage::mobileVariant(url));
 }
 
 void Browser::showKeyboard()   { m_kbd->show(); }

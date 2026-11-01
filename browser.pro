@@ -9,5 +9,5 @@ INCLUDEPATH += $$PWD/../downloads/qtwebkit-headers/qtwebkit-opensource-src-5.2.1
 # Link against the firmware's own WebKit libraries (symlinked in ./lib with their Qt5 names)
 LIBS += -L$$PWD/lib -lQt5WebKitWidgets -lQt5WebKit -ldl
 QMAKE_RPATHDIR += /usr/local/Kobo /usr/local/Qt-5.2.1-arm/lib
-SOURCES += main.cpp touchinput.cpp eink.cpp fbwriter.cpp
-HEADERS += browser.h crashhandler.h touchinput.h eink.h fbwriter.h
+SOURCES += main.cpp touchinput.cpp eink.cpp fbwriter.cpp webpage.cpp
+HEADERS += browser.h crashhandler.h touchinput.h eink.h fbwriter.h webpage.h
