@@ -52,6 +52,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <signal.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 // ---------------------------------------------------------------- TouchWebView
 
@@ -789,6 +792,21 @@ protected:
     void timerEvent(QTimerEvent *) { if (g_quitRequested) qApp->quit(); }
 };
 
+// Heartbeat for run.sh's kb-escape watchdog: touch KB_HEARTBEAT_FILE once a second from
+// the UI thread, so a hung event loop shows up as a stale file.
+class Heartbeat : public QObject {
+public:
+    Heartbeat(const char *path, QObject *parent) : QObject(parent), m_path(path) { startTimer(1000); }
+protected:
+    void timerEvent(QTimerEvent *)
+    {
+        int fd = open(m_path.constData(), O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+        if (fd >= 0) { futimens(fd, 0); close(fd); }
+    }
+private:
+    QByteArray m_path;
+};
+
 int main(int argc, char **argv)
 {
     // Prevent QApplication from choking on nickel-style args we accept for parity.
@@ -803,6 +821,8 @@ int main(int argc, char **argv)
     signal(SIGTERM, onSignal);
     signal(SIGINT, onSignal);
     QuitPoller quitPoller;
+    const char *hbFile = getenv("KB_HEARTBEAT_FILE");
+    if (hbFile && *hbFile) new Heartbeat(hbFile, &app);
 
     qDebug() << "SSL support:" << QSslSocket::supportsSsl() << QSslSocket::sslLibraryVersionString();
 

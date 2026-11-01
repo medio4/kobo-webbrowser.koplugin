@@ -8,4 +8,4 @@ mkdir -p "$HERE/build"
 podman run --rm --security-opt label=disable \
   -v "$HERE":/work/browser -v "$ROOT/downloads":/work/downloads:ro \
   -w /work/browser/build ghcr.io/pgaskin/nickeltc:1.0 \
-  sh -c 'qmake -spec linux-arm-nickel-gnueabihf-g++ ../browser.pro && make -j"$(nproc)" && arm-nickel-linux-gnueabihf-strip kobo-browser && ls -la kobo-browser'
+  sh -c 'qmake -spec linux-arm-nickel-gnueabihf-g++ ../browser.pro && make -j"$(nproc)" && arm-nickel-linux-gnueabihf-strip kobo-browser && arm-nickel-linux-gnueabihf-gcc -std=gnu99 -O2 -Wall -o kb-escape ../kb-escape.c && arm-nickel-linux-gnueabihf-strip kb-escape && ls -la kobo-browser kb-escape'
