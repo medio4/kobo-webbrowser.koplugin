@@ -422,6 +422,9 @@ function KoboWebBrowser:installHooks()
         if not self:isRunning() then return end
         logger.warn("KoboWebBrowser: power held, killing the browser")
         self.escaped_hold = true
+        -- KOReader's PowerPress already scheduled its power-off (fires at ~2 s of hold);
+        -- cancel it now, or holding a little longer reboots the device.
+        if UIManager.poweroff_action then UIManager:unschedule(UIManager.poweroff_action) end
         self:stopBrowser(SIGKILL)
         self:onBrowserGone("escape")
     end
