@@ -26,7 +26,7 @@ Files
                           $KB_LIBRARY_DIR (run.sh: KOReader home folder + /Web, i.e.
                           /mnt/onboard/Books/Web). Status line shows progress and the result.
 
-Install on the Kobo: copy build/kobo-browser, run.sh, wifi-sleep.sh and ca-bundle.crt into
+Install on the Kobo: copy build/kobo-browser, build/kb-escape, run.sh, wifi-sleep.sh and ca-bundle.crt into
 /mnt/onboard/.adds/kobo-browser/ (that is .adds/kobo-browser on the USB drive).
 Log: /mnt/onboard/.adds/kobo-browser/browser.log
 
@@ -57,3 +57,15 @@ runs, so the browser answers the power button itself, the way KOReader's Kobo co
 - Testing switches: KB_SLEEP_SUSPEND=0 (sleep screen only, no kernel suspend),
   KB_SLEEP_WIFI=0 (leave Wi-Fi alone), KB_SLEEP_COVER=0, KB_POWER_DEV=/dev/input/eventN|none.
   Log lines start with "power:" / "frontlight:".
+
+Frozen-browser escape (kb-escape.c). run.sh starts a tiny watchdog next to the browser that
+reads the power button itself (without grabbing it), outside the Qt event loop:
+- Hold the power button for 5 s (KB_ESCAPE_HOLD_SEC) to quit: SIGTERM, then SIGKILL after
+  2 s. The dead process drops its touchscreen grab; run.sh does a full flashing refresh and
+  returns to KOReader. A short press still means sleep (power.cpp acts on the press, so on
+  a browser that still responds, a hold just puts it to sleep as before).
+- Optional heartbeat: the browser touches KB_HEARTBEAT_FILE every second; with
+  KB_HEARTBEAT_SEC=N set, kb-escape also kills it after N s without a tick (off by default,
+  since a heavy page can block the UI thread for a while).
+- Hold time and heartbeat use CLOCK_MONOTONIC, so time asleep doesn't count.
+  KB_NO_ESCAPE=1 turns it off. Log lines start with "kb-escape:".

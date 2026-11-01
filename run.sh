@@ -84,12 +84,40 @@ fi
 # Wipe whatever KOReader left on the panel (its clock/date strip ghosts through our first
 # 1-bit updates otherwise): clear the framebuffer to white with a full flashing refresh.
 [ -z "$KB_NO_CLEAR_AT_START" ] && [ -x "$FBINK" ] && "$FBINK" -q -c -f -W GC16 -w >> "$LOG" 2>&1
+# Frozen-browser escape: kb-escape watches the power button outside the browser (it reads
+# the device without grabbing it). Holding power for KB_ESCAPE_HOLD_SEC (5) seconds kills a
+# hung browser (TERM, then KILL), which drops its touchscreen grab, and we return to KOReader.
+# Optional: KB_HEARTBEAT_SEC=N also kills it when its UI thread stops ticking for N s.
+ESCAPE_MARK=/tmp/kobo-browser.escaped
+if [ "${KB_HEARTBEAT_SEC:-0}" -gt 0 ] 2>/dev/null; then
+    export KB_HEARTBEAT_FILE="${KB_HEARTBEAT_FILE:-/tmp/kobo-browser.heartbeat}"
+    rm -f "$KB_HEARTBEAT_FILE"
+else
+    unset KB_HEARTBEAT_FILE   # no per-second wakeups unless asked for
+fi
+rm -f "$ESCAPE_MARK"
 "$DIR/kobo-browser" -platform "$PLATFORM_ARG" $KB_EXTRA_ARGS "$@" >> "$LOG" 2>&1 &
 BPID=$!
+WPID=""
+if [ -z "$KB_NO_ESCAPE" ] && [ -x "$DIR/kb-escape" ]; then
+    "$DIR/kb-escape" "$BPID" "$ESCAPE_MARK" >> "$LOG" 2>&1 &
+    WPID=$!
+fi
 trap 'kill -TERM $BPID 2>/dev/null' TERM INT
 wait $BPID
 RC=$?
+# A trapped signal makes wait return early; wait again until the browser is really gone.
+while kill -0 $BPID 2>/dev/null; do wait $BPID; RC=$?; done
 trap - TERM INT
+[ -n "$WPID" ] && kill -TERM $WPID 2>/dev/null
+if [ -f "$ESCAPE_MARK" ]; then
+    echo "=== escape: $(cat "$ESCAPE_MARK")" >> "$LOG"
+    # The browser died without restoring the screen: wipe it with a full flashing refresh
+    # before KOReader repaints.
+    [ -x "$FBINK" ] && "$FBINK" -q -c -f -W GC16 -w >> "$LOG" 2>&1
+    rm -f "$ESCAPE_MARK"
+fi
+[ -n "$KB_HEARTBEAT_FILE" ] && rm -f "$KB_HEARTBEAT_FILE"
 if [ -n "$ORIG_BPP" ] && [ "$ORIG_BPP" != "32" ]; then
     "$FBDEPTH" -q -d "$ORIG_BPP" >> "$LOG" 2>&1
 fi
