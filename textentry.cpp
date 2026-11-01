@@ -8,9 +8,14 @@
 NativeTextEntry::NativeTextEntry(QObject *parent)
     : QObject(parent), m_active(false), m_pickedUp(false)
 {
-    m_reqPath = QString::fromLocal8Bit(getenv("KB_KBD_FILE"));
-    m_replyPath = QString::fromLocal8Bit(getenv("KB_KBD_REPLY"));
-    if (getenv("KB_NO_NATIVE_KBD")) m_reqPath.clear();
+    // Only when asked for explicitly (KB_NATIVE_KBD=1, set by the plugin when its
+    // experimental "Use KOReader keyboard" option is on). A plugin version that KOReader
+    // loaded before an update may still pass KB_KBD_FILE on its own; ignore that.
+    const char *on = getenv("KB_NATIVE_KBD");
+    if (on && atoi(on) != 0 && !getenv("KB_NO_NATIVE_KBD")) {
+        m_reqPath = QString::fromLocal8Bit(getenv("KB_KBD_FILE"));
+        m_replyPath = QString::fromLocal8Bit(getenv("KB_KBD_REPLY"));
+    }
     m_timer.setInterval(100);
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(poll()));
     if (available()) {

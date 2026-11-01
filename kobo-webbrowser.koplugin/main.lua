@@ -475,6 +475,7 @@ function KoboWebBrowser:run(extra)
     if self.settings.home then env.KB_HOME = self.settings.home end
     os.remove(self.kbd_request); os.remove(self.kbd_reply)
     if self.settings.native_keyboard == true then
+        env.KB_NATIVE_KBD = "1"
         env.KB_KBD_FILE = self.kbd_request
         env.KB_KBD_REPLY = self.kbd_reply
     end

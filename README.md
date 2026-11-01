@@ -91,4 +91,4 @@ page asks KOReader for the text: the browser writes the request file, stops refr
 releases the touchscreen; the plugin lifts its draw guard, shows an InputDialog over the
 frozen page and writes the reply; the browser then takes the screen back (full flash) and
 fills the field (Go = load / Enter in the field). Falls back to the built-in keyboard when
-nobody picks the request up within 2.5 s. KB_NO_NATIVE_KBD=1 forces the built-in keyboard.
+nobody picks the request up within 2.5 s. It is used only when the plugin sets KB_NATIVE_KBD=1 (its experimental "Use KOReader keyboard" option; KOReader must be restarted after a plugin update). KB_NO_NATIVE_KBD=1 forces the built-in keyboard.
