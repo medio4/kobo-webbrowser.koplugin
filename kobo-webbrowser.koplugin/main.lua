@@ -67,6 +67,8 @@ pcall(ffi.cdef, "int kill(int pid, int sig);")   -- may already be declared
 local SIGTERM, SIGKILL = 15, 9
 local POLL_SEC = 1           -- how often we check that the browser is still running
 local STOP_WAIT_SEC = 1.5    -- SIGTERM grace before SIGKILL when going to sleep
+-- A resume this soon after a sleep request is a bounced suspend: suspend again (once).
+local BOUNCE_SEC = 8
 -- Power held this long while the browser runs: kill it without sleeping. Must stay under
 -- the 2 s after which KOReader's PowerPress handler powers the device off.
 local ESCAPE_HOLD_SEC = 1.5
@@ -489,6 +491,10 @@ end
 
 function KoboWebBrowser:poll()
     if not self.job then return end
+    if self.stopping_for_sleep then   -- stopForSleep takes it from here
+        UIManager:scheduleIn(POLL_SEC, self.poll_action)
+        return
+    end
     if alive(self.job.pid) then
         -- Counts as user activity, so AutoSuspend doesn't sleep under the browser.
         UIManager:broadcastEvent(Event:new("InputEvent"))
@@ -512,6 +518,33 @@ function KoboWebBrowser:stopBrowser(sig, wait)
         ffi.C.kill(pid, SIGKILL)
         waitGone(pid, 0.5)
     end
+end
+
+-- Stop the browser for sleep without blocking KOReader's input loop (so a late key event
+-- is handled now, not after the screensaver is up): SIGTERM, poll until it has quit
+-- (SIGKILL after STOP_WAIT_SEC), then sleep the KOReader way.
+function KoboWebBrowser:stopForSleep(dev, ev, orig_power)
+    local pid = self.job.pid
+    self.stopping_for_sleep = { dev = dev, ev = ev, t = os.time() }
+    self.bounce_retried = false
+    ffi.C.kill(pid, SIGTERM)
+    local ticks = 0
+    local function check()
+        ticks = ticks + 1
+        if alive(pid) and ticks * 0.05 < STOP_WAIT_SEC then
+            UIManager:scheduleIn(0.05, check)
+            return
+        end
+        if alive(pid) then
+            logger.warn("KoboWebBrowser: browser ignored SIGTERM, killing it")
+            self:stopBrowser(SIGKILL)
+        end
+        self.stopping_for_sleep = nil
+        self:onBrowserGone("sleep")
+        self.sleep_requested_at = os.time()
+        orig_power(dev, ev)
+    end
+    UIManager:scheduleIn(0.05, check)
 end
 
 -- Draw guard, sleep hook and power-hold escape, active while the browser runs.
@@ -544,11 +577,15 @@ function KoboWebBrowser:installHooks()
     saved.onPowerEvent = rawget(Device, "onPowerEvent")
     local orig_power = Device.onPowerEvent
     Device.onPowerEvent = function(dev, ev)
+        if (ev == "Power" or ev == "Suspend") and self.stopping_for_sleep then
+            logger.info("KoboWebBrowser: ignoring", ev, "while the browser stops for sleep")
+            return
+        end
         if (ev == "Power" or ev == "Suspend") and not dev.screen_saver_mode and self:isRunning() then
             logger.info("KoboWebBrowser: sleep requested, stopping the browser")
             UIManager:unschedule(self.escape_action)
-            self:stopBrowser(SIGTERM, STOP_WAIT_SEC)
-            self:onBrowserGone("sleep")
+            self:stopForSleep(dev, ev, orig_power)
+            return
         end
         return orig_power(dev, ev)
     end
@@ -558,7 +595,7 @@ function KoboWebBrowser:installHooks()
     local handlers = UIManager.event_handlers
     saved.PowerPress, saved.PowerRelease = handlers.PowerPress, handlers.PowerRelease
     self.escape_action = self.escape_action or function()
-        if not self:isRunning() then return end
+        if not self:isRunning() or self.stopping_for_sleep then return end
         logger.warn("KoboWebBrowser: power held, killing the browser")
         self.escaped_hold = true
         -- KOReader's PowerPress already scheduled its power-off (fires at ~2 s of hold);
@@ -748,7 +785,11 @@ function KoboWebBrowser:processHandoff(h, sleep_req, reason)
         -- The browser's idle timer asked for sleep: sleep the KOReader way (screensaver,
         -- Wi-Fi off, suspend). For "sleep", KOReader is already on its way there.
         if reason == "exit" then
-            UIManager:scheduleIn(0.1, function() UIManager:suspend() end)
+            self.bounce_retried = false
+            UIManager:scheduleIn(0.1, function()
+                self.sleep_requested_at = os.time()
+                UIManager:suspend()
+            end)
         end
     end
 
@@ -788,6 +829,14 @@ end
 function KoboWebBrowser:onResume()
     local req = self.resume_launch
     if not req or self.job or self.wake then return end
+    local since = self.sleep_requested_at and os.time() - self.sleep_requested_at
+    if not self.bounce_retried and since and since <= BOUNCE_SEC then
+        -- The white cover stays up, so the gap until the next suspend is white.
+        logger.info("KoboWebBrowser: resume", since, "s after the sleep request, suspend bounced; suspending again")
+        self.bounce_retried = true
+        UIManager:scheduleIn(1, function() UIManager:suspend() end)
+        return
+    end
     self.resume_launch = nil
     self:showCover()
     local NetworkMgr = require("ui/network/manager")
