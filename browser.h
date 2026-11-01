@@ -158,6 +158,8 @@ private:
     QElapsedTimer m_lastPageTap;
     QPoint m_tapPress, m_tapRelease;   // last press/release in the page (view coordinates)
     EpubSaver *m_saver;
+    qreal m_textZoom;         // A+/A-: text-only zoom on top of the page zoom (1.0 = normal)
+    void setTextZoom(qreal z, bool save);
     int m_restoreY;           // KB_RESTORE_Y: scroll position to restore after the first load (-1 = none)
     bool m_relaunch;          // started by KOReader after a sleep: flash once the first page is back
     bool m_offline;           // showing KB_RESTORE_FILE (the copy saved at sleep time)

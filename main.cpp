@@ -476,6 +476,17 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     ws->setFontSize(QWebSettings::DefaultFontSize, 20);
     ws->setFontSize(QWebSettings::MinimumFontSize, 16);
     m_view->setZoomFactor(2.0);
+    // A+/A- scale the text only (saved in bin/text-size.txt), so the page keeps its layout
+    // width; pinch still zooms the whole page.
+    m_textZoom = 1.0;
+    {
+        QFile tf(QDir(QCoreApplication::applicationDirPath()).filePath("text-size.txt"));
+        if (tf.open(QIODevice::ReadOnly)) {
+            bool ok = false;
+            qreal t = QString::fromLatin1(tf.readAll()).trimmed().toDouble(&ok);
+            if (ok) setTextZoom(t, false);
+        }
+    }
     m_view->page()->setLinkDelegationPolicy(QWebPage::DontDelegateLinks);
 
     // Disk cache + cookies in our own folder (user partition).
@@ -845,8 +856,54 @@ void Browser::toggleKeyboard()
     else { if (!QApplication::focusWidget() || QApplication::focusWidget() == m_view) m_url->setFocus(); showKeyboard(); }
 }
 
-void Browser::zoomIn()  { if (m_eink) m_eink->hintFull(); m_view->setZoomFactor(m_view->zoomFactor() * 1.2); }
-void Browser::zoomOut() { if (m_eink) m_eink->hintFull(); m_view->setZoomFactor(m_view->zoomFactor() / 1.2); }
+// Text size steps for A+/A-. Text-only zoom: WebKit scales the fonts and reflows the
+// text at the same layout width. (Full page zoom, which A+/A- used to change, also
+// narrows the layout viewport, so sites switched to their narrow/mobile layout or
+// overflowed sideways.) The page zoom stays where pinch put it.
+static const qreal kTextSteps[] = { 0.8, 0.9, 1.0, 1.1, 1.25, 1.4, 1.6, 1.8, 2.0 };
+static const int kTextStepCount = sizeof(kTextSteps) / sizeof(kTextSteps[0]);
+
+void Browser::setTextZoom(qreal z, bool save)
+{
+    z = qBound(kTextSteps[0], z, kTextSteps[kTextStepCount - 1]);
+    m_textZoom = z;
+    // QWebFrame::setZoomFactor sets the text zoom while ZoomTextOnly is on and the page
+    // zoom otherwise; WebKit keeps the two factors separately. Everything else in the
+    // browser (pinch, restore, the sleep line) reads and sets the page zoom, so the
+    // attribute is only on for this one call.
+    QWebSettings *ws = m_view->settings();
+    ws->setAttribute(QWebSettings::ZoomTextOnly, true);
+    m_view->setZoomFactor(z);
+    ws->setAttribute(QWebSettings::ZoomTextOnly, false);
+    if (!save) return;
+    QFile tf(QDir(QCoreApplication::applicationDirPath()).filePath("text-size.txt"));
+    if (tf.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        tf.write(QByteArray::number(double(z), 'f', 2) + '\n');
+    m_status->setText(QString("Text size %1%").arg(qRound(z * 100)));
+}
+
+static int textStep(qreal z)
+{
+    int best = 0;
+    for (int i = 1; i < kTextStepCount; ++i)
+        if (qAbs(kTextSteps[i] - z) < qAbs(kTextSteps[best] - z)) best = i;
+    return best;
+}
+
+void Browser::zoomIn()
+{
+    int i = textStep(m_textZoom);
+    if (i + 1 >= kTextStepCount) { m_status->setText("Text size: largest"); return; }
+    if (m_eink) m_eink->hintFull();
+    setTextZoom(kTextSteps[i + 1], true);
+}
+void Browser::zoomOut()
+{
+    int i = textStep(m_textZoom);
+    if (i <= 0) { m_status->setText("Text size: smallest"); return; }
+    if (m_eink) m_eink->hintFull();
+    setTextZoom(kTextSteps[i - 1], true);
+}
 
 void Browser::urlChanged(const QUrl &url) { m_url->setText(url.toString()); }
 void Browser::loadProgress(int p)  { if (p % 25 == 0) m_status->setText(QString("Loading %1%").arg(p)); }
