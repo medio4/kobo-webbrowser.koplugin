@@ -1,3 +1,4 @@
+#include <string.h>
 #include "textentry.h"
 #include <QtCore/QFile>
 #include <QtCore/QDir>
@@ -5,22 +6,27 @@
 #include <QtCore/QStringList>
 #include <stdlib.h>
 
-NativeTextEntry::NativeTextEntry(QObject *parent)
+NativeTextEntry::NativeTextEntry(const char *reqEnv, const char *replyEnv, QObject *parent)
     : QObject(parent), m_active(false), m_pickedUp(false)
 {
-    // Only when asked for explicitly (KB_NATIVE_KBD=1, set by the plugin when its
-    // experimental "Use KOReader keyboard" option is on). A plugin version that KOReader
-    // loaded before an update may still pass KB_KBD_FILE on its own; ignore that.
-    const char *on = getenv("KB_NATIVE_KBD");
-    if (on && atoi(on) != 0 && !getenv("KB_NO_NATIVE_KBD")) {
-        m_reqPath = QString::fromLocal8Bit(getenv("KB_KBD_FILE"));
-        m_replyPath = QString::fromLocal8Bit(getenv("KB_KBD_REPLY"));
+    // The keyboard channel (KB_KBD_FILE) is used only when asked for explicitly
+    // (KB_NATIVE_KBD=1, the plugin's experimental "Use KOReader keyboard" option); a plugin
+    // version KOReader loaded before an update may still pass KB_KBD_FILE on its own.
+    // Other channels (the KOReader menu hand-off, KB_MENU_FILE) are always on.
+    bool enabled = true;
+    if (!strcmp(reqEnv, "KB_KBD_FILE")) {
+        const char *on = getenv("KB_NATIVE_KBD");
+        enabled = on && atoi(on) != 0 && !getenv("KB_NO_NATIVE_KBD");
+    }
+    if (enabled) {
+        m_reqPath = QString::fromLocal8Bit(getenv(reqEnv));
+        m_replyPath = QString::fromLocal8Bit(getenv(replyEnv));
     }
     m_timer.setInterval(100);
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(poll()));
     if (available()) {
         QFile::remove(m_reqPath); QFile::remove(m_replyPath);
-        qDebug() << "textentry: KOReader keyboard via" << m_reqPath;
+        qDebug() << "textentry: KOReader hand-off via" << m_reqPath;
     }
 }
 
@@ -68,7 +74,7 @@ void NativeTextEntry::poll()
             m_pickedUp = true;
         } else if (m_since.elapsed() > 2500) {
             // The plugin isn't listening (old plugin, or launched another way).
-            qWarning() << "textentry: no reply from KOReader, using the built-in keyboard";
+            qWarning() << "textentry: KOReader didn't pick up" << m_reqPath;
             cancel();
             emit unavailable();
             return;

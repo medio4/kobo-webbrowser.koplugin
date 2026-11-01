@@ -92,3 +92,13 @@ releases the touchscreen; the plugin lifts its draw guard, shows an InputDialog 
 frozen page and writes the reply; the browser then takes the screen back (full flash) and
 fills the field (Go = load / Enter in the field). Falls back to the built-in keyboard when
 nobody picks the request up within 2.5 s. It is used only when the plugin sets KB_NATIVE_KBD=1 (its experimental "Use KOReader keyboard" option; KOReader must be restarted after a plugin update). KB_NO_NATIVE_KBD=1 forces the built-in keyboard.
+
+KOReader menus over the browser (same hand-off, KB_MENU_FILE/KB_MENU_REPLY, always set by
+the plugin): swipe down at least 120 px starting on the toolbar. The browser freezes and
+releases the touchscreen; the plugin copies the frozen page into its cover, lifts the draw
+guard and opens KOReader's top menu (file manager or reader menu). Menus, their dialogs and
+settings work normally over the page. Once nothing is left open above the page, the reply
+"back" hands the screen back: same page, no reload, one full flash. If KOReader moves on
+instead (the file-browser/home icon, a book opened from History, "Close web browser" in
+Tools > Web browser), the reply "quit" makes the browser exit without drawing, and KOReader
+stays on its new screen. KOReader exiting or restarting from the menu kills the browser.
