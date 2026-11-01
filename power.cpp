@@ -4,6 +4,8 @@
 #include <QtCore/QProcess>
 #include <QtCore/QFile>
 #include <QtCore/QDir>
+#include <QtCore/QFileInfo>
+#include <QtCore/QStringList>
 #include <QtCore/QDebug>
 #include <QtCore/QCoreApplication>
 #include <QtWidgets/QApplication>
@@ -48,17 +50,24 @@ KoboFrontlight::KoboFrontlight(QObject *parent)
     : QObject(parent), m_bright(0), m_warmth(0), m_mixerMax(10), m_mixerInverted(true), m_savedBright(-1)
 {
     s_instance = this;
+    // Clara BW: the light that is actually lit is lm3630a_led (KOReader drives it through
+    // the ntx_io ioctl, which lands there); mxc_msp430.0 exists but stays at 0.
     const char *b = getenv("KB_FL_BRIGHTNESS");
-    QString bp = (b && *b) ? QString::fromLocal8Bit(b) : QString("/sys/class/backlight/mxc_msp430.0/brightness");
-    if (QFile::exists(bp)) {
+    QStringList cands;
+    if (b && *b) cands << QString::fromLocal8Bit(b);
+    else cands << "/sys/class/backlight/lm3630a_led/brightness" << "/sys/class/backlight/mxc_msp430.0/brightness";
+    foreach (const QString &bp, cands) {
+        if (!QFile::exists(bp)) continue;
         m_brightPath = bp;
         m_bright = qBound(0, readLine(bp).toInt(), 100);
+        break;
     }
     const char *m = getenv("KB_FL_MIXER");
     QString mp = (m && *m) ? QString::fromLocal8Bit(m) : QString("/sys/class/backlight/lm3630a_led/color");
     if (QFile::exists(mp)) {
         m_mixerPath = mp;
-        m_mixerMax = envInt("KB_FL_MIXER_MAX", 10);
+        int maxColor = readLine(QFileInfo(mp).path() + "/max_color").toInt();
+        m_mixerMax = envInt("KB_FL_MIXER_MAX", maxColor > 0 ? maxColor : 10);
         m_mixerInverted = envInt("KB_FL_MIXER_INVERTED", 1) != 0;
         int raw = qBound(0, readLine(mp).toInt(), m_mixerMax);
         int w = m_mixerInverted ? m_mixerMax - raw : raw;

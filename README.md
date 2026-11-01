@@ -52,8 +52,8 @@ runs, so the browser answers the power button itself, the way KOReader's Kobo co
 - Auto-sleep after KB_AUTOSLEEP_MIN minutes without a tap (default 30, 0 = never).
 - Frontlight: a vertical swipe that starts within KB_LIGHT_EDGE px (48) of the left edge
   sets brightness (up = brighter), of the right edge sets warmth. Horizontal swipes from
-  the edges are still history back/forward. sysfs: mxc_msp430.0/brightness (0..100) and
-  lm3630a_led/color (0..10, inverted), override with KB_FL_BRIGHTNESS / KB_FL_MIXER.
+  the edges are still history back/forward. sysfs: lm3630a_led/brightness (0..100, else mxc_msp430.0) and
+  lm3630a_led/color (0..max_color, inverted), override with KB_FL_BRIGHTNESS / KB_FL_MIXER.
 - Testing switches: KB_SLEEP_SUSPEND=0 (sleep screen only, no kernel suspend),
   KB_SLEEP_WIFI=0 (leave Wi-Fi alone), KB_SLEEP_COVER=0, KB_POWER_DEV=/dev/input/eventN|none.
   Log lines start with "power:" / "frontlight:".
