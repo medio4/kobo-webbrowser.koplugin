@@ -26,7 +26,7 @@ KoboTouchInput::KoboTouchInput(const QString &device, int screenW, int screenH,
       m_minX(0), m_maxX(0), m_minY(0), m_maxY(0),
       m_slot(0), m_rawX(0), m_rawY(0), m_down(false), m_pendingDown(false),
       m_havePos(false), m_sentDown(false), m_slot1Down(false), m_multiSeen(false),
-      m_raw1X(0), m_raw1Y(0), m_have1(false), m_pinchStart(0), m_pinchLast(0)
+      m_raw1X(0), m_raw1Y(0), m_have1(false), m_pinchStart(0), m_pinchLast(0), m_haveMT(false)
 {
     m_fd = open(device.toLocal8Bit().constData(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (m_fd < 0) {
@@ -36,7 +36,8 @@ KoboTouchInput::KoboTouchInput(const QString &device, int screenW, int screenH,
     struct input_absinfo ai;
     if (ioctl(m_fd, EVIOCGABS(ABS_MT_POSITION_X), &ai) == 0) { m_minX = ai.minimum; m_maxX = ai.maximum; }
     if (ioctl(m_fd, EVIOCGABS(ABS_MT_POSITION_Y), &ai) == 0) { m_minY = ai.minimum; m_maxY = ai.maximum; }
-    if (m_maxX <= m_minX || m_maxY <= m_minY) {
+    m_haveMT = (m_maxX > m_minX && m_maxY > m_minY);
+    if (!m_haveMT) {
         // Fall back to single-touch axes
         if (ioctl(m_fd, EVIOCGABS(ABS_X), &ai) == 0) { m_minX = ai.minimum; m_maxX = ai.maximum; }
         if (ioctl(m_fd, EVIOCGABS(ABS_Y), &ai) == 0) { m_minY = ai.minimum; m_maxY = ai.maximum; }
@@ -81,18 +82,28 @@ void KoboTouchInput::readable()
                         if (m_slot == 0) m_pendingDown = false;
                         else m_slot1Down = false;
                     } else {
-                        // Snow protocol: tracking id doubles as slot number.
+                        // Snow protocol (Clara BW and other Kobo panels, see KOReader's
+                        // handleTouchEvSnow): there is never an ABS_MT_SLOT event, the tracking
+                        // id IS the slot number (0 = first finger, 1 = second), it is never set
+                        // to -1, and lift comes as BTN_TOUCH 0.
+                        m_slot = e.value;
                         if (m_slot == 0) m_pendingDown = true;
                         else { m_slot1Down = true; m_multiSeen = true; }
                     }
                     break;
-                case ABS_MT_POSITION_X:
                 case ABS_X:
+                case ABS_Y:
+                    // Single-touch duplicates; with multitouch axes they may describe either
+                    // contact (or several on the lift frame), so only use them without MT.
+                    if (m_haveMT) break;
+                    if (e.code == ABS_X) { m_rawX = e.value; } else { m_rawY = e.value; }
+                    m_havePos = true; m_pendingDown = true;
+                    break;
+                case ABS_MT_POSITION_X:
                     if (m_slot == 0) { m_rawX = e.value; m_havePos = true; m_pendingDown = true; }
                     else { m_raw1X = e.value; m_have1 = true; m_slot1Down = true; m_multiSeen = true; }
                     break;
                 case ABS_MT_POSITION_Y:
-                case ABS_Y:
                     if (m_slot == 0) { m_rawY = e.value; m_havePos = true; m_pendingDown = true; }
                     else { m_raw1Y = e.value; m_have1 = true; m_slot1Down = true; m_multiSeen = true; }
                     break;
@@ -100,10 +111,11 @@ void KoboTouchInput::readable()
                 }
             } else if (e.type == EV_KEY && e.code == BTN_TOUCH) {
                 m_pendingDown = (e.value != 0);
-                if (e.value == 0) m_slot1Down = false;
+                if (e.value == 0) { m_slot1Down = false; m_slot = 0; }
             } else if (e.type == EV_SYN && e.code == SYN_REPORT) {
                 emitState();
-                m_slot = 0; // frames without ABS_MT_SLOT refer to the first contact
+                // The current slot persists: a frame may omit both ABS_MT_SLOT and
+                // ABS_MT_TRACKING_ID when the last contact merely moved.
             }
         }
     }

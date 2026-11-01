@@ -45,5 +45,6 @@ private:
     int m_raw1X, m_raw1Y;        // last raw position of the second contact
     bool m_have1;
     double m_pinchStart, m_pinchLast;   // finger distance when both were first seen / last
+    bool m_haveMT;               // device reports ABS_MT_POSITION_*; ignore ABS_X/ABS_Y then
 };
 #endif
