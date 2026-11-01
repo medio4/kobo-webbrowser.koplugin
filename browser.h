@@ -122,7 +122,7 @@ public slots:
     void sleepToKoreader();   // power button with KB_KO_SLEEP=1: hand off and exit
 private slots:
     void keyboardGo();
-    void pageFocusChanged();
+    void pageTapped();           // a tap landed in the page: keyboard for a text box, else hide it
     void cleanToolbar();
     void saveEpub();
     void saveProgress(const QString &msg);
@@ -154,6 +154,7 @@ private:
     QString m_home;
     KoboEink *m_eink;
     QElapsedTimer m_lastPageTap;
+    QPoint m_tapPress, m_tapRelease;   // last press/release in the page (view coordinates)
     EpubSaver *m_saver;
     int m_restoreY;           // KB_RESTORE_Y: scroll position to restore after the first load (-1 = none)
     KoboTouchInput *m_touch;

@@ -308,11 +308,11 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                 end,
             },
             {
-                text = _("Use KOReader keyboard"),
-                help_text = _("Type addresses and form fields with KOReader's keyboard instead of the browser's own. Takes effect the next time the browser starts."),
-                checked_func = function() return self.settings.native_keyboard ~= false end,
+                text = _("Use KOReader keyboard (experimental)"),
+                help_text = _("Type addresses and form fields in a KOReader input dialog instead of the browser's own keyboard. Off by default: the browser's keyboard types straight into the field. Takes effect the next time the browser starts."),
+                checked_func = function() return self.settings.native_keyboard == true end,
                 callback = function()
-                    self.settings.native_keyboard = (self.settings.native_keyboard == false) and nil or false
+                    self.settings.native_keyboard = (self.settings.native_keyboard == true) and nil or true
                     self:saveSettings()
                 end,
                 separator = true,
@@ -452,7 +452,7 @@ function KoboWebBrowser:run(extra)
     }
     if self.settings.home then env.KB_HOME = self.settings.home end
     os.remove(self.kbd_request); os.remove(self.kbd_reply)
-    if self.settings.native_keyboard ~= false then
+    if self.settings.native_keyboard == true then
         env.KB_KBD_FILE = self.kbd_request
         env.KB_KBD_REPLY = self.kbd_reply
     end

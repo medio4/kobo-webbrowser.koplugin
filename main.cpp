@@ -523,7 +523,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
         connect(m_view->pager(), SIGNAL(pageTurned()), m_eink, SLOT(hintPageTurn()));
 
     // A tap on a text field in the page pops the keyboard up.
-    connect(m_view->page(), SIGNAL(microFocusChanged()), this, SLOT(pageFocusChanged()));
+    // (The keyboard appears only for a tap on a text box: see eventFilter / pageTapped.)
 
     // Tapping the URL field shows the keyboard.
     m_url->installEventFilter(this);
@@ -555,8 +555,18 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
 
 bool Browser::eventFilter(QObject *obj, QEvent *e)
 {
-    if (obj == m_view && (e->type() == QEvent::MouseButtonPress || e->type() == QEvent::MouseButtonRelease))
+    if (obj == m_view && (e->type() == QEvent::MouseButtonPress || e->type() == QEvent::MouseButtonRelease)) {
         m_lastPageTap.start();
+        QPoint p = static_cast<QMouseEvent *>(e)->pos();
+        if (e->type() == QEvent::MouseButtonPress) {
+            m_tapPress = p;
+        } else if (p.x() >= 0 && (p - m_tapPress).manhattanLength() < 25 && !KoboTouchInput::gestureActive()) {
+            // A tap (not a drag, not the end of a two-finger gesture). The view handles
+            // the click first; then we look at what was tapped.
+            m_tapRelease = p;
+            QTimer::singleShot(0, this, SLOT(pageTapped()));
+        }
+    }
     if (obj == m_url && e->type() == QEvent::MouseButtonRelease)
         QTimer::singleShot(0, this, SLOT(showKeyboard()));
     if (obj == m_status && e->type() == QEvent::MouseButtonRelease && !KoboTouchInput::gestureActive())
@@ -622,15 +632,46 @@ void Browser::keyboardGo()
     QApplication::sendEvent(target, &release);
 }
 
-void Browser::pageFocusChanged()
+// Keyboard only when a text box is tapped (never for scripts focusing a field); a tap
+// anywhere else in the page puts it away. The page is scrolled so the box stays visible
+// above the keyboard.
+void Browser::pageTapped()
 {
-    if (m_kbd->isVisible()) return;
-    // Only pop the keyboard for a focus change caused by a recent tap on the page,
-    // not for scripts focusing a field while the page loads.
-    if (!m_lastPageTap.isValid() || m_lastPageTap.elapsed() > 1500) return;
-    QVariant v = m_view->page()->inputMethodQuery(Qt::ImEnabled);
-    if (v.isValid() && v.toBool() && QApplication::focusWidget() == m_view)
-        showKeyboard();
+    QWebFrame *frame = m_view->page()->mainFrame();
+    QWebHitTestResult hit = frame->hitTestContent(m_tapRelease);
+    bool editable = hit.isContentEditable();
+    if (!editable) {
+        // Fallback for fields the hit test misses (e.g. inside inner frames).
+        QString tag = frame->evaluateJavaScript(
+            "(function(){var e=document.activeElement;if(!e)return '';var t=(e.tagName||'').toLowerCase();"
+            "if(t=='textarea'||e.isContentEditable)return 'y';"
+            "if(t=='input'&&!/^(button|submit|reset|checkbox|radio|file|image|hidden|range|color)$/i.test(e.type||''))return 'y';"
+            "return '';})()").toString();
+        editable = (tag == "y") && m_lastPageTap.isValid() && m_lastPageTap.elapsed() < 400 && hit.linkUrl().isEmpty();
+    }
+    if (!editable) {
+        if (m_kbd->isVisible()) hideKeyboard();
+        return;
+    }
+    m_view->setFocus();
+    showKeyboard();
+    if (!m_kbd->isVisible()) return;   // KOReader keyboard took over instead
+    // Bring the box above the keyboard: its viewport rect in CSS px times the zoom factor.
+    QString rect = frame->evaluateJavaScript(
+        "(function(){var e=document.activeElement;if(!e||!e.getBoundingClientRect)return '';"
+        "var r=e.getBoundingClientRect();return r.top+','+r.bottom;})()").toString();
+    QStringList tb = rect.split(',');
+    if (tb.size() == 2) {
+        qreal z = m_view->zoomFactor();
+        int top = int(tb[0].toDouble() * z), bottom = int(tb[1].toDouble() * z);
+        int kbdTop = m_kbd->mapTo(m_view, QPoint(0, 0)).y();
+        const int margin = 30;
+        if (bottom > kbdTop - margin) {
+            int dy = bottom - (kbdTop - margin);
+            if (top - dy < margin) dy = top - margin;   // never push the top of the box off screen
+            if (dy > 0) frame->scroll(0, dy);
+        }
+    }
 }
 
 void Browser::loadUrlText(const QString &textIn)
@@ -663,6 +704,8 @@ void Browser::showBuiltinKeyboard()
     placeKeyboard();
     m_kbd->raise();
     m_kbd->show();
+    // The keys are painted with the fast waveform; flash the area once so they come up crisp.
+    if (m_eink) m_eink->markDirty(QRect(m_kbd->mapTo(this, QPoint(0, 0)), m_kbd->size()), m_eink->flagsFull());
 }
 
 // ---- Text entry with KOReader's keyboard (textentry.h). The plugin draws its InputDialog
