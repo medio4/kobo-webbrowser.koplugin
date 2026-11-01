@@ -384,7 +384,7 @@ static FlatButton *toolButton(const QString &text, int w, int h)
 }
 
 Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
-    : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_restoreY(-1), m_relaunch(false), m_offline(false)
+    : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_restoreY(-1), m_relaunch(false), m_offline(false), m_offlineShown(false), m_onlineTimer(0)
 {
     setWindowTitle("Browser");
 
@@ -551,6 +551,10 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
         m_relaunch = true;
         m_view->setHtml(html, QUrl(m_home));
         m_status->setText("Offline copy (no connection)");
+        // Every 3 s: once the device is online, the status line offers a reload.
+        m_onlineTimer = new QTimer(this);
+        connect(m_onlineTimer, SIGNAL(timeout()), this, SLOT(checkOnline()));
+        m_onlineTimer->start(3000);
         return;
     }
     if (rf && *rf) qDebug() << "restore: can't read" << restore.fileName() << restore.errorString() << "- loading online";
@@ -564,8 +568,15 @@ bool Browser::eventFilter(QObject *obj, QEvent *e)
         m_lastPageTap.start();
     if (obj == m_url && e->type() == QEvent::MouseButtonRelease)
         QTimer::singleShot(0, this, SLOT(showKeyboard()));
-    if (obj == m_status && e->type() == QEvent::MouseButtonRelease && !KoboTouchInput::gestureActive())
-        fullRefresh();
+    if (obj == m_status && e->type() == QEvent::MouseButtonRelease && !KoboTouchInput::gestureActive()) {
+        if (m_offlineShown) {
+            // Offline copy: load the live page (if still offline it just fails to load).
+            qDebug() << "restore: reloading the live page" << m_home;
+            QTimer::singleShot(0, this, SLOT(reloadLive()));
+        } else {
+            fullRefresh();
+        }
+    }
     return QMainWindow::eventFilter(obj, e);
 }
 
@@ -802,6 +813,10 @@ void Browser::loadProgress(int p)  { if (p % 25 == 0) m_status->setText(QString(
 // show the finished page with one clean full refresh (KoboEink hold, see eink.h).
 void Browser::loadStarted()
 {
+    if (m_offlineShown) {   // any load after the offline copy (reload tap, a link) is live
+        m_offlineShown = false;
+        if (m_onlineTimer) m_onlineTimer->stop();
+    }
     m_status->setText("Loading...");
     if (m_eink && !getenv("KB_NO_LOAD_HOLD")) m_eink->beginHold(m_view);
 }
@@ -809,7 +824,9 @@ void Browser::loadFinished(bool ok)
 {
     if (m_offline) {
         m_status->setText("Offline copy (no connection)");
-        m_offline = false;   // links followed from here load normally
+        m_offline = false;
+        m_offlineShown = true;
+        checkOnline();
     } else {
         m_status->setText(ok ? m_view->title() : "Failed to load page");
     }
@@ -863,6 +880,37 @@ void Browser::sleepToKoreader()
     qDebug() << "power: sleep handoff" << line;
     qApp->quit();
 }
+
+// Online = a default route (Destination 00000000) on an interface other than lo. If
+// wlan0 exists, it must also be "up".
+static bool deviceOnline()
+{
+    QFile oper("/sys/class/net/wlan0/operstate");
+    if (oper.open(QIODevice::ReadOnly)) {
+        QByteArray state = oper.readAll().trimmed();
+        if (state != "up") return false;
+    }
+    QFile route("/proc/net/route");
+    if (!route.open(QIODevice::ReadOnly)) return false;
+    route.readLine();   // header
+    while (!route.atEnd()) {
+        QList<QByteArray> f = route.readLine().simplified().split(' ');
+        if (f.size() > 1 && f[0] != "lo" && f[1] == "00000000") return true;
+    }
+    return false;
+}
+
+void Browser::checkOnline()
+{
+    if (m_offline) return;   // the offline copy is still loading
+    if (!m_offlineShown) { if (m_onlineTimer) m_onlineTimer->stop(); return; }
+    if (!deviceOnline()) return;
+    qDebug() << "restore: online, offering a reload";
+    m_status->setText(QString("Offline copy ") + QChar(0x00b7) + " tap here to reload");
+    if (m_onlineTimer) m_onlineTimer->stop();
+}
+
+void Browser::reloadLive() { loadUrlText(m_home); }
 
 void Browser::releaseLoadHold()
 {

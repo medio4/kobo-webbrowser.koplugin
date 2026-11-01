@@ -789,7 +789,9 @@ function KoboWebBrowser:flashWhite()
     screen.refreshFull = saved.screen.refreshFull   -- nil: the class method
     local ok, err = pcall(function()
         screen.bb:fill(Blitbuffer.COLOR_WHITE)
-        screen:refreshFull()
+        -- fb:refreshFull needs the rectangle (UIManager always passes one); without it
+        -- getBoundedRect compares nil and the flash never happens.
+        screen:refreshFull(0, 0, screen:getWidth(), screen:getHeight())
     end)
     if not ok then logger.warn("KoboWebBrowser: white flash failed:", err) end
     screen.bb, screen.refreshFull = scratch, guard
@@ -880,7 +882,7 @@ function KoboWebBrowser:onBrowserGone(reason)
         local Screen = Device.screen
         UIManager:setDirty("all", "full")
         UIManager:forceRePaint()
-        pcall(function() Screen:refreshFull() end)
+        pcall(function() Screen:refreshFull(0, 0, Screen:getWidth(), Screen:getHeight()) end)
         UIManager:scheduleIn(0.6, function()
             UIManager:setDirty("all", "full")
             UIManager:forceRePaint()
