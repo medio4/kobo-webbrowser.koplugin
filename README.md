@@ -80,7 +80,7 @@ podman, and `./package.sh` makes the plugin folder and the release zip.
 
 ## License
 
-GPL-3.0-or-later, see [LICENSE](LICENSE). Bundled and runtime third-party pieces are
+AGPL-3.0-or-later (the same license as KOReader), see [LICENSE](LICENSE). Bundled and runtime third-party pieces are
 listed in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 Not affiliated with Kobo or Rakuten.
