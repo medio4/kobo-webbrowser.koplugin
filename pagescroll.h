@@ -21,7 +21,7 @@ public:
     // Horizontal panning of the thing under the finger: the nearest ancestor of the
     // element at `viewPos` that can scroll sideways (wide table in an overflow box,
     // scrollable div, inner frame), else the page itself.
-    struct HTarget { QWebElement element; QWebFrame *frame; HTarget() : frame(0) {} };
+    struct HTarget { bool found; QWebFrame *frame; HTarget() : found(false), frame(0) {} };
     HTarget findHScrollable(const QPoint &viewPos) const;
     void panHorizontal(const HTarget &t, int dx);   // dx > 0 scrolls content to the left
     int swipeMin() const { return m_swipeMin; }

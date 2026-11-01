@@ -10,6 +10,7 @@
 #include <QtCore/QRect>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
+#include <QtCore/QElapsedTimer>
 class QWindow;
 class QWidget;
 class FbWriter;
@@ -41,6 +42,9 @@ public:
     // Paint the whole screen white and flash it, synchronously: called on Exit so the
     // user sees at once that the browser is gone, before KOReader repaints itself.
     void clearScreenForExit();
+    // After releaseHold(), late images/scripts keep repainting the page with partial
+    // updates. Once those stop for KB_SETTLE_MS (within KB_SETTLE_WINDOW_MS of the load),
+    // one more full flash cleans the ghosting. A page turn or user hint cancels it.
     void beginHold(QWidget *w);
     void releaseHold(bool fullFlash = true);
     bool holding() const { return m_holdWidget != 0; }
@@ -64,6 +68,7 @@ private slots:
     void flush();
     void holdTick();
     void settleFast();   // after a burst of fast updates: clean refresh of their area
+    void settleLoad();   // page stopped repainting after a load: one more full flash
 private:
     // One refresh policy for both backends: picks the waveform name (fbink -W spelling:
     // AUTO, DU, GL16, GC16, REAGL, A2) and whether to flash, and keeps the counters.
@@ -80,6 +85,11 @@ private:
     QRect m_held;               // bounding rect of repaints swallowed during a hold
     QTimer m_holdTimer;
     QTimer m_settleTimer;
+    QTimer m_loadSettleTimer;      // quiet-period timer after a load
+    QWidget *m_loadSettleWidget;   // the web view to flash when it settles (0 = inactive)
+    QElapsedTimer m_loadSettleSince;
+    int m_loadSettleWindowMs;
+    bool m_loadSettleDirty;        // something repainted since the release flash
     bool m_suspended;
     QRegion m_fastDirty;        // areas refreshed with the fast waveform since the last cleanup
     QString m_wfClean;

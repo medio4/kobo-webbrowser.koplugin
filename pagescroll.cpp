@@ -67,34 +67,48 @@ PageScroller::HTarget PageScroller::findHScrollable(const QPoint &viewPos) const
     if (!main) return t;
     QWebHitTestResult hit = main->hitTestContent(viewPos);
     t.frame = hit.frame() ? hit.frame() : main;
-    // Walk up from the hit element looking for something that overflows sideways and
-    // is allowed to scroll (overflow-x auto/scroll, or the element already scrolled).
-    for (QWebElement el = hit.element(); !el.isNull(); el = el.parent()) {
-        QVariant v = el.evaluateJavaScript(
-            "(function(e){"
-            " if (!e || !e.clientWidth || e.scrollWidth <= e.clientWidth + 2) return false;"
-            " var cs = window.getComputedStyle(e); var ox = cs ? cs.overflowX : '';"
-            " if (e === document.body || e === document.documentElement) return false;"
-            " return ox === 'auto' || ox === 'scroll' || e.scrollLeft > 0;"
-            "})(this)");
-        if (v.toBool()) { t.element = el; return t; }
-    }
+    // Find the nearest ancestor of the element under the finger that overflows
+    // sideways and may scroll. Done in the page's own JavaScript (elementFromPoint in
+    // CSS pixels, so divide by the zoom), because QWebHitTestResult::element() comes
+    // back null for text hits; the element is kept in window.__kbPan for panHorizontal.
+    const char *js =
+        "(function(x,y){"
+        " var e = document.elementFromPoint(x,y), hit = e;"
+        " while (e) {"
+        "  if (e !== document.body && e !== document.documentElement && e.clientWidth && e.scrollWidth > e.clientWidth + 2) {"
+        "   var cs = window.getComputedStyle(e); var ox = cs ? cs.overflowX : '';"
+        "   if (ox === 'auto' || ox === 'scroll' || e.scrollLeft > 0) { window.__kbPan = e; return 'el:' + e.tagName + '.' + e.className; }"
+        "  }"
+        "  e = e.parentElement;"
+        " }"
+        " window.__kbPan = null; return 'none:' + (hit ? hit.tagName : 'null');"
+        "})(%1,%2)";
+    qreal z = m_view->zoomFactor() > 0 ? m_view->zoomFactor() : 1.0;
+    QPoint fp = viewPos;
+    if (t.frame != main) fp = viewPos - t.frame->geometry().topLeft();   // rough: nested frames
+    QString r = t.frame->evaluateJavaScript(QString::fromLatin1(js).arg(fp.x() / z).arg(fp.y() / z)).toString();
+    if (r.startsWith("el:")) t.found = true;
+    if (getenv("KB_TOUCH_DEBUG"))
+        qDebug() << "hpan:" << r << "zoom" << z << "frame" << (t.frame == main ? "main" : "sub")
+                 << "contents" << main->contentsSize();
     return t;
 }
 
 void PageScroller::panHorizontal(const HTarget &t, int dx)
 {
     if (dx == 0) return;
-    if (!t.element.isNull()) {
-        QWebElement el = t.element;   // evaluateJavaScript is non-const
-        QVariant moved = el.evaluateJavaScript(
-            QString("(function(e,d){var b=e.scrollLeft; e.scrollLeft=b+d; return e.scrollLeft-b;})(this,%1)").arg(dx));
-        if (moved.toInt() != 0) return;   // the element took it; otherwise fall through
-    }
     QWebFrame *f = t.frame ? t.frame : (m_view->page() ? m_view->page()->mainFrame() : 0);
     if (!f) return;
+    if (t.found) {
+        QVariant moved = f->evaluateJavaScript(
+            QString("(function(d){var e=window.__kbPan; if(!e) return 0; var b=e.scrollLeft; e.scrollLeft=b+d; return e.scrollLeft-b;})(%1)").arg(dx));
+        if (getenv("KB_TOUCH_DEBUG")) qDebug() << "hpan: element moved" << moved.toInt() << "of" << dx;
+        if (moved.toInt() != 0) return;   // the element took it; otherwise fall through
+    }
     QPoint before = f->scrollPosition();
     f->scroll(dx, 0);
     if (f->scrollPosition() == before && f != m_view->page()->mainFrame())
         m_view->page()->mainFrame()->scroll(dx, 0);   // inner frame can't move: pan the page
+    if (getenv("KB_TOUCH_DEBUG"))
+        qDebug() << "hpan: frame" << before << "->" << m_view->page()->mainFrame()->scrollPosition() << "dx" << dx;
 }
