@@ -21,8 +21,8 @@ public:
     static void applySettings(QWebSettings *ws);
     static qint64 diskCacheBytes();   // KB_DISK_CACHE_MB (default 10)
 public slots:
-    // Called on loadFinished: a few seconds later (after the e-ink refresh), drop dead
-    // cache entries, run the JavaScript GC and return freed heap to the system.
+    // Called on loadFinished: a few seconds later (after the e-ink refresh), run the
+    // JavaScript GC and return freed heap to the system (KB_TRIM_CLEAR=1: also clear caches).
     // KB_NO_TRIM=1 disables.
     void scheduleTrim();
     void trimNow();
