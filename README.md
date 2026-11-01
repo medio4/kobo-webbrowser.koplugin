@@ -60,6 +60,15 @@ runs, so the browser answers the power button itself, the way KOReader's Kobo co
   the launcher calls UIManager:suspend() so KOReader sleeps with its own screensaver
   (wallpapers) and Wi-Fi handling, and on Resume relaunches the browser with the URL and
   KB_RESTORE_Y / KB_RESTORE_ZOOM (after waiting up to 15 s for Wi-Fi). History is not kept.
+- KB_KO_LIVE=1 (with KB_POWER_DEV=none and KB_NO_ESCAPE=1; set by the KOReader plugin):
+  KOReader keeps running in the background with its input devices open. The browser
+  grabs the touchscreen, so taps never reach KOReader, but KOReader keeps the power button
+  and sleep cover. On a power press or cover close the plugin sends the browser SIGTERM;
+  with KB_KO_LIVE=1 that writes the same `sleep` handoff line as above before quitting,
+  and KOReader then shows its screensaver and suspends. The Exit button and SIGINT quit
+  without a sleep line. Auto-sleep still comes from the browser's own idle timer
+  (KB_AUTOSLEEP_MIN with KB_KO_SLEEP=1); the plugin keeps KOReader's AutoSuspend quiet
+  while the browser runs.
 - Testing switches: KB_SLEEP_SUSPEND=0 (sleep screen only, no kernel suspend),
   KB_SLEEP_WIFI=0 (leave Wi-Fi alone), KB_SLEEP_COVER=0, KB_POWER_DEV=/dev/input/eventN|none.
   Log lines start with "power:" / "frontlight:".

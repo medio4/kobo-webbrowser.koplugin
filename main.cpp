@@ -807,13 +807,35 @@ void Browser::saveFinished(bool ok, const QString &msg)
 // ----------------------------------------------------------------------- main
 
 static volatile sig_atomic_t g_quitRequested = 0;
-static void onSignal(int) { g_quitRequested = 1; }
+static void onSignal(int sig) { g_quitRequested = sig; }
 
+// KB_KO_LIVE=1: KOReader keeps running beside us and owns sleep. When the power button or
+// sleep cover is used it sends SIGTERM, so on SIGTERM we note the page in the handoff file
+// first (Browser::sleepToKoreader) and the plugin reopens it on wake. The Exit button and
+// SIGINT still quit without a sleep line.
 class QuitPoller : public QObject {
 public:
-    QuitPoller() { startTimer(300); }
+    QuitPoller() : m_browser(0), m_koLive(getenv("KB_KO_LIVE") && atoi(getenv("KB_KO_LIVE")) != 0)
+    {
+        startTimer(300);
+    }
+    void setBrowser(Browser *b) { m_browser = b; }
 protected:
-    void timerEvent(QTimerEvent *) { if (g_quitRequested) qApp->quit(); }
+    void timerEvent(QTimerEvent *)
+    {
+        if (!g_quitRequested) return;
+        if (m_koLive && m_browser && g_quitRequested == SIGTERM) {
+            g_quitRequested = 0;
+            Browser *b = m_browser;
+            m_browser = 0;              // a second SIGTERM just quits
+            b->sleepToKoreader();   // writes the sleep line, then quits
+            return;
+        }
+        qApp->quit();
+    }
+private:
+    Browser *m_browser;
+    bool m_koLive;
 };
 
 // Heartbeat for run.sh's kb-escape watchdog: touch KB_HEARTBEAT_FILE once a second from
@@ -904,6 +926,7 @@ int main(int argc, char **argv)
     // Frontlight (edge swipes) and power button / sleep cover / auto-sleep (power.cpp).
     KoboFrontlight *frontlight = new KoboFrontlight(&app);
     Browser w(home, eink);
+    quitPoller.setBrowser(&w);
     KoboPower *power = new KoboPower(eink, &app);
     QObject::connect(power, SIGNAL(message(QString)), &w, SLOT(saveProgress(QString)));
     QObject::connect(power, SIGNAL(sleepRequested()), &w, SLOT(sleepToKoreader()));
