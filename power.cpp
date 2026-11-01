@@ -164,6 +164,8 @@ KoboPower::KoboPower(KoboEink *eink, QObject *parent)
       m_unexpected(0), m_wifiOff(false), m_extended(false), m_wifi(0)
 {
     m_dir = QCoreApplication::applicationDirPath();
+    m_koSleep = envInt("KB_KO_SLEEP", 0) != 0;
+    m_koRequested = false;
     m_suspendEnabled = envInt("KB_SLEEP_SUSPEND", 1) != 0;
     m_wifiEnabled = envInt("KB_SLEEP_WIFI", 1) != 0;
     m_coverEnabled = envInt("KB_SLEEP_COVER", 1) != 0;
@@ -186,7 +188,7 @@ KoboPower::KoboPower(KoboEink *eink, QObject *parent)
     m_lastToggle.start();
     m_pressActive = false;
     qDebug() << "power: device fd" << m_fd << "autosleep" << idleMin << "min suspend" << m_suspendEnabled
-             << "wifi" << m_wifiEnabled << "cover" << m_coverEnabled;
+             << "wifi" << m_wifiEnabled << "cover" << m_coverEnabled << "via KOReader" << m_koSleep;
 }
 
 KoboPower::~KoboPower()
@@ -328,6 +330,15 @@ void KoboPower::hideSleepScreen()
 void KoboPower::sleep()
 {
     if (m_state != Awake) return;
+    if (m_koSleep) {
+        // Power button, sleep cover or auto-sleep: let KOReader sleep (with its screensaver).
+        if (m_koRequested) return;
+        m_koRequested = true;
+        m_idle.stop();
+        qDebug() << "power: handing sleep to KOReader";
+        emit sleepRequested();
+        return;
+    }
     qDebug() << "power: going to sleep";
     m_state = Entering;
     m_lastToggle.restart();

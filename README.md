@@ -54,6 +54,12 @@ runs, so the browser answers the power button itself, the way KOReader's Kobo co
   sets brightness (up = brighter), of the right edge sets warmth. Horizontal swipes from
   the edges are still history back/forward. sysfs: lm3630a_led/brightness (0..100, else mxc_msp430.0) and
   lm3630a_led/color (0..max_color, inverted), override with KB_FL_BRIGHTNESS / KB_FL_MIXER.
+- KB_KO_SLEEP=1 (applauncher.koplugin sets it, plus KB_AUTOSLEEP_MIN from KOReader's
+  auto-suspend setting): power button, sleep cover and auto-sleep don't suspend here.
+  The browser writes `sleep<TAB>url<TAB>scrollY<TAB>zoom` to the handoff file and exits;
+  the launcher calls UIManager:suspend() so KOReader sleeps with its own screensaver
+  (wallpapers) and Wi-Fi handling, and on Resume relaunches the browser with the URL and
+  KB_RESTORE_Y / KB_RESTORE_ZOOM (after waiting up to 15 s for Wi-Fi). History is not kept.
 - Testing switches: KB_SLEEP_SUSPEND=0 (sleep screen only, no kernel suspend),
   KB_SLEEP_WIFI=0 (leave Wi-Fi alone), KB_SLEEP_COVER=0, KB_POWER_DEV=/dev/input/eventN|none.
   Log lines start with "power:" / "frontlight:".

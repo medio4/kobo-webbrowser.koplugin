@@ -115,6 +115,7 @@ public slots:
     void focusUrl();
     void screenshot();
     void releaseLoadHold();
+    void sleepToKoreader();   // power button with KB_KO_SLEEP=1: hand off and exit
 private slots:
     void keyboardGo();
     void pageFocusChanged();
@@ -144,6 +145,7 @@ private:
     KoboEink *m_eink;
     QElapsedTimer m_lastPageTap;
     EpubSaver *m_saver;
+    int m_restoreY;           // KB_RESTORE_Y: scroll position to restore after the first load (-1 = none)
 };
 
 #endif

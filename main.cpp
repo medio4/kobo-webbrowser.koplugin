@@ -382,7 +382,7 @@ static FlatButton *toolButton(const QString &text, int w, int h)
 }
 
 Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
-    : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0)
+    : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_restoreY(-1)
 {
     setWindowTitle("Browser");
 
@@ -516,6 +516,12 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     m_view->installEventFilter(this);
     // Tapping the title/status line forces a full-screen refresh (so does a two-finger tap).
     m_status->installEventFilter(this);
+
+    // Relaunched after a KOReader sleep: put the page back where it was.
+    const char *ry = getenv("KB_RESTORE_Y");
+    m_restoreY = (ry && *ry) ? atoi(ry) : -1;
+    const char *rz = getenv("KB_RESTORE_ZOOM");
+    if (rz && *rz && atof(rz) > 0.2) m_view->setZoomFactor(atof(rz));
 
     loadUrlText(m_home);
 }
@@ -662,9 +668,27 @@ void Browser::loadStarted()
 void Browser::loadFinished(bool ok)
 {
     m_status->setText(ok ? m_view->title() : "Failed to load page");
+    if (ok && m_restoreY > 0) {
+        m_view->page()->mainFrame()->setScrollPosition(QPoint(0, m_restoreY));
+        m_restoreY = -1;
+    }
     // WebKit usually does a last layout/paint shortly after loadFinished; give it a moment.
     QTimer::singleShot(250, this, SLOT(releaseLoadHold()));
 }
+// Hand sleep to KOReader: note the page (URL, scroll, zoom) in the handoff file and
+// exit. applauncher.koplugin puts KOReader to sleep with its own screensaver and
+// relaunches the browser on this page when the device wakes.
+void Browser::sleepToKoreader()
+{
+    QString url = m_view->url().toString();
+    if (url.isEmpty() || url == "about:blank") url = m_home;
+    int y = m_view->page()->mainFrame()->scrollPosition().y();
+    QString line = url + '\t' + QString::number(y) + '\t' + QString::number(m_view->zoomFactor(), 'f', 2);
+    EpubSaver::appendHandoff("sleep", line);
+    qDebug() << "power: sleep handoff" << line;
+    qApp->quit();
+}
+
 void Browser::releaseLoadHold()
 {
     if (m_eink) m_eink->releaseHold(true);
@@ -882,6 +906,7 @@ int main(int argc, char **argv)
     Browser w(home, eink);
     KoboPower *power = new KoboPower(eink, &app);
     QObject::connect(power, SIGNAL(message(QString)), &w, SLOT(saveProgress(QString)));
+    QObject::connect(power, SIGNAL(sleepRequested()), &w, SLOT(sleepToKoreader()));
     QObject::connect(frontlight, SIGNAL(message(QString)), &w, SLOT(saveProgress(QString)));
     if (touchInput) QObject::connect(touchInput, SIGNAL(pinch(double)), &w, SLOT(pinchZoom(double)));
     QScreen *scr = app.primaryScreen();

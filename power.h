@@ -49,6 +49,10 @@ public:
     bool sleeping() const { return m_state != Awake; }
 signals:
     void message(const QString &text);   // for the status line
+    // KB_KO_SLEEP=1 (set by applauncher.koplugin): instead of suspending itself, the
+    // browser hands sleep to KOReader (its screensaver/wallpaper and suspend code) and
+    // exits; KOReader relaunches it on wake.
+    void sleepRequested();
 protected:
     bool eventFilter(QObject *obj, QEvent *e);   // any tap/key resets the idle timer
 public slots:
@@ -86,6 +90,8 @@ private:
     QElapsedTimer m_lastToggle; // debounce: one press = one transition
     QElapsedTimer m_pressTimer; // length of the current power-key press
     bool m_pressActive;
+    bool m_koSleep;             // KB_KO_SLEEP=1: emit sleepRequested() instead
+    bool m_koRequested;
     QString m_dir;              // where wifi-sleep.sh lives (the binary's folder)
 };
 #endif
