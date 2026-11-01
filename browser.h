@@ -19,6 +19,7 @@ class KoboEink;
 // Page: a swipe or an edge tap turns one screen at a time (PageScroller).
 // In both, a short tap is forwarded as a click.
 
+class EpubSaver;
 class TouchWebView : public QWebView {
     Q_OBJECT
 public:
@@ -111,6 +112,9 @@ private slots:
     void keyboardGo();
     void pageFocusChanged();
     void cleanToolbar();
+    void saveEpub();
+    void saveProgress(const QString &msg);
+    void saveFinished(bool ok, const QString &msg);
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
     void resizeEvent(QResizeEvent *e);
@@ -126,6 +130,7 @@ private:
     KoboEink *m_eink;
     FlatButton *m_modeBtn;
     void applyScrollMode(bool pageMode, bool save);
+    EpubSaver *m_saver;
 };
 
 #endif

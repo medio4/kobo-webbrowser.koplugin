@@ -1,0 +1,7 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource prefix="/js">
+    <file>js/prelude.js</file>
+    <file>js/Readability.js</file>
+    <file>js/extract.js</file>
+</qresource>
+</RCC>

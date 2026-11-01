@@ -8,6 +8,7 @@
 #include "eink.h"
 #include "webpage.h"
 #include "pagescroll.h"
+#include "epub.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QPushButton>
@@ -314,7 +315,7 @@ static FlatButton *toolButton(const QString &text, int w, int h)
 }
 
 Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
-    : QMainWindow(parent), m_home(home), m_eink(eink)
+    : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0)
 {
     setWindowTitle("Browser");
 
@@ -345,22 +346,24 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     row1->addWidget(m_url, 1); row1->addWidget(clear); row1->addWidget(go);
     barBox->addLayout(row1);
 
-    // Nine buttons + 8 gaps of 6 px must fit in 1064 px: widths add up to 1016.
-    FlatButton *back = toolButton(QString::fromUtf8("\xE2\x97\x80"), 100, bh);   // ◀
-    FlatButton *fwd  = toolButton(QString::fromUtf8("\xE2\x96\xB6"), 100, bh);   // ▶
-    FlatButton *rel  = toolButton("Reload", 150, bh);
-    FlatButton *mode = toolButton("Page", 120, bh);
+    // Ten buttons + 9 gaps of 6 px must fit in 1064 px: widths add up to 1010.
+    FlatButton *back = toolButton(QString::fromUtf8("\xE2\x97\x80"), 90, bh);   // ◀
+    FlatButton *fwd  = toolButton(QString::fromUtf8("\xE2\x96\xB6"), 90, bh);   // ▶
+    FlatButton *rel  = toolButton("Reload", 140, bh);
+    FlatButton *mode = toolButton("Page", 110, bh);
     m_modeBtn = mode;
     m_modeBtn->setToolTip("Scroll mode: Page (swipe/edge tap turns a screen) or Live (drag)");
-    FlatButton *kbd  = toolButton("Keys", 120, bh);
-    FlatButton *zi   = toolButton("A+", 100, bh);
-    FlatButton *zo   = toolButton("A-", 100, bh);
-    FlatButton *shot = toolButton("Shot", 110, bh);
-    FlatButton *quit = toolButton("Exit", 116, bh);
+    FlatButton *kbd  = toolButton("Keys", 110, bh);
+    FlatButton *zi   = toolButton("A+", 90, bh);
+    FlatButton *zo   = toolButton("A-", 90, bh);
+    FlatButton *save = toolButton("Save", 110, bh);
+    save->setToolTip("Save this page as an EPUB in the library");
+    FlatButton *shot = toolButton("Shot", 100, bh);
+    FlatButton *quit = toolButton("Exit", 80, bh);
     QHBoxLayout *row2 = new QHBoxLayout; row2->setSpacing(6);
     row2->addWidget(back); row2->addWidget(fwd); row2->addWidget(rel); row2->addWidget(m_modeBtn);
     row2->addStretch(1);
-    row2->addWidget(kbd); row2->addWidget(zi); row2->addWidget(zo); row2->addWidget(shot); row2->addWidget(quit);
+    row2->addWidget(kbd); row2->addWidget(zi); row2->addWidget(zo); row2->addWidget(save); row2->addWidget(shot); row2->addWidget(quit);
     barBox->addLayout(row2);
     vbox->addWidget(m_bar);
 
@@ -408,6 +411,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     connect(kbd, SIGNAL(clicked()), this, SLOT(toggleKeyboard()));
     connect(zi, SIGNAL(clicked()), this, SLOT(zoomIn()));
     connect(zo, SIGNAL(clicked()), this, SLOT(zoomOut()));
+    connect(save, SIGNAL(clicked()), this, SLOT(saveEpub()));
     connect(quit, SIGNAL(clicked()), this, SLOT(quit()));
     connect(shot, SIGNAL(clicked()), this, SLOT(screenshot()));
     connect(m_url, SIGNAL(returnPressed()), this, SLOT(go()));
@@ -587,6 +591,31 @@ void Browser::screenshot()
     if (!QDir("/mnt/onboard").exists()) dir = QDir::homePath() + "/screenshots";
     QString path = m_eink ? m_eink->saveScreenshot(dir) : QString();
     m_status->setText(path.isEmpty() ? QString("Screenshot failed") : QString("Saved " + path.mid(path.indexOf("screenshots"))));
+}
+
+// ---- Save as EPUB (see epub.cpp)
+
+void Browser::saveEpub()
+{
+    if (m_saver && m_saver->isRunning()) return;
+    delete m_saver;
+    m_saver = new EpubSaver(m_view->page(), EpubSaver::defaultOutDir(), this);
+    connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
+    connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(saveFinished(bool,QString)));
+    m_saver->start();
+}
+
+void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }
+
+void Browser::saveFinished(bool ok, const QString &msg)
+{
+    if (ok) {
+        QString shown = msg;
+        if (shown.startsWith("/mnt/onboard/")) shown = shown.mid(13);
+        m_status->setText("Saved: " + shown);
+    } else {
+        m_status->setText("Save failed: " + msg);
+    }
 }
 
 // ----------------------------------------------------------------------- main
