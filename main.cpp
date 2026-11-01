@@ -46,6 +46,7 @@
 #include <QtWebKit/QWebSettings>
 #include <QtWebKitWidgets/QWebFrame>
 #include <QtWebKitWidgets/QWebPage>
+#include <QtWebKitWidgets/QWebView>
 
 #include <cstdlib>
 #include <cstring>
@@ -849,5 +850,19 @@ int main(int argc, char **argv)
     QTimer::singleShot(1500, eink, SLOT(refreshAllFull()));
     // Test hook: KB_TEST_SAVE=<seconds> triggers Save-as-EPUB automatically.
     if (getenv("KB_TEST_SAVE")) QTimer::singleShot(atoi(getenv("KB_TEST_SAVE")) * 1000, &w, SLOT(saveEpub()));
+    // Test hook: KB_TEST_NAV="url url back ..." loads one entry every KB_TEST_NAV_MS (12000) ms
+    // ("back" = history back), logging "testnav:" lines; then quits after one more interval.
+    if (getenv("KB_TEST_NAV")) {
+        QStringList *steps = new QStringList(QString::fromLocal8Bit(getenv("KB_TEST_NAV")).split(' ', QString::SkipEmptyParts));
+        QTimer *t = new QTimer(&w);
+        QObject::connect(t, &QTimer::timeout, [steps, &w, &app]() {
+            QWebView *v = w.findChild<QWebView *>();
+            if (steps->isEmpty() || !v) { app.quit(); return; }
+            QString s = steps->takeFirst();
+            qDebug() << "testnav:" << s;
+            if (s == "back") v->back(); else v->load(QUrl(s));
+        });
+        t->start(getenv("KB_TEST_NAV_MS") ? atoi(getenv("KB_TEST_NAV_MS")) : 12000);
+    }
     return app.exec();
 }
