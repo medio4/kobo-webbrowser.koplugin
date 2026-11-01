@@ -713,8 +713,19 @@ end
 -- ---- KOReader's menus over the browser ------------------------------------------------
 
 -- The UI the menu was opened in (FileManager or ReaderUI), and whether it's still shown.
+-- (FileManager has no name of its own: compare with the class / its instance.)
 local function isKoreaderUI(w)
-    return w and (w.name == "filemanager" or w.name == "ReaderUI")
+    if not w then return false end
+    local FileManager = package.loaded["apps/filemanager/filemanager"]
+    local ReaderUI = package.loaded["apps/reader/readerui"]
+    if FileManager and (w == FileManager.instance or getmetatable(w) == FileManager) then return true end
+    if ReaderUI and (w == ReaderUI.instance or getmetatable(w) == ReaderUI) then return true end
+    return w.name == "ReaderUI"
+end
+local function uiName(w)
+    local ReaderUI = package.loaded["apps/reader/readerui"]
+    if ReaderUI and (w == ReaderUI.instance or getmetatable(w) == ReaderUI) then return "reader" end
+    return w and "file manager" or "nothing"
 end
 
 -- The KOReader screen under our cover (topmost FileManager / ReaderUI below it). Not
@@ -738,7 +749,7 @@ function KoboWebBrowser:onMenuRequest()
         writeAtomically(self.menu_reply, "back\n")
         return
     end
-    logger.info("KoboWebBrowser: opening KOReader's menu over the browser, in", tostring(ui.name))
+    logger.info("KoboWebBrowser: opening KOReader's menu over the browser, in the", uiName(ui))
     -- Copy the browser's frozen picture off the real framebuffer: the cover paints it, so
     -- whatever KOReader repaints under its menus (a menu getting shorter, a dialog closing)
     -- shows the page instead of stale menu pixels or the file manager.
@@ -748,6 +759,30 @@ function KoboWebBrowser:onMenuRequest()
         snap = Blitbuffer.new(real:getWidth(), real:getHeight(), real:getType())
         snap:blitFrom(real, 0, 0, 0, 0, real:getWidth(), real:getHeight())
     end)
+    if ok then
+        -- The browser's toolbar (top ~220 px) always has black text and borders. No dark
+        -- pixel there means we're not reading what the browser drew (wrong buffer/depth).
+        local dark, n = 0, 0
+        pcall(function()
+            local w = snap:getWidth()
+            local h = math.min(220, snap:getHeight())
+            for yy = 0, h - 1, 3 do
+                for xx = 0, w - 1, 5 do
+                    n = n + 1
+                    if snap:getPixel(xx, yy):getColor8().a < 0x80 then dark = dark + 1 end
+                end
+            end
+        end)
+        logger.info("KoboWebBrowser: page copy", snap:getWidth(), "x", snap:getHeight(), "type", snap:getType(),
+            "-", dark, "of", n, "toolbar samples dark")
+        if n > 0 and dark == 0 then
+            -- Keep KOReader's hands off the page instead (the keyboard's way: the cover
+            -- paints nothing; stale menu pixels may linger until the browser repaints).
+            logger.warn("KoboWebBrowser: page copy is blank, not painting it")
+            pcall(snap.free, snap)
+            snap = nil
+        end
+    end
     if not ok then
         logger.warn("KoboWebBrowser: could not copy the browser's picture:", err)
         if snap and snap.free then pcall(snap.free, snap) end
@@ -760,12 +795,20 @@ function KoboWebBrowser:onMenuRequest()
         cover.paintTo = function(_, bb, x, y)
             bb:blitFrom(snap, x, y, 0, 0, snap:getWidth(), snap:getHeight())
         end
-        -- Repaint the cover (the page) under anything KOReader repaints, so areas a menu
-        -- no longer covers get the page back. UIManager only paints from the lowest dirty
-        -- widget up, and stops at the cover (it covers the full screen).
+        -- Repaint the cover (the page) under anything KOReader repaints above it, so areas
+        -- a menu no longer covers get the page back. UIManager only paints from the lowest
+        -- dirty widget up, and stops at the cover (it covers the full screen).
+        -- Only widgets ABOVE the cover count: the file manager / reader under it stay in
+        -- _dirty forever (they're never painted, so never cleared), and counting them made
+        -- every UI tick repaint and refresh the whole screen (endless flashing, no input).
         local repaint = UIManager._repaint
         UIManager._repaint = function(uim)
-            if next(uim._dirty) ~= nil and uim._dirty[cover] == nil then uim._dirty[cover] = true end
+            local stack, dirty = uim._window_stack, uim._dirty
+            for i = #stack, 1, -1 do
+                local w = stack[i].widget
+                if w == cover then break end
+                if dirty[w] then dirty[cover] = true; break end
+            end
             return repaint(uim)
         end
     end
@@ -806,7 +849,7 @@ function KoboWebBrowser:checkMenuSession()
         for i = ci + 1, #stack do
             local w = stack[i].widget
             if isKoreaderUI(w) then
-                return self:endMenuSession("quit", "KOReader opened " .. tostring(w.name))
+                return self:endMenuSession("quit", "KOReader opened the " .. uiName(w))
             end
             if not w.toast then above = above + 1 end
         end
