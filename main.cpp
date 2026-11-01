@@ -385,8 +385,8 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     barBox->addLayout(row1);
 
     // Nine buttons + 8 gaps of 6 px must fit in 1064 px: widths add up to 900 (164 spare).
-    FlatButton *back = toolButton("<", 90, bh);
-    FlatButton *fwd  = toolButton(">", 90, bh);
+    FlatButton *back = toolButton("Back", 100, bh);   // NB: "<" renders as a clock in the Kobo UI font
+    FlatButton *fwd  = toolButton("Fwd", 90, bh);
     FlatButton *rel  = toolButton("Reload", 140, bh);
     FlatButton *toc  = toolButton("TOC", 100, bh);
     toc->setToolTip("Jump to a heading on this page");
