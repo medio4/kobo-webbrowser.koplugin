@@ -1010,7 +1010,18 @@ void Browser::checkOnline()
     if (m_onlineTimer) m_onlineTimer->stop();
 }
 
-void Browser::reloadLive() { loadUrlText(m_home); }
+void Browser::reloadLive()
+{
+    // Leaving the offline copy (a page set with setHtml) for the live one: stop whatever
+    // WebKit still has in flight for the offline document, drop the timer, and start the
+    // live load from a clean event-loop turn. Crashed in QtWidgets when done inline.
+    if (m_onlineTimer) { m_onlineTimer->stop(); }
+    m_offlineShown = false;
+    m_view->stop();
+    QTimer::singleShot(150, this, SLOT(reloadLiveNow()));
+}
+
+void Browser::reloadLiveNow() { loadUrlText(m_home); }
 
 void Browser::releaseLoadHold()
 {

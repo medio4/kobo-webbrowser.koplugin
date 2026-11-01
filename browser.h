@@ -114,7 +114,8 @@ public slots:
     void urlChanged(const QUrl &url);
     void loadStarted();
     void checkOnline();          // offline copy: offer a reload once the device is online
-    void reloadLive();           // offline copy: status-line tap loads the live page
+    void reloadLive();
+    void reloadLiveNow();           // offline copy: status-line tap loads the live page
     void loadProgress(int p);
     void loadFinished(bool ok);
     void quit();
