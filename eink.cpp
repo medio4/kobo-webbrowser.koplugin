@@ -64,6 +64,11 @@ KoboEink::KoboEink(QObject *parent)
     m_wfPage    = envStr("KB_WF_PAGE", "REAGL");    // non-flashing text update for page turns
     m_wfFull    = envStr("KB_WF_FULL", "GC16");     // flashing full refresh
     m_wfClean   = envStr("KB_WF_CLEAN", "GL16");    // non-flashing grayscale cleanup after DU bursts
+    m_loadSettleWidget = 0; m_loadSettleDirty = false;
+    m_loadSettleTimer.setSingleShot(true);
+    m_loadSettleTimer.setInterval((int)envFlags("KB_SETTLE_MS", 1500));
+    m_loadSettleWindowMs = (int)envFlags("KB_SETTLE_WINDOW_MS", 12000);
+    connect(&m_loadSettleTimer, SIGNAL(timeout()), this, SLOT(settleLoad()));
     m_settleTimer.setSingleShot(true);
     m_settleTimer.setInterval((int)envFlags("KB_FAST_SETTLE_MS", 400));
     connect(&m_settleTimer, SIGNAL(timeout()), this, SLOT(settleFast()));
@@ -149,6 +154,10 @@ bool KoboEink::eventFilter(QObject *obj, QEvent *e)
                 m_held |= tr;
                 if (!m_holdTimer.isActive()) m_holdTimer.start();
             } else {
+                if (m_loadSettleWidget && (w == m_loadSettleWidget || m_loadSettleWidget->isAncestorOf(w))) {
+                    if (m_loadSettleSince.elapsed() > m_loadSettleWindowMs) { m_loadSettleWidget = 0; m_loadSettleTimer.stop(); }
+                    else { m_loadSettleDirty = true; m_loadSettleTimer.start(); }   // restart the quiet period
+                }
                 markDirty(tr, m_nextFlags ? m_nextFlags : flags);
             }
         }
@@ -371,15 +380,26 @@ QList<QPair<QRect, quint64> > KoboEink::mergeRects(const QList<QPair<QRect, quin
     return out;
 }
 
-void KoboEink::hintPageTurn() { m_nextFlags = m_flagsPage; }
+void KoboEink::hintPageTurn() { m_nextFlags = m_flagsPage; m_loadSettleWidget = 0; m_loadSettleTimer.stop(); }
 void KoboEink::hintFast()     { m_nextFlags = m_flagsFast; }
-void KoboEink::hintFull()     { m_nextFlags = m_flagsFull; }
+void KoboEink::hintFull()     { m_nextFlags = m_flagsFull; m_loadSettleWidget = 0; m_loadSettleTimer.stop(); }
+
+void KoboEink::settleLoad()
+{
+    QWidget *w = m_loadSettleWidget;
+    m_loadSettleWidget = 0;
+    if (!w || !m_loadSettleDirty || !w->window() || m_holdWidget || m_suspended) return;
+    QRect r(w->mapTo(w->window(), QPoint(0, 0)), w->size());
+    if (m_logRefresh) qDebug() << "eink: settle flash" << r;
+    markDirty(r, m_flagsFull);
+}
 
 void KoboEink::beginHold(QWidget *w)
 {
     if (!w) return;
     if (m_holdWidget == w) return;
     if (m_holdWidget) releaseHold(false);
+    m_loadSettleWidget = 0; m_loadSettleTimer.stop();
     m_holdWidget = w;
     m_held = QRect();
 }
@@ -396,6 +416,13 @@ void KoboEink::releaseHold(bool fullFlash)
     QRect r = (fullFlash && top) ? QRect(w->mapTo(top, QPoint(0, 0)), w->size()) : m_held;
     m_held = QRect();
     if (!r.isEmpty()) markDirty(r, fullFlash ? m_flagsFull : m_flagsPartial);
+    if (fullFlash) {
+        // Watch for late repaints (lazy images, scripts) and flash once more when they stop.
+        m_loadSettleWidget = w;
+        m_loadSettleDirty = false;
+        m_loadSettleSince.start();
+        m_loadSettleTimer.stop();
+    }
 }
 
 void KoboEink::holdTick()
