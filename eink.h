@@ -8,6 +8,7 @@
 #include <QtCore/QList>
 #include <QtCore/QPair>
 #include <QtCore/QRect>
+#include <QtCore/QString>
 class QWindow;
 class FbWriter;
 class KoboEink : public QObject {
@@ -18,6 +19,8 @@ public:
     // Mark a rect (in top-level window coords) dirty; flushed shortly after.
     void markDirty(const QRect &r, quint64 flags);
     void refreshAll(quint64 flags);
+    // Save what is currently painted (the widget backing store) as PNG. Returns the path or empty.
+    QString saveScreenshot(const QString &dir);
     quint64 flagsPartial() const { return m_flagsPartial; }
     quint64 flagsFull() const { return m_flagsFull; }
 protected:

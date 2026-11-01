@@ -16,6 +16,8 @@
 #include <QtCore/QProcess>
 #include <QtCore/QStringList>
 #include <QtCore/QFile>
+#include <QtCore/QDir>
+#include <QtCore/QDateTime>
 #include <stdlib.h>
 
 static quint64 envFlags(const char *name, quint64 def)
@@ -155,4 +157,23 @@ void KoboEink::flush()
     }
     m_pending.clear();
     m_repaint(pw, region, merged);
+}
+
+QString KoboEink::saveScreenshot(const QString &dir)
+{
+    QImage *src = 0;
+    foreach (QWidget *tw, QApplication::topLevelWidgets()) {
+        if (!tw->isVisible()) continue;
+        QBackingStore *bs = tw->backingStore();
+        if (!bs) continue;
+        QPaintDevice *pd = bs->paintDevice();
+        if (pd && pd->devType() == QInternal::Image) { src = static_cast<QImage *>(pd); break; }
+    }
+    if (!src || src->isNull()) return QString();
+    QDir().mkpath(dir);
+    QString path = dir + "/kobo-browser-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss") + ".png";
+    QImage copy = src->copy().convertToFormat(QImage::Format_RGB32);
+    if (!copy.save(path, "PNG")) { qWarning() << "screenshot: save failed" << path; return QString(); }
+    qDebug() << "screenshot saved" << path;
+    return path;
 }

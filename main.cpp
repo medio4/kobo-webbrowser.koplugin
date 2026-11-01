@@ -220,8 +220,8 @@ void OnScreenKeyboard::toggleSymbols() { m_symbols = !m_symbols; rebuild(); }
 
 // -------------------------------------------------------------------- Browser
 
-Browser::Browser(const QString &home, QWidget *parent)
-    : QMainWindow(parent), m_home(home)
+Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
+    : QMainWindow(parent), m_home(home), m_eink(eink)
 {
     setWindowTitle("Browser");
 
@@ -251,13 +251,14 @@ Browser::Browser(const QString &home, QWidget *parent)
     QPushButton *kbd  = new QPushButton("Keys"); kbd->setMinimumSize(150, bh); kbd->setFont(bf);
     QPushButton *zi   = new QPushButton("A+");  zi->setMinimumSize(110, bh);   zi->setFont(bf);
     QPushButton *zo   = new QPushButton("A-");  zo->setMinimumSize(110, bh);   zo->setFont(bf);
+    QPushButton *shot = new QPushButton("Shot"); shot->setMinimumSize(130, bh); shot->setFont(bf);
     QPushButton *quit = new QPushButton("Exit"); quit->setMinimumSize(140, bh); quit->setFont(bf);
-    foreach (QPushButton *b, QList<QPushButton *>() << go << back << fwd << rel << kbd << zi << zo << quit)
+    foreach (QPushButton *b, QList<QPushButton *>() << go << back << fwd << rel << kbd << zi << zo << shot << quit)
         b->setFocusPolicy(Qt::NoFocus);
     QHBoxLayout *row2 = new QHBoxLayout; row2->setSpacing(4);
     row2->addWidget(back); row2->addWidget(fwd); row2->addWidget(rel);
     row2->addStretch(1);
-    row2->addWidget(kbd); row2->addWidget(zi); row2->addWidget(zo); row2->addWidget(quit);
+    row2->addWidget(kbd); row2->addWidget(zi); row2->addWidget(zo); row2->addWidget(shot); row2->addWidget(quit);
     barBox->addLayout(row2);
     vbox->addWidget(bar);
 
@@ -304,6 +305,7 @@ Browser::Browser(const QString &home, QWidget *parent)
     connect(zi, SIGNAL(clicked()), this, SLOT(zoomIn()));
     connect(zo, SIGNAL(clicked()), this, SLOT(zoomOut()));
     connect(quit, SIGNAL(clicked()), this, SLOT(quit()));
+    connect(shot, SIGNAL(clicked()), this, SLOT(screenshot()));
     connect(m_url, SIGNAL(returnPressed()), this, SLOT(go()));
     connect(m_kbd, SIGNAL(goPressed()), this, SLOT(go()));
     connect(m_kbd, SIGNAL(hidePressed()), this, SLOT(hideKeyboard()));
@@ -376,6 +378,14 @@ void Browser::loadFinished(bool ok)
 }
 
 void Browser::quit() { qApp->quit(); }
+
+void Browser::screenshot()
+{
+    QString dir = "/mnt/onboard/screenshots";
+    if (!QDir("/mnt/onboard").exists()) dir = QDir::homePath() + "/screenshots";
+    QString path = m_eink ? m_eink->saveScreenshot(dir) : QString();
+    m_status->setText(path.isEmpty() ? QString("Screenshot failed") : QString("Saved " + path.mid(path.indexOf("screenshots"))));
+}
 
 // ----------------------------------------------------------------------- main
 
@@ -452,7 +462,7 @@ int main(int argc, char **argv)
 
     KoboEink *eink = new KoboEink(&app);
     app.installEventFilter(eink);
-    Browser w(home);
+    Browser w(home, eink);
     QScreen *scr = app.primaryScreen();
     if (scr) qDebug() << "screen:" << scr->geometry() << "dpi" << scr->logicalDotsPerInch();
     const char *showMode = getenv("KB_SHOWMODE");

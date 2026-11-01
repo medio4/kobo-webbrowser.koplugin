@@ -12,6 +12,8 @@
 
 // QWebView with touch-drag scrolling: a drag scrolls the page, a short tap
 // is forwarded as a click.
+class KoboEink;
+
 class TouchWebView : public QWebView {
     Q_OBJECT
 public:
@@ -51,7 +53,7 @@ private:
 class Browser : public QMainWindow {
     Q_OBJECT
 public:
-    explicit Browser(const QString &home, QWidget *parent = 0);
+    Browser(const QString &home, KoboEink *eink, QWidget *parent = 0);
 public slots:
     void go();
     void loadUrlText(const QString &text);
@@ -66,6 +68,7 @@ public slots:
     void loadFinished(bool ok);
     void quit();
     void focusUrl();
+    void screenshot();
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
 private:
@@ -74,6 +77,7 @@ private:
     OnScreenKeyboard *m_kbd;
     QLabel *m_status;
     QString m_home;
+    KoboEink *m_eink;
 };
 
 #endif
