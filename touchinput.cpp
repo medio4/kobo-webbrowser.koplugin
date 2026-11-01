@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <math.h>
 
 #ifndef ABS_MT_SLOT
 #define ABS_MT_SLOT 0x2f
@@ -24,7 +25,8 @@ KoboTouchInput::KoboTouchInput(const QString &device, int screenW, int screenH,
       m_swapXY(swapXY), m_mirrorX(mirrorX), m_mirrorY(mirrorY),
       m_minX(0), m_maxX(0), m_minY(0), m_maxY(0),
       m_slot(0), m_rawX(0), m_rawY(0), m_down(false), m_pendingDown(false),
-      m_havePos(false), m_sentDown(false)
+      m_havePos(false), m_sentDown(false), m_slot1Down(false), m_multiSeen(false),
+      m_raw1X(0), m_raw1Y(0), m_have1(false), m_pinchStart(0), m_pinchLast(0)
 {
     m_fd = open(device.toLocal8Bit().constData(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (m_fd < 0) {
@@ -46,6 +48,8 @@ KoboTouchInput::KoboTouchInput(const QString &device, int screenW, int screenH,
     m_notifier = new QSocketNotifier(m_fd, QSocketNotifier::Read, this);
     connect(m_notifier, SIGNAL(activated(int)), this, SLOT(readable()));
 }
+
+bool KoboTouchInput::s_gesture = false;
 
 KoboTouchInput::~KoboTouchInput()
 {
@@ -75,23 +79,28 @@ void KoboTouchInput::readable()
                 case ABS_MT_TRACKING_ID:
                     if (e.value == -1) {
                         if (m_slot == 0) m_pendingDown = false;
+                        else m_slot1Down = false;
                     } else {
                         // Snow protocol: tracking id doubles as slot number.
                         if (m_slot == 0) m_pendingDown = true;
+                        else { m_slot1Down = true; m_multiSeen = true; }
                     }
                     break;
                 case ABS_MT_POSITION_X:
                 case ABS_X:
                     if (m_slot == 0) { m_rawX = e.value; m_havePos = true; m_pendingDown = true; }
+                    else { m_raw1X = e.value; m_have1 = true; m_slot1Down = true; m_multiSeen = true; }
                     break;
                 case ABS_MT_POSITION_Y:
                 case ABS_Y:
                     if (m_slot == 0) { m_rawY = e.value; m_havePos = true; m_pendingDown = true; }
+                    else { m_raw1Y = e.value; m_have1 = true; m_slot1Down = true; m_multiSeen = true; }
                     break;
                 default: break;
                 }
             } else if (e.type == EV_KEY && e.code == BTN_TOUCH) {
                 m_pendingDown = (e.value != 0);
+                if (e.value == 0) m_slot1Down = false;
             } else if (e.type == EV_SYN && e.code == SYN_REPORT) {
                 emitState();
                 m_slot = 0; // frames without ABS_MT_SLOT refer to the first contact
@@ -125,6 +134,38 @@ void KoboTouchInput::emitState()
     }
     if (!win) return;
     QPointF local = pos - win->geometry().topLeft();
+
+    // Multi-finger gesture: once a second finger shows up, park the first finger's
+    // mouse pointer outside the window so no button/link gets clicked, and report a
+    // two-finger tap when everything is lifted.
+    const QPointF away(-10, -10);
+    bool anyDown = m_pendingDown || m_slot1Down;
+    if (m_multiSeen && !s_gesture) {
+        s_gesture = true;
+        if (m_sentDown) QWindowSystemInterface::handleMouseEvent(win, away, away, Qt::LeftButton);
+    }
+    if (s_gesture) {
+        // Track the distance between the two fingers for pinch-to-zoom.
+        if (m_pendingDown && m_slot1Down && m_have1) {
+            double dx = m_rawX - m_raw1X, dy = m_rawY - m_raw1Y;
+            double dist = sqrt(dx * dx + dy * dy);
+            if (m_pinchStart <= 0) m_pinchStart = dist;
+            m_pinchLast = dist;
+        }
+        if (!anyDown) {
+            if (m_sentDown) QWindowSystemInterface::handleMouseEvent(win, away, away, Qt::NoButton);
+            m_sentDown = false;
+            s_gesture = false;
+            m_multiSeen = false;
+            m_have1 = false;
+            double ratio = (m_pinchStart > 0) ? m_pinchLast / m_pinchStart : 1.0;
+            m_pinchStart = m_pinchLast = 0;
+            if (ratio > 1.25 || ratio < 0.8) emit pinch(ratio);
+            else emit twoFingerTap();
+        }
+        m_down = anyDown;
+        return;
+    }
 
     if (m_pendingDown && !m_sentDown) {
         QWindowSystemInterface::handleMouseEvent(win, local, QPointF(pos), Qt::LeftButton);

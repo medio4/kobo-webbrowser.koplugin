@@ -20,6 +20,18 @@ PageScroller::PageScroller(QWebView *view)
     m_overlapMin  = (int)envDouble("KB_PAGE_OVERLAP_MIN", 30);
     m_zoneFrac    = envDouble("KB_TAP_ZONE", 0.14);        // left/right 14% strips turn pages
     m_swipeMin    = (int)envDouble("KB_SWIPE_MIN", 60);
+    m_edgePx      = (int)envDouble("KB_EDGE_SWIPE", 48);   // 0 disables edge swipes
+}
+
+bool PageScroller::handleHorizontalSwipe(const QPoint &press, const QPoint &release)
+{
+    QPoint d = release - press;
+    if (qAbs(d.x()) < m_swipeMin || qAbs(d.x()) < qAbs(d.y())) return false;
+    int w = m_view->width();
+    if (m_edgePx > 0 && press.x() < m_edgePx && d.x() > 0) { emit goBack(); return true; }
+    if (m_edgePx > 0 && press.x() >= w - m_edgePx && d.x() < 0) { emit goForward(); return true; }
+    if (d.x() < 0) nextPage(); else prevPage();
+    return true;
 }
 
 bool PageScroller::inTapZone(const QPoint &p) const
@@ -31,11 +43,10 @@ bool PageScroller::inTapZone(const QPoint &p) const
 
 bool PageScroller::handlePress(const QPoint &p)
 {
-    if (!m_enabled) return false;
-    m_pressed = true;
-    m_swiped = false;
     m_press = p;
-    return true;
+    m_swiped = false;
+    m_pressed = m_enabled;
+    return m_enabled;
 }
 
 bool PageScroller::handleMove(const QPoint &p)
@@ -53,15 +64,12 @@ bool PageScroller::handleRelease(const QPoint &p)
     m_pressed = false;
     QPoint d = p - m_press;
     if (m_swiped || d.manhattanLength() >= m_swipeMin) {
-        // Dominant axis decides. Up/left = forward, down/right = back.
+        // Dominant axis decides. Up = next, down = previous; horizontal swipes are
+        // shared with live mode (page turn, or history from the edges).
         if (qAbs(d.y()) >= qAbs(d.x())) {
             if (d.y() < 0) nextPage(); else prevPage();
         } else {
-            // Horizontal swipe: shift sideways when the page is wider than the view,
-            // otherwise treat it like a page turn.
-            if (!turn(d.x() < 0 ? 1 : -1, 0)) {
-                if (d.x() < 0) nextPage(); else prevPage();
-            }
+            handleHorizontalSwipe(m_press, p);
         }
         return true;
     }

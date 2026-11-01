@@ -35,6 +35,16 @@ static QString envStr(const char *name, const char *def)
     return (v && *v) ? QString::fromLocal8Bit(v) : QString::fromLatin1(def);
 }
 
+static HwtconRefresh::Waveform hwWaveform(const QString &wf)
+{
+    if (wf == "DU") return HwtconRefresh::DU;
+    if (wf == "GC16") return HwtconRefresh::GC16;
+    if (wf == "GL16") return HwtconRefresh::GL16;
+    if (wf == "REAGL") return HwtconRefresh::REAGL;
+    if (wf == "A2") return HwtconRefresh::A2;
+    return HwtconRefresh::Auto;
+}
+
 KoboEink *KoboEink::s_instance = 0;
 
 KoboEink::KoboEink(QObject *parent)
@@ -53,6 +63,7 @@ KoboEink::KoboEink(QObject *parent)
     m_wfPage    = envStr("KB_WF_PAGE", "REAGL");    // non-flashing text update for page turns
     m_wfFull    = envStr("KB_WF_FULL", "GC16");     // flashing full refresh
     m_fullEvery = (int)envFlags("KB_FULL_EVERY", 6);  // full flash every N page turns (0 = never)
+    m_partialsEvery = (int)envFlags("KB_FULL_EVERY_PARTIALS", 12);  // ...or N large partial updates
     m_logRefresh = getenv("KB_EINK_LOG") != 0;   // log every fbink refresh
     m_holdTimer.setSingleShot(true);
     m_holdTimer.setInterval((int)envFlags("KB_LOAD_HOLD_MS", 8000));
@@ -157,7 +168,6 @@ void KoboEink::flush()
         for (int j = 0; j < merged.size(); ++j) {
             const QRect &r = merged[j].first;
             const bool full = merged[j].second == m_flagsFull;
-            const bool fast = merged[j].second == m_flagsFast;
             bool changed = true;
             if (m_grab && m_fb && m_fb->isOpen()) {
                 // Read the platform backing store's image directly (what Qt painted into).
@@ -186,11 +196,18 @@ void KoboEink::flush()
             }
             // Same pixels as before (e.g. a button repainted on press/release): nothing to show.
             if (!changed && !full) continue;
-            if (m_hw && m_hw->refresh(r, full ? HwtconRefresh::GC16 : fast ? HwtconRefresh::DU : HwtconRefresh::Auto, full))
+            // Waveform + flash come from the refresh policy (page turns, periodic full
+            // flashes, fast UI), whichever backend sends the update.
+            QString wf; bool flash = false;
+            chooseWaveform(merged[j].second, r, &wf, &flash);
+            if (m_hw && m_hw->refresh(r, hwWaveform(wf), flash)) {
+                if (m_logRefresh) qDebug() << "eink: hwtcon" << r << wf << (flash ? "flash" : "partial");
                 continue;
+            }
             QStringList args;
             args << "-q" << "-s" << QString("top=%1,left=%2,width=%3,height=%4").arg(r.y()).arg(r.x()).arg(r.width()).arg(r.height());
-            args << waveformArgs(merged[j].second);
+            if (flash) args << "-f";
+            if (!wf.isEmpty() && wf != "AUTO") args << "-W" << wf;
             if (m_logRefresh) qDebug() << "eink: fbink" << args.join(" ");
             QProcess::startDetached(m_fbink, args);
         }
@@ -221,11 +238,33 @@ void KoboEink::flush()
 
 // ------------------------------------------------------------- refresh policy
 
-QStringList KoboEink::waveformArgs(quint64 flags)
+QStringList KoboEink::waveformArgs(quint64 flags, const QRect &r)
 {
     QStringList a;
     QString wf;
     bool flash = false;
+    chooseWaveform(flags, r, &wf, &flash);
+    if (flash) a << "-f";
+    if (!wf.isEmpty() && wf != "AUTO") a << "-W" << wf;
+    return a;
+}
+
+void KoboEink::chooseWaveform(quint64 flags, const QRect &r, QString *wfOut, bool *flashOut)
+{
+    QString wf;
+    bool flash = false;
+    // A large ordinary update (live-mode scrolling, zoom relayout) ghosts like a page
+    // turn does; after KB_FULL_EVERY_PARTIALS of them, flash.
+    bool big = false;
+    {
+        QWindowList wl = QGuiApplication::topLevelWindows();
+        if (!wl.isEmpty()) {
+            QSize ws = wl.first()->geometry().size();
+            big = (qint64)r.width() * r.height() * 3 >= (qint64)ws.width() * ws.height();
+        }
+    }
+    if (flags == m_flagsPartial && big && m_partialsEvery > 0 && ++m_turnsSinceFull >= m_partialsEvery)
+        flags = m_flagsFull;
     if (flags == m_flagsFull) {
         wf = m_wfFull; flash = true;
         m_turnsSinceFull = 0;
@@ -242,13 +281,14 @@ QStringList KoboEink::waveformArgs(quint64 flags)
     } else {
         wf = m_wfPartial;
     }
-    if (flash) a << "-f";
-    if (!wf.isEmpty() && wf != "AUTO") a << "-W" << wf;
-    return a;
+    *wfOut = wf;
+    *flashOut = flash;
 }
+
 
 void KoboEink::hintPageTurn() { m_nextFlags = m_flagsPage; }
 void KoboEink::hintFast()     { m_nextFlags = m_flagsFast; }
+void KoboEink::hintFull()     { m_nextFlags = m_flagsFull; }
 
 void KoboEink::beginHold(QWidget *w)
 {
@@ -299,4 +339,27 @@ QString KoboEink::saveScreenshot(const QString &dir)
     if (!copy.save(path, "PNG")) { qWarning() << "screenshot: save failed" << path; return QString(); }
     qDebug() << "screenshot saved" << path;
     return path;
+}
+
+void KoboEink::clearScreenForExit()
+{
+    m_timer.stop();
+    m_pending.clear();
+    m_holdWidget = 0;
+    if (!m_useFbink) return;
+    QRect all;
+    if (m_fb && m_fb->isOpen()) {
+        all = QRect(0, 0, m_fb->width(), m_fb->height());
+        QImage white(all.size(), QImage::Format_RGB32);
+        white.fill(0xffffffff);
+        m_fb->write(white, QPoint(0, 0));
+    }
+    if (m_hw && !all.isEmpty() && m_hw->refresh(all, HwtconRefresh::GC16, true)) {
+        if (m_logRefresh) qDebug() << "eink: exit clear via hwtcon";
+        return;
+    }
+    // fbink: clear + flash, and wait for the update so it lands before we exit.
+    QStringList args; args << "-q" << "-c" << "-f" << "-W" << "GC16" << "-w";
+    if (m_logRefresh) qDebug() << "eink: fbink" << args.join(" ");
+    QProcess::execute(m_fbink, args);
 }

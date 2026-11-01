@@ -38,6 +38,7 @@ private:
     bool m_pressed;
     bool m_dragging;
     bool m_forwarding;
+    bool m_horizontal;      // live mode: this drag is horizontal (page turn / history swipe)
     QElapsedTimer m_pressTime;
     PageScroller *m_pager;
 };
@@ -115,6 +116,8 @@ private slots:
     void saveEpub();
     void saveProgress(const QString &msg);
     void saveFinished(bool ok, const QString &msg);
+    void fullRefresh();
+    void pinchZoom(double ratio);   // two-finger pinch: ratio > 1 zooms in
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
     void resizeEvent(QResizeEvent *e);

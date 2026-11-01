@@ -36,6 +36,9 @@ public:
     // screen; they accumulate and come out as ONE clean refresh on releaseHold().
     // A slow page still gets a partial update every KB_LOAD_HOLD_MS so it never
     // looks hung. Repaints outside `w` (toolbar, status line) still go through.
+    // Paint the whole screen white and flash it, synchronously: called on Exit so the
+    // user sees at once that the browser is gone, before KOReader repaints itself.
+    void clearScreenForExit();
     void beginHold(QWidget *w);
     void releaseHold(bool fullFlash = true);
     bool holding() const { return m_holdWidget != 0; }
@@ -47,11 +50,16 @@ public slots:
     void setReady() { m_ready = true; }
     void hintPageTurn();
     void hintFast();   // next flush uses the fast waveform (DU), for small UI changes
+    void hintFull();   // next flush is a flashing full refresh (e.g. after the keyboard hides)
 private slots:
     void flush();
     void holdTick();
 private:
-    QStringList waveformArgs(quint64 flags);
+    // One refresh policy for both backends: picks the waveform name (fbink -W spelling:
+    // AUTO, DU, GL16, GC16, REAGL, A2) and whether to flash, and keeps the counters.
+    void chooseWaveform(quint64 flags, const QRect &r, QString *wf, bool *flash);
+    QStringList waveformArgs(quint64 flags, const QRect &r);
+    int m_partialsEvery;   // large partial updates (live scrolling) before a full flash
     static KoboEink *s_instance;
     quint64 m_flagsPage, m_flagsFast;
     quint64 m_nextFlags;        // 0 = no hint pending
