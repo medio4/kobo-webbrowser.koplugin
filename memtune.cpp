@@ -88,7 +88,10 @@ void MemTune::trimNow()
 {
     QElapsedTimer t; t.start();
     long before = vmRssKb();
-    QWebSettings::clearMemoryCaches();
+    // clearMemoryCaches() also drops the decoded images of the page being shown, so WebKit
+    // decodes and repaints them again (measured: ~1.8x CPU, ~70% more screen updates).
+    // The small object cache already limits dead entries; KB_TRIM_CLEAR=1 clears anyway.
+    if (getenv("KB_TRIM_CLEAR")) QWebSettings::clearMemoryCaches();
     // DumpRenderTreeSupportQt::garbageCollectorCollect() is exported by the firmware's
     // libQtWebKit but has no public header; look it up so a missing symbol isn't fatal.
     typedef void (*GcFn)();
