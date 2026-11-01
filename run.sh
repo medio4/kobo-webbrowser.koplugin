@@ -60,6 +60,8 @@ if [ -z "$KB_LIBRARY_DIR" ]; then
     KB_LIBRARY_DIR="$KO_HOME/Web"
 fi
 export KB_LIBRARY_DIR
+# Saved/open-now EPUBs are reported to KOReader (applauncher.koplugin) through this file
+export KB_HANDOFF_FILE="${KB_HANDOFF_FILE:-$DIR/epub-handoff.txt}"
 # Debug plugin loading: KB_DEBUG=1 sh run.sh
 [ -n "$KB_DEBUG" ] && export QT_DEBUG_PLUGINS=1
 

@@ -115,6 +115,7 @@ private slots:
     void saveEpub();
     void saveProgress(const QString &msg);
     void saveFinished(bool ok, const QString &msg);
+    void openSavedEpub(const QString &path);
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
     void resizeEvent(QResizeEvent *e);
