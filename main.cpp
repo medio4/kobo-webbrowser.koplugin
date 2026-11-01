@@ -36,6 +36,9 @@
 #include <QtCore/QDebug>
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QDir>
+#include <QtCore/QStringList>
+#include <QtCore/QTime>
+#include <QtCore/QFile>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
 #include <QtCore/QSettings>
@@ -367,11 +370,27 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     barBox->addLayout(row2);
     vbox->addWidget(m_bar);
 
+    // Status line: page title / load progress on the left, clock + battery + free
+    // memory on the right (refreshed once a minute with the fast waveform).
+    QWidget *statusRow = new QWidget;
+    QHBoxLayout *statusBox = new QHBoxLayout(statusRow);
+    statusBox->setContentsMargins(0, 0, 0, 0);
+    statusBox->setSpacing(6);
     m_status = new QLabel;
     QFont sf; sf.setPixelSize(30);
     m_status->setFont(sf);
     m_status->setContentsMargins(6, 0, 6, 0);
-    vbox->addWidget(m_status);
+    statusBox->addWidget(m_status, 1);
+    m_sysInfo = new QLabel;
+    m_sysInfo->setFont(sf);
+    m_sysInfo->setContentsMargins(6, 0, 6, 0);
+    m_sysInfo->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_sysInfo->setProperty("kb_fast", true);
+    statusBox->addWidget(m_sysInfo, 0);
+    vbox->addWidget(statusRow);
+    m_sysTimer = new QTimer(this);
+    connect(m_sysTimer, SIGNAL(timeout()), this, SLOT(updateSysInfo()));
+    updateSysInfo();
 
     m_view = new TouchWebView;
     m_view->setPage(new KoboWebPage(m_view));
@@ -587,6 +606,52 @@ void Browser::applyScrollMode(bool pageMode, bool save)
         QSettings st(QDir(QCoreApplication::applicationDirPath()).filePath("settings.ini"), QSettings::IniFormat);
         st.setValue("scroll/pageMode", pageMode);
     }
+}
+
+// Reads the first line of a sysfs/proc file, trimmed; empty if unreadable.
+static QString readLine(const QString &path)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return QString();
+    return QString::fromLatin1(f.readLine()).trimmed();
+}
+
+void Browser::updateSysInfo()
+{
+    QStringList parts;
+    parts << QTime::currentTime().toString("h:mm AP");
+
+    // Battery: first power_supply entry that reports a capacity (bd71827_bat on Clara BW).
+    QDir ps("/sys/class/power_supply");
+    foreach (const QString &name, ps.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        QString cap = readLine(ps.filePath(name + "/capacity"));
+        if (cap.isEmpty()) continue;
+        QString status = readLine(ps.filePath(name + "/status"));
+        QString s = cap + "%";
+        if (status == "Charging") s += "+";
+        parts << s;
+        break;
+    }
+
+    // Memory: MemAvailable (fallback MemFree) in MB.
+    QFile mi("/proc/meminfo");
+    if (mi.open(QIODevice::ReadOnly)) {
+        long avail = -1, freeKb = -1;
+        while (!mi.atEnd()) {
+            QByteArray line = mi.readLine();
+            if (line.startsWith("MemAvailable:")) avail = line.mid(13).trimmed().split(' ').first().toLong();
+            else if (line.startsWith("MemFree:")) freeKb = line.mid(8).trimmed().split(' ').first().toLong();
+        }
+        long kb = avail >= 0 ? avail : freeKb;
+        if (kb >= 0) parts << QString("%1M free").arg(kb / 1024);
+    }
+
+    QString text = parts.join("   ");
+    if (m_sysInfo->text() != text) m_sysInfo->setText(text);
+
+    // Re-arm so the next update lands just after the minute changes.
+    int msToNextMinute = (60 - QTime::currentTime().second()) * 1000 + 500;
+    m_sysTimer->start(msToNextMinute);
 }
 
 void Browser::quit() { qApp->quit(); }

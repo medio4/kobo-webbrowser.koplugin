@@ -9,6 +9,7 @@
 #include <QtCore/QPoint>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QList>
+#include <QtCore/QTimer>
 #include <QtWebKitWidgets/QWebView>
 class PageScroller;
 class QPushButton;
@@ -115,6 +116,7 @@ private slots:
     void saveEpub();
     void saveProgress(const QString &msg);
     void saveFinished(bool ok, const QString &msg);
+    void updateSysInfo();
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
     void resizeEvent(QResizeEvent *e);
@@ -126,6 +128,8 @@ private:
     QWidget *m_bar;
     QWidget *m_central;
     QLabel *m_status;
+    QLabel *m_sysInfo;     // time / battery / free memory, right side of the status line
+    QTimer *m_sysTimer;
     QString m_home;
     KoboEink *m_eink;
     FlatButton *m_modeBtn;
