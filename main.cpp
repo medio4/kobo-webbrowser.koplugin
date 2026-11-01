@@ -40,6 +40,7 @@
 #include <QtCore/QDebug>
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QDir>
+#include <QtCore/QRegExp>
 #include <QtCore/QStringList>
 #include <QtCore/QTime>
 #include <QtCore/QFile>
@@ -446,7 +447,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     FlatButton *zi   = toolButton("A+", 90, bh);
     FlatButton *zo   = toolButton("A-", 90, bh);
     FlatButton *save = toolButton("Save", 110, bh);
-    save->setToolTip("Save this page as an EPUB in the library");
+    save->setToolTip("Save this page as an EPUB in the library, or an image to Pictures");
     FlatButton *shot = toolButton("Shot", 100, bh);
     FlatButton *quit = toolButton("Exit", 80, bh);
     QHBoxLayout *row2 = new QHBoxLayout; row2->setSpacing(6);
@@ -768,6 +769,13 @@ void Browser::loadUrlText(const QString &textIn)
     if (looksLikeUrl) {
         if (!text.contains("://")) text = "http://" + text;
         url = QUrl::fromUserInput(text);
+    } else if (QRegExp("^(img|image|images|pic|pics|!i|!img)\\s+(.+)$", Qt::CaseInsensitive).exactMatch(text)) {
+        // Image search: "img cats" (or "!i cats") goes to Bing Images, which this WebKit
+        // can show once webpage.cpp fills in its thumbnails. Tap one for the full image,
+        // then Save keeps it in Pictures.
+        QRegExp re("^\\S+\\s+(.+)$");
+        re.exactMatch(text);
+        url = QUrl("https://www.bing.com/images/search?q=" + QString::fromLatin1(QUrl::toPercentEncoding(re.cap(1))));
     } else {
         url = QUrl("https://lite.duckduckgo.com/lite/?q=" + QString::fromLatin1(QUrl::toPercentEncoding(text)));
     }
@@ -1193,6 +1201,7 @@ void Browser::screenshot()
 void Browser::saveEpub()
 {
     if (m_saver && m_saver->isRunning()) return;
+    if (saveImageIfImagePage()) return;
     delete m_saver;
     m_saver = new EpubSaver(m_view->page(), EpubSaver::defaultOutDir(), this);
     connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
@@ -1201,6 +1210,75 @@ void Browser::saveEpub()
 }
 
 void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }
+
+// ---- Save an image (an image opened on its own, e.g. a tapped Bing Images result)
+
+static QString imageOutDir()
+{
+    const char *env = getenv("KB_IMAGES_DIR");
+    if (env && *env) return QString::fromLocal8Bit(env);
+    if (QDir("/mnt/onboard").exists()) return "/mnt/onboard/Pictures";
+    return QDir::homePath() + "/kobo-browser-pictures";
+}
+
+bool Browser::saveImageIfImagePage()
+{
+    QWebFrame *f = m_view->page()->mainFrame();
+    QUrl url = f->url();
+    if (url.scheme() != "http" && url.scheme() != "https") return false;
+    // WebKit shows a bare image as a document holding just that one image.
+    QVariant v = f->evaluateJavaScript(
+        "(function(){var b=document.body;return !!b&&document.images.length==1&&b.children.length==1"
+        "&&document.images[0].src==location.href;})()");
+    if (!v.toBool()) return false;
+    m_status->setText("Saving image...");
+    QNetworkRequest req(url);
+    req.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::PreferCache);
+    QNetworkReply *r = m_view->page()->networkAccessManager()->get(req);
+    connect(r, SIGNAL(finished()), this, SLOT(imageDownloaded()));
+    return true;
+}
+
+void Browser::imageDownloaded()
+{
+    QNetworkReply *r = qobject_cast<QNetworkReply *>(sender());
+    if (!r) return;
+    r->deleteLater();
+    if (r->error() != QNetworkReply::NoError) {
+        m_status->setText("Save failed: " + r->errorString());
+        return;
+    }
+    QByteArray data = r->readAll();
+    QString type = r->header(QNetworkRequest::ContentTypeHeader).toString().toLower();
+    QString ext;
+    if (type.contains("jpeg") || data.startsWith("\xff\xd8")) ext = "jpg";
+    else if (type.contains("png") || data.startsWith("\x89PNG")) ext = "png";
+    else if (type.contains("gif") || data.startsWith("GIF8")) ext = "gif";
+    else if (type.contains("webp") || data.mid(8, 4) == "WEBP") ext = "webp";
+    else if (type.contains("svg")) ext = "svg";
+    else if (type.contains("bmp") || data.startsWith("BM")) ext = "bmp";
+    else { m_status->setText("Save failed: not an image"); return; }
+
+    QString base = r->url().path().section('/', -1);
+    base = QUrl::fromPercentEncoding(base.toUtf8());
+    base.replace(QRegExp("\\.[A-Za-z0-9]{2,5}$"), "");
+    base.replace(QRegExp("[^A-Za-z0-9._ -]+"), "-");
+    base = base.left(60).trimmed();
+    if (base.isEmpty() || base == "-") base = "image";
+    QDir dir(imageOutDir());
+    if (!dir.exists() && !dir.mkpath(".")) { m_status->setText("Save failed: can't create " + dir.path()); return; }
+    QString path = dir.filePath(base + "." + ext);
+    for (int i = 2; QFile::exists(path); i++) path = dir.filePath(base + QString(" (%1).").arg(i) + ext);
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly) || f.write(data) != data.size()) {
+        m_status->setText("Save failed: " + f.errorString());
+        return;
+    }
+    f.close();
+    QString shown = path;
+    if (shown.startsWith("/mnt/onboard/")) shown = shown.mid(13);
+    m_status->setText("Saved image: " + shown);
+}
 
 // ---- Table of contents overlay (see toc.cpp)
 
