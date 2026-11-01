@@ -81,6 +81,9 @@ if [ "$KB_DISPLAY" != "kobo" ] && [ -x "$FBDEPTH" ]; then
 fi
 # Run in the background and forward TERM/INT, so killing run.sh also stops the browser
 # (it quits cleanly on SIGTERM and releases the touchscreen).
+# Wipe whatever KOReader left on the panel (its clock/date strip ghosts through our first
+# 1-bit updates otherwise): clear the framebuffer to white with a full flashing refresh.
+[ -z "$KB_NO_CLEAR_AT_START" ] && [ -x "$FBINK" ] && "$FBINK" -q -c -f -W GC16 -w >> "$LOG" 2>&1
 "$DIR/kobo-browser" -platform "$PLATFORM_ARG" $KB_EXTRA_ARGS "$@" >> "$LOG" 2>&1 &
 BPID=$!
 trap 'kill -TERM $BPID 2>/dev/null' TERM INT
