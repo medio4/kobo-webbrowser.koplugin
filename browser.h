@@ -120,6 +120,7 @@ private slots:
     void fullRefresh();
     void pinchZoom(double ratio);   // two-finger pinch: ratio > 1 zooms in
     void openSavedEpub(const QString &path);
+    void showToc();
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
     void resizeEvent(QResizeEvent *e);
