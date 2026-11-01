@@ -1,0 +1,4 @@
+build/
+qtest/*.o
+qtest/Makefile
+qtest/moc_*

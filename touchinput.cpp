@@ -1,0 +1,143 @@
+#include "touchinput.h"
+#include <QtCore/QSocketNotifier>
+#include <QtCore/QDebug>
+#include <QtGui/QGuiApplication>
+#include <QtGui/QWindow>
+#include <qpa/qwindowsysteminterface.h>
+#include <linux/input.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
+
+#ifndef ABS_MT_SLOT
+#define ABS_MT_SLOT 0x2f
+#endif
+#ifndef ABS_MT_TRACKING_ID
+#define ABS_MT_TRACKING_ID 0x39
+#endif
+
+KoboTouchInput::KoboTouchInput(const QString &device, int screenW, int screenH,
+                               bool swapXY, bool mirrorX, bool mirrorY, bool grab, QObject *parent)
+    : QObject(parent), m_fd(-1), m_notifier(0), m_screenW(screenW), m_screenH(screenH),
+      m_swapXY(swapXY), m_mirrorX(mirrorX), m_mirrorY(mirrorY),
+      m_minX(0), m_maxX(0), m_minY(0), m_maxY(0),
+      m_slot(0), m_rawX(0), m_rawY(0), m_down(false), m_pendingDown(false),
+      m_havePos(false), m_sentDown(false)
+{
+    m_fd = open(device.toLocal8Bit().constData(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if (m_fd < 0) {
+        qWarning() << "touch: cannot open" << device << strerror(errno);
+        return;
+    }
+    struct input_absinfo ai;
+    if (ioctl(m_fd, EVIOCGABS(ABS_MT_POSITION_X), &ai) == 0) { m_minX = ai.minimum; m_maxX = ai.maximum; }
+    if (ioctl(m_fd, EVIOCGABS(ABS_MT_POSITION_Y), &ai) == 0) { m_minY = ai.minimum; m_maxY = ai.maximum; }
+    if (m_maxX <= m_minX || m_maxY <= m_minY) {
+        // Fall back to single-touch axes
+        if (ioctl(m_fd, EVIOCGABS(ABS_X), &ai) == 0) { m_minX = ai.minimum; m_maxX = ai.maximum; }
+        if (ioctl(m_fd, EVIOCGABS(ABS_Y), &ai) == 0) { m_minY = ai.minimum; m_maxY = ai.maximum; }
+    }
+    if (grab && ioctl(m_fd, EVIOCGRAB, 1) != 0)
+        qWarning() << "touch: EVIOCGRAB failed:" << strerror(errno);
+    qDebug() << "touch: opened" << device << "abs x" << m_minX << m_maxX << "y" << m_minY << m_maxY
+             << "swap" << m_swapXY << "mirrorX" << m_mirrorX << "mirrorY" << m_mirrorY;
+    m_notifier = new QSocketNotifier(m_fd, QSocketNotifier::Read, this);
+    connect(m_notifier, SIGNAL(activated(int)), this, SLOT(readable()));
+}
+
+KoboTouchInput::~KoboTouchInput()
+{
+    if (m_fd >= 0) { ioctl(m_fd, EVIOCGRAB, 0); close(m_fd); }
+}
+
+void KoboTouchInput::readable()
+{
+    struct input_event ev[32];
+    for (;;) {
+        ssize_t n = read(m_fd, ev, sizeof ev);
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EINTR) return;
+            qWarning() << "touch: read error" << strerror(errno);
+            m_notifier->setEnabled(false);
+            return;
+        }
+        if (n == 0) return;
+        int count = n / sizeof(struct input_event);
+        for (int i = 0; i < count; ++i) {
+            const struct input_event &e = ev[i];
+            if (e.type == EV_ABS) {
+                switch (e.code) {
+                case ABS_MT_SLOT:
+                    m_slot = e.value;
+                    break;
+                case ABS_MT_TRACKING_ID:
+                    if (e.value == -1) {
+                        if (m_slot == 0) m_pendingDown = false;
+                    } else {
+                        // Snow protocol: tracking id doubles as slot number.
+                        if (m_slot == 0) m_pendingDown = true;
+                    }
+                    break;
+                case ABS_MT_POSITION_X:
+                case ABS_X:
+                    if (m_slot == 0) { m_rawX = e.value; m_havePos = true; m_pendingDown = true; }
+                    break;
+                case ABS_MT_POSITION_Y:
+                case ABS_Y:
+                    if (m_slot == 0) { m_rawY = e.value; m_havePos = true; m_pendingDown = true; }
+                    break;
+                default: break;
+                }
+            } else if (e.type == EV_KEY && e.code == BTN_TOUCH) {
+                m_pendingDown = (e.value != 0);
+            } else if (e.type == EV_SYN && e.code == SYN_REPORT) {
+                emitState();
+                m_slot = 0; // frames without ABS_MT_SLOT refer to the first contact
+            }
+        }
+    }
+}
+
+void KoboTouchInput::emitState()
+{
+    if (!m_havePos && !m_sentDown) return;
+    // raw -> screen
+    int rx = m_rawX, ry = m_rawY;
+    int sx, sy;
+    if (m_swapXY) { sx = ry; sy = rx; } else { sx = rx; sy = ry; }
+    // scale if the axis range doesn't match the screen
+    int rangeX = m_swapXY ? (m_maxY - m_minY + 1) : (m_maxX - m_minX + 1);
+    int rangeY = m_swapXY ? (m_maxX - m_minX + 1) : (m_maxY - m_minY + 1);
+    if (rangeX > 1 && rangeX != m_screenW) sx = (long long)sx * m_screenW / rangeX;
+    if (rangeY > 1 && rangeY != m_screenH) sy = (long long)sy * m_screenH / rangeY;
+    if (m_mirrorX) sx = (m_screenW - 1) - sx;
+    if (m_mirrorY) sy = (m_screenH - 1) - sy;
+    if (sx < 0) sx = 0; if (sx >= m_screenW) sx = m_screenW - 1;
+    if (sy < 0) sy = 0; if (sy >= m_screenH) sy = m_screenH - 1;
+    QPoint pos(sx, sy);
+
+    QWindow *win = QGuiApplication::focusWindow();
+    if (!win) {
+        QWindowList wl = QGuiApplication::topLevelWindows();
+        if (!wl.isEmpty()) win = wl.first();
+    }
+    if (!win) return;
+    QPointF local = pos - win->geometry().topLeft();
+
+    if (m_pendingDown && !m_sentDown) {
+        QWindowSystemInterface::handleMouseEvent(win, local, QPointF(pos), Qt::LeftButton);
+        m_sentDown = true;
+        m_lastPos = pos;
+    } else if (m_pendingDown && m_sentDown) {
+        if (pos != m_lastPos) {
+            QWindowSystemInterface::handleMouseEvent(win, local, QPointF(pos), Qt::LeftButton);
+            m_lastPos = pos;
+        }
+    } else if (!m_pendingDown && m_sentDown) {
+        QWindowSystemInterface::handleMouseEvent(win, local, QPointF(pos), Qt::NoButton);
+        m_sentDown = false;
+    }
+    m_down = m_pendingDown;
+}
