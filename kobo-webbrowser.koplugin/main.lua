@@ -128,14 +128,14 @@ function WakeScreen:init()
         ticks = nil,
         last = nil,
     }
-    local btn_w = math.floor((inner_w - Size.span.horizontal_large) / 2)
+    local btn_w = math.floor((inner_w - Size.span.horizontal_default) / 2)
     local buttons = HorizontalGroup:new{
         Button:new{
             text = _("Exit"),
             width = btn_w,
             callback = function() if self.on_exit then self.on_exit() end end,
         },
-        HorizontalSpan:new{ width = Size.span.horizontal_large },
+        HorizontalSpan:new{ width = Size.span.horizontal_default },
         Button:new{
             text = _("Cancel"),
             width = btn_w,
