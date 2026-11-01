@@ -241,7 +241,11 @@ OnScreenKeyboard::OnScreenKeyboard(QWidget *parent)
     build();
 }
 
-static FlatButton *key(const QString &label, int w, int h, bool dark = false, int px = 44)
+// Key size: taller keys are easier to hit; 5 rows of 108 px take ~40% of the screen.
+static const int kKeyH = 108;
+static const int kKeyGap = 6;
+
+static FlatButton *key(const QString &label, int w, int h, bool dark = false, int px = 50)
 {
     FlatButton *b = new FlatButton(label);
     b->setFixedSize(w, h);
@@ -252,8 +256,8 @@ static FlatButton *key(const QString &label, int w, int h, bool dark = false, in
 
 void OnScreenKeyboard::build()
 {
-    const int gap = 6;
-    const int keyH = 88;
+    const int gap = kKeyGap;
+    const int keyH = kKeyH;
     const int keyW = (1072 - 11 * gap) / 10;   // 10 keys per row at 1072 px wide
     QVBoxLayout *v = new QVBoxLayout(this);
     v->setContentsMargins(gap, gap, gap, gap);
@@ -265,7 +269,7 @@ void OnScreenKeyboard::build()
         QHBoxLayout *row = new QHBoxLayout; row->setSpacing(gap);
         if (r == 2) row->addSpacing(keyW / 2);
         if (r == 3) {
-            m_shift = key("Shift", keyW + keyW / 2 + gap / 2, keyH, true, 34);
+            m_shift = key("Shift", keyW + keyW / 2 + gap / 2, keyH, true, 38);
             connect(m_shift, SIGNAL(clicked()), this, SLOT(toggleShift()));
             row->addWidget(m_shift);
         }
@@ -277,7 +281,7 @@ void OnScreenKeyboard::build()
         }
         if (r == 2) row->addSpacing(keyW / 2);
         if (r == 3) {
-            FlatButton *bs = key("Del", keyW + keyW / 2 + gap / 2, keyH, true, 36);   // backspace ("<" renders as a clock glyph in the Kobo UI font; no arrow glyphs)
+            FlatButton *bs = key("Del", keyW + keyW / 2 + gap / 2, keyH, true, 40);   // backspace ("<" renders as a clock glyph in the Kobo UI font; no arrow glyphs)
             bs->setProperty("keycode", (int)Qt::Key_Backspace);
             bs->setAutoRepeat(true); bs->setAutoRepeatDelay(500); bs->setAutoRepeatInterval(120);
             connect(bs, SIGNAL(clicked()), this, SLOT(keyClicked()));
@@ -289,7 +293,7 @@ void OnScreenKeyboard::build()
     }
     // Bottom row: symbols, URL helpers, space, Enter/Go, hide.
     QHBoxLayout *bottom = new QHBoxLayout; bottom->setSpacing(gap);
-    m_sym = key("?123", keyW + keyW / 2 + gap / 2, keyH, true, 34);
+    m_sym = key("?123", keyW + keyW / 2 + gap / 2, keyH, true, 38);
     connect(m_sym, SIGNAL(clicked()), this, SLOT(toggleSymbols()));
     bottom->addWidget(m_sym);
     struct { const char *label, *text; int w; } fixed[] = {
@@ -298,7 +302,7 @@ void OnScreenKeyboard::build()
         { "/", "/", keyW },
     };
     for (unsigned i = 0; i < sizeof fixed / sizeof fixed[0]; ++i) {
-        FlatButton *b = key(fixed[i].label, fixed[i].w, keyH, false, 36);
+        FlatButton *b = key(fixed[i].label, fixed[i].w, keyH, false, 40);
         b->setProperty("keytext", QString::fromLatin1(fixed[i].text));
         connect(b, SIGNAL(clicked()), this, SLOT(keyClicked()));
         bottom->addWidget(b);
@@ -307,7 +311,7 @@ void OnScreenKeyboard::build()
     space->setProperty("keytext", " ");
     connect(space, SIGNAL(clicked()), this, SLOT(keyClicked()));
     bottom->addWidget(space);
-    FlatButton *hide = key("Hide", keyW + keyW / 2, keyH, true, 36);
+    FlatButton *hide = key("Hide", keyW + keyW / 2, keyH, true, 40);
     connect(hide, SIGNAL(clicked()), this, SIGNAL(hidePressed()));
     bottom->addWidget(hide);
     FlatButton *go = key("Go", keyW + keyW / 2 + gap / 2, keyH, true, 40);
@@ -320,7 +324,7 @@ void OnScreenKeyboard::build()
     setFixedHeight(preferredHeight());
 }
 
-int OnScreenKeyboard::preferredHeight() const { return m_rows * (88 + 6) + 6 + 2; }
+int OnScreenKeyboard::preferredHeight() const { return m_rows * (kKeyH + kKeyGap) + kKeyGap + 2; }
 
 void OnScreenKeyboard::relabel()
 {
