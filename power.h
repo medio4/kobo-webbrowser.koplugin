@@ -84,6 +84,8 @@ private:
     bool m_extended;            // we wrote 1 to state-extended
     QProcess *m_wifi;
     QElapsedTimer m_lastToggle; // debounce: one press = one transition
+    QElapsedTimer m_pressTimer; // length of the current power-key press
+    bool m_pressActive;
     QString m_dir;              // where wifi-sleep.sh lives (the binary's folder)
 };
 #endif

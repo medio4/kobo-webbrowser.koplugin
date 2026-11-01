@@ -184,6 +184,7 @@ KoboPower::KoboPower(KoboEink *eink, QObject *parent)
     m_guard.setSingleShot(true);
     connect(&m_guard, SIGNAL(timeout()), this, SLOT(retrySuspend()));
     m_lastToggle.start();
+    m_pressActive = false;
     qDebug() << "power: device fd" << m_fd << "autosleep" << idleMin << "min suspend" << m_suspendEnabled
              << "wifi" << m_wifiEnabled << "cover" << m_coverEnabled;
 }
@@ -247,11 +248,22 @@ void KoboPower::readable()
             const struct input_event &e = ev[i];
             if (e.type != EV_KEY) continue;
             qDebug() << "power: key" << e.code << e.value << "state" << m_state;
-            if (e.code == KEY_POWER && e.value == 1) {
-                // Act on the press, never the release: the release of the press that
-                // woke the device must not put it straight back to sleep.
-                if (m_lastToggle.elapsed() < 800) continue;
-                if (m_state == Awake) sleep(); else wake();
+            if (e.code == KEY_POWER) {
+                // Wake on the press. Sleep only on the RELEASE of a short press (< 1 s),
+                // so a long hold is left to kb-escape (5 s hold = force-quit) and the
+                // release of the press that woke the device (debounced) can't sleep again.
+                if (e.value == 1) {
+                    if (m_state != Awake) {
+                        if (m_lastToggle.elapsed() >= 800) wake();
+                    } else {
+                        m_pressTimer.start();
+                        m_pressActive = true;
+                    }
+                } else if (e.value == 0 && m_pressActive) {
+                    m_pressActive = false;
+                    if (m_state == Awake && m_pressTimer.elapsed() < 1000 && m_lastToggle.elapsed() >= 800)
+                        sleep();
+                }
             } else if (e.code == kSleepCover && m_coverEnabled) {
                 if (e.value == 1 && m_state == Awake) sleep();
                 else if (e.value == 0 && m_state != Awake) wake();
