@@ -9,6 +9,7 @@
 #include "webpage.h"
 #include "pagescroll.h"
 #include "epub.h"
+#include "memtune.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QPushButton>
@@ -419,8 +420,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     m_view->setFocus();
 
     QWebSettings *ws = m_view->settings();
-    ws->setAttribute(QWebSettings::JavascriptEnabled, true);
-    ws->setAttribute(QWebSettings::PluginsEnabled, false);
+    MemTune::applySettings(ws);   // caches, JS (KB_NO_JS), plugins etc.
     ws->setAttribute(QWebSettings::AutoLoadImages, true);
     ws->setAttribute(QWebSettings::ZoomTextOnly, false);
     ws->setFontSize(QWebSettings::DefaultFontSize, 20);
@@ -434,6 +434,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     if (QDir("/mnt/onboard/.adds/kobo-browser").exists())
         cacheDir = "/mnt/onboard/.adds/kobo-browser/cache";
     cache->setCacheDirectory(cacheDir);
+    cache->setMaximumCacheSize(MemTune::diskCacheBytes());
     m_view->page()->networkAccessManager()->setCache(cache);
 
     connect(go, SIGNAL(clicked()), this, SLOT(go()));
@@ -454,6 +455,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     connect(m_view, SIGNAL(loadStarted()), this, SLOT(loadStarted()));
     connect(m_view, SIGNAL(loadProgress(int)), this, SLOT(loadProgress(int)));
     connect(m_view, SIGNAL(loadFinished(bool)), this, SLOT(loadFinished(bool)));
+    connect(m_view, SIGNAL(loadFinished(bool)), new MemTune(this), SLOT(scheduleTrim()));
     connect(m_modeBtn, SIGNAL(clicked()), this, SLOT(toggleScrollMode()));
     if (m_eink)
         connect(m_view->pager(), SIGNAL(pageTurned()), m_eink, SLOT(hintPageTurn()));
