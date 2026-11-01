@@ -21,8 +21,11 @@ export PRODUCT="${PRODUCT:-spaBW}"
 # platform plugin from the firmware (its own blit path doesn't work outside Nickel, so we copy
 # its screen image to the framebuffer ourselves and refresh with fbink).
 KB_DISPLAY="${KB_DISPLAY:-kobo}"
-FBINK=/mnt/onboard/.adds/koreader/fbink
-FBDEPTH=/mnt/onboard/.adds/koreader/fbdepth
+# KOReader's own folder (the plugin passes KOREADER_DIR); fbink and fbdepth come from it.
+KOREADER_DIR="${KOREADER_DIR:-/mnt/onboard/.adds/koreader}"
+export KOREADER_DIR
+FBINK="$KOREADER_DIR/fbink"
+FBDEPTH="$KOREADER_DIR/fbdepth"
 if [ "$KB_DISPLAY" = "kobo" ]; then
     P=/tmp/kobo-browser-plugins
     rm -rf "$P"; mkdir -p "$P/imageformats"
@@ -54,7 +57,7 @@ export KB_KEYS_DEV="${KB_KEYS_DEV:-}"   # Kobo keys plugin off by default (set t
 export KB_HOME="${KB_HOME:-https://lite.duckduckgo.com/lite/}"
 # Where "Save" puts EPUBs: KOReader's home folder (settings.reader.lua home_dir) + /Web
 if [ -z "$KB_LIBRARY_DIR" ]; then
-    KO_HOME="$(sed -n 's/^ *\["home_dir"\] = "\([^"]*\)",*$/\1/p' /mnt/onboard/.adds/koreader/settings.reader.lua 2>/dev/null | head -n 1)"
+    KO_HOME="$(sed -n 's/^ *\["home_dir"\] = "\([^"]*\)",*$/\1/p' $KOREADER_DIR/settings.reader.lua 2>/dev/null | head -n 1)"
     [ -d "$KO_HOME" ] || KO_HOME=/mnt/onboard/Books
     [ -d "$KO_HOME" ] || KO_HOME=/mnt/onboard
     KB_LIBRARY_DIR="$KO_HOME/Web"

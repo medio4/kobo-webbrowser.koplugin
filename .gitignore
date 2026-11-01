@@ -2,3 +2,4 @@ build/
 qtest/*.o
 qtest/Makefile
 qtest/moc_*
+dist/

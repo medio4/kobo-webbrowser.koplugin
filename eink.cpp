@@ -1,4 +1,5 @@
 #include "eink.h"
+#include <QtCore/QCoreApplication>
 #include "fbwriter.h"
 #include "hwtcon.h"
 #include <QtGui/QScreen>
@@ -186,7 +187,7 @@ void KoboEink::flush()
                         ++dbg;
                         qDebug() << "grab:" << r << "backingstore image fmt" << src->format() << src->size()
                                  << "depth" << src->depth();
-                        if (getenv("KB_DEBUG_GRAB")) img.save(QString("/mnt/onboard/.adds/kobo-browser/grab%1.png").arg(dbg));
+                        if (getenv("KB_DEBUG_GRAB")) img.save(QCoreApplication::applicationDirPath() + QString("/grab%1.png").arg(dbg));
                     }
                     changed = m_fb->write(img, r.topLeft());
                 } else if (dbg < 3) {
