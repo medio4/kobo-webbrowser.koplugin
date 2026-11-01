@@ -478,9 +478,14 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
 
     // Disk cache + cookies in our own folder (user partition).
     QNetworkDiskCache *cache = new QNetworkDiskCache(this);
-    QString cacheDir = QDir::homePath() + "/.kobo-browser-cache";
-    if (QDir("/mnt/onboard/.adds/kobo-browser").exists())
-        cacheDir = "/mnt/onboard/.adds/kobo-browser/cache";
+    // KB_CACHE_DIR (set by the KOReader plugin) wins; otherwise next to the binary when
+    // it lives on the user partition, else in $HOME.
+    QString cacheDir = QString::fromLocal8Bit(qgetenv("KB_CACHE_DIR"));
+    if (cacheDir.isEmpty()) {
+        QString appDir = QCoreApplication::applicationDirPath();
+        cacheDir = appDir.startsWith("/mnt/onboard/") ? appDir + "/cache"
+                                                      : QDir::homePath() + "/.kobo-browser-cache";
+    }
     cache->setCacheDirectory(cacheDir);
     cache->setMaximumCacheSize(MemTune::diskCacheBytes());
     m_view->page()->networkAccessManager()->setCache(cache);
