@@ -52,6 +52,10 @@ KoboEink::KoboEink(QObject *parent)
     m_wfFast    = envStr("KB_WF_FAST", "DU");       // 1-bit, fastest: button presses, typing
     m_wfPage    = envStr("KB_WF_PAGE", "REAGL");    // non-flashing text update for page turns
     m_wfFull    = envStr("KB_WF_FULL", "GC16");     // flashing full refresh
+    m_wfClean   = envStr("KB_WF_CLEAN", "GL16");    // non-flashing grayscale cleanup after DU bursts
+    m_settleTimer.setSingleShot(true);
+    m_settleTimer.setInterval((int)envFlags("KB_FAST_SETTLE_MS", 400));
+    connect(&m_settleTimer, SIGNAL(timeout()), this, SLOT(settleFast()));
     m_fullEvery = (int)envFlags("KB_FULL_EVERY", 6);  // full flash every N page turns (0 = never)
     m_logRefresh = getenv("KB_EINK_LOG") != 0;   // log every fbink refresh
     m_holdTimer.setSingleShot(true);
@@ -186,6 +190,13 @@ void KoboEink::flush()
             }
             // Same pixels as before (e.g. a button repainted on press/release): nothing to show.
             if (!changed && !full) continue;
+            if (fast) {
+                // DU leaves gray edges and ghosts; once the burst settles, clean the area.
+                m_fastDirty |= r;
+                m_settleTimer.start();
+            } else if (!m_fastDirty.isEmpty() && r.contains(m_fastDirty)) {
+                m_fastDirty = QRect();   // covered by a proper refresh anyway
+            }
             if (m_hw && m_hw->refresh(r, full ? HwtconRefresh::GC16 : fast ? HwtconRefresh::DU : HwtconRefresh::Auto, full))
                 continue;
             QStringList args;
@@ -245,6 +256,39 @@ QStringList KoboEink::waveformArgs(quint64 flags)
     if (flash) a << "-f";
     if (!wf.isEmpty() && wf != "AUTO") a << "-W" << wf;
     return a;
+}
+
+static HwtconRefresh::Waveform hwWaveform(const QString &wf)
+{
+    if (wf == "DU") return HwtconRefresh::DU;
+    if (wf == "GC16") return HwtconRefresh::GC16;
+    if (wf == "GL16") return HwtconRefresh::GL16;
+    if (wf == "REAGL") return HwtconRefresh::REAGL;
+    if (wf == "A2") return HwtconRefresh::A2;
+    return HwtconRefresh::Auto;
+}
+
+void KoboEink::cleanRect(const QRect &rIn)
+{
+    QRect r = rIn;
+    if (r.isEmpty() || !m_useFbink) return;
+    QWindowList wl = QGuiApplication::topLevelWindows();
+    if (!wl.isEmpty()) r &= QRect(QPoint(0, 0), wl.first()->geometry().size());
+    if (r.isEmpty()) return;
+    if (m_logRefresh) qDebug() << "eink: clean" << r << m_wfClean;
+    if (m_hw && m_hw->refresh(r, hwWaveform(m_wfClean), false)) return;
+    QStringList args;
+    args << "-q" << "-s" << QString("top=%1,left=%2,width=%3,height=%4").arg(r.y()).arg(r.x()).arg(r.width()).arg(r.height());
+    if (m_wfClean != "AUTO") args << "-W" << m_wfClean;
+    QProcess::startDetached(m_fbink, args);
+}
+
+void KoboEink::settleFast()
+{
+    if (m_timer.isActive()) { m_settleTimer.start(); return; }   // more repaints on the way
+    QRect r = m_fastDirty;
+    m_fastDirty = QRect();
+    cleanRect(r);
 }
 
 void KoboEink::hintPageTurn() { m_nextFlags = m_flagsPage; }

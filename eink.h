@@ -40,6 +40,9 @@ public:
     void releaseHold(bool fullFlash = true);
     bool holding() const { return m_holdWidget != 0; }
     quint64 flagsFast() const { return m_flagsFast; }
+    // Clean grayscale (GL16) partial refresh of a rect, regardless of whether its
+    // pixels changed: clears the ghosting left by fast DU updates.
+    void cleanRect(const QRect &r);
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
 public slots:
@@ -50,6 +53,7 @@ public slots:
 private slots:
     void flush();
     void holdTick();
+    void settleFast();   // after a burst of fast updates: clean refresh of their area
 private:
     QStringList waveformArgs(quint64 flags);
     static KoboEink *s_instance;
@@ -60,6 +64,9 @@ private:
     QWidget *m_holdWidget;
     QRect m_held;               // bounding rect of repaints swallowed during a hold
     QTimer m_holdTimer;
+    QTimer m_settleTimer;
+    QRect m_fastDirty;          // union of rects refreshed with the fast waveform since the last cleanup
+    QString m_wfClean;
     bool m_logRefresh;
     typedef void (*RepaintFn)(void *self, const QRegion &, const QList<QPair<QRect, quint64> > &);
     RepaintFn m_repaint;
