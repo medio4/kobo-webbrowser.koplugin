@@ -15,7 +15,13 @@ static const char *kEinkCss =
     "a,a:visited,a:link{color:#000 !important;text-decoration:underline !important}"
     "*{text-shadow:none !important;box-shadow:none !important;transition:none !important;animation:none !important}"
     "img,video{max-width:100% !important;height:auto}"
-    "body{line-height:1.45}";
+    "body{line-height:1.45}"
+    // Wikipedia (Vector 2022 / Minerva): hide chrome that this WebKit can't lay out.
+    ".vector-header-container,.vector-page-toolbar,.vector-column-start,.vector-column-end,"
+    ".vector-sticky-header,#p-lang-btn,.vector-page-titlebar-toc,#vector-toc-pinned-container,"
+    ".mw-footer-container,#mw-navigation,.header-container,.minerva-footer,.mw-editsection,"
+    ".mw-indicators,.pre-content .page-actions-menu,.last-modified-bar{display:none !important}"
+    ".mw-body,.mw-page-container,.mw-content-container,.vector-body{margin:0 !important;padding:0 8px !important;max-width:none !important}";
 
 KoboWebPage::KoboWebPage(QObject *parent) : QWebPage(parent)
 {
@@ -37,18 +43,8 @@ QUrl KoboWebPage::mobileVariant(const QUrl &url)
 {
     if (getenv("KB_NO_MOBILE_SITES")) return url;
     QString host = url.host().toLower();
-    // xx.wikipedia.org -> xx.m.wikipedia.org (also wiktionary, wikibooks, ...)
-    static const char *wikis[] = { "wikipedia.org", "wiktionary.org", "wikibooks.org", "wikiquote.org",
-                                   "wikisource.org", "wikinews.org", "wikiversity.org", "wikivoyage.org", 0 };
-    for (int i = 0; wikis[i]; ++i) {
-        QString dom = QString::fromLatin1(wikis[i]);
-        if (host.endsWith("." + dom) && !host.contains(".m.")) {
-            QString lang = host.left(host.size() - dom.size() - 1);
-            if (lang == "www") lang = "en";
-            QUrl u = url; u.setHost(lang + ".m." + dom);
-            return u;
-        }
-    }
+    // (Wikipedia now serves its mobile layout on the main host based on the user agent,
+    //  and redirects xx.m.wikipedia.org back, so no rewrite for it.)
     if (host == "reddit.com" || host == "www.reddit.com") { QUrl u = url; u.setHost("old.reddit.com"); return u; }
     if (host == "duckduckgo.com" || host == "www.duckduckgo.com") {
         if (!url.path().startsWith("/lite")) { QUrl u = url; u.setHost("lite.duckduckgo.com"); u.setPath("/lite/"); return u; }
