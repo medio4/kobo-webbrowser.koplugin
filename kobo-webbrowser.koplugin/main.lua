@@ -27,6 +27,15 @@ text) and releases the touchscreen. We notice it within POLL_SEC, lift the draw 
 an InputDialog over the browser's frozen picture and answer in bin/kbd-reply.txt (line 1:
 go|set|cancel, rest: text); the browser then takes the screen back and repaints itself.
 
+KOReader's top menu over the browser: a swipe down that starts on the browser's toolbar
+writes bin/menu-request.txt and freezes the browser the same way. We copy the frozen picture
+into the white cover (so whatever KOReader repaints under its menus is the page, not the file
+manager), lift the draw guard and open the menu. KOReader works normally until nothing of
+ours is left above the cover; then bin/menu-reply.txt says "back" and the browser takes the
+screen back on the same page (nothing is reloaded). If KOReader moved on instead (the file
+browser / home icon, a book opened from History, ...), the reply is "quit" and the browser
+just exits under KOReader's new screen.
+
 @module koplugin.KoboWebBrowser
 --]]
 
@@ -274,6 +283,8 @@ function KoboWebBrowser:init()
     self.rc_file = self.bin .. "/exit-code"
     self.kbd_request = self.bin .. "/kbd-request.txt"
     self.kbd_reply = self.bin .. "/kbd-reply.txt"
+    self.menu_request = self.bin .. "/menu-request.txt"
+    self.menu_reply = self.bin .. "/menu-reply.txt"
     self.sleep_shot = self.bin .. "/sleep-shot.png"
     self.sleep_page = self.bin .. "/sleep-page.html"
     self.settings = G_reader_settings:readSetting("kobo_webbrowser") or {}
@@ -302,8 +313,19 @@ function KoboWebBrowser:addToMainMenu(menu_items)
         sorting_hint = "tools",
         sub_item_table = {
             {
-                text = _("Open web browser"),
-                callback = function() self:onLaunchKoboBrowser() end,
+                text_func = function()
+                    return self.menu_session and _("Back to the web browser") or _("Open web browser")
+                end,
+                callback = function()
+                    -- Opened over a running browser: closing the menu goes back to it.
+                    if not self.menu_session then self:onLaunchKoboBrowser() end
+                end,
+            },
+            {
+                text = _("Close web browser"),
+                enabled_func = function() return self.menu_session ~= nil end,
+                callback = function() self:closeFromMenu() end,
+                separator = true,
             },
             {
                 text = _("Open address…"),
@@ -474,6 +496,9 @@ function KoboWebBrowser:run(extra)
     }
     if self.settings.home then env.KB_HOME = self.settings.home end
     os.remove(self.kbd_request); os.remove(self.kbd_reply)
+    os.remove(self.menu_request); os.remove(self.menu_reply)
+    env.KB_MENU_FILE = self.menu_request
+    env.KB_MENU_REPLY = self.menu_reply
     if self.settings.native_keyboard == true then
         env.KB_KBD_FILE = self.kbd_request
         env.KB_KBD_REPLY = self.kbd_reply
@@ -547,9 +572,21 @@ function KoboWebBrowser:poll()
             -- Counts as user activity, so AutoSuspend doesn't sleep under the browser.
             UIManager:broadcastEvent(Event:new("InputEvent"))
         end
-        if not self.kbd_dialog and lfs.attributes(self.kbd_request, "mode") == "file" then
+        if self.menu_session then
+            local ok, err = pcall(self.checkMenuSession, self)
+            if not ok then
+                logger.warn("KoboWebBrowser: menu session check failed:", err)
+                pcall(self.endMenuSession, self, "back")
+            end
+        elseif not self.kbd_dialog and lfs.attributes(self.kbd_request, "mode") == "file" then
             local ok, err = pcall(self.onKeyboardRequest, self)
             if not ok then logger.warn("KoboWebBrowser: keyboard request failed:", err) end
+        elseif not self.kbd_dialog and lfs.attributes(self.menu_request, "mode") == "file" then
+            local ok, err = pcall(self.onMenuRequest, self)
+            if not ok then
+                logger.warn("KoboWebBrowser: menu request failed:", err)
+                pcall(self.endMenuSession, self, "back")
+            end
         end
         UIManager:scheduleIn(POLL_SEC, self.poll_action)
     else
@@ -659,6 +696,163 @@ function KoboWebBrowser:onKeyboardRequest()
     self.kbd_dialog = dialog
     UIManager:show(dialog)
     dialog:onShowKeyboard()
+end
+
+-- ---- KOReader's menus over the browser ------------------------------------------------
+
+-- The UI the menu was opened in (FileManager or ReaderUI), and whether it's still shown.
+local function isKoreaderUI(w)
+    return w and (w.name == "filemanager" or w.name == "ReaderUI")
+end
+
+-- The browser froze and handed us the touchscreen: open KOReader's top menu over it.
+function KoboWebBrowser:onMenuRequest()
+    os.remove(self.menu_request)
+    local menu = self.ui and self.ui.menu
+    if not (menu and menu.onShowMenu and self.hooks and self.cover) then
+        logger.warn("KoboWebBrowser: menu request, but no menu to show")
+        writeAtomically(self.menu_reply, "back\n")
+        return
+    end
+    logger.info("KoboWebBrowser: opening KOReader's menu over the browser")
+    -- Copy the browser's frozen picture off the real framebuffer: the cover paints it, so
+    -- whatever KOReader repaints under its menus (a menu getting shorter, a dialog closing)
+    -- shows the page instead of stale menu pixels or the file manager.
+    local real = self.hooks.bb or Device.screen.bb
+    local snap
+    local ok, err = pcall(function()
+        snap = Blitbuffer.new(real:getWidth(), real:getHeight(), real:getType())
+        snap:blitFrom(real, 0, 0, 0, 0, real:getWidth(), real:getHeight())
+    end)
+    if not ok then
+        logger.warn("KoboWebBrowser: could not copy the browser's picture:", err)
+        if snap and snap.free then pcall(snap.free, snap) end
+        snap = nil
+    end
+    self.menu_session = { snap = snap, ui = self.ui, empty_polls = 0 }
+    self:liftDrawGuard()
+    local cover = self.cover
+    if snap then
+        cover.paintTo = function(_, bb, x, y)
+            bb:blitFrom(snap, x, y, 0, 0, snap:getWidth(), snap:getHeight())
+        end
+        -- Repaint the cover (the page) under anything KOReader repaints, so areas a menu
+        -- no longer covers get the page back. UIManager only paints from the lowest dirty
+        -- widget up, and stops at the cover (it covers the full screen).
+        local repaint = UIManager._repaint
+        UIManager._repaint = function(uim)
+            if next(uim._dirty) ~= nil and uim._dirty[cover] == nil then uim._dirty[cover] = true end
+            return repaint(uim)
+        end
+    end
+    -- KOReader exiting or restarting from the menu: take the browser down with it.
+    local quit = UIManager.quit
+    self.menu_session.quit = quit
+    UIManager.quit = function(...)
+        if self.job and alive(self.job.pid) then
+            logger.info("KoboWebBrowser: KOReader is quitting, stopping the browser")
+            pcall(self.stopBrowser, self, SIGKILL)
+        end
+        return quit(...)
+    end
+    pcall(Device.input.resetState, Device.input)
+    menu:onShowMenu()
+end
+
+-- While the menu session lasts (every POLL_SEC): back to the browser once nothing is shown
+-- above the cover any more; quit it if KOReader went to another screen.
+function KoboWebBrowser:checkMenuSession()
+    local m = self.menu_session
+    if m.quitting then
+        if os.time() - m.quitting > 3 and self.job then
+            logger.warn("KoboWebBrowser: browser didn't quit after the menu, killing it")
+            self:stopBrowser(SIGKILL)
+            self:onBrowserGone("escape")
+        end
+        return
+    end
+    local stack = UIManager._window_stack
+    local ci, ui_shown
+    for i, win in ipairs(stack) do
+        if win.widget == self.cover then ci = i end
+        if win.widget == m.ui then ui_shown = true end
+    end
+    local above = 0
+    if ci then
+        for i = ci + 1, #stack do
+            local w = stack[i].widget
+            if isKoreaderUI(w) then
+                return self:endMenuSession("quit", "KOReader opened " .. tostring(w.name))
+            end
+            if not w.toast then above = above + 1 end
+        end
+    end
+    if not ci or not ui_shown then
+        return self:endMenuSession("quit", ci and "the menu's screen was closed" or "the cover is gone")
+    end
+    if above > 0 then
+        m.empty_polls = 0
+        return
+    end
+    -- Two empty polls in a row: a menu item may close the menu and open its dialog a tick later.
+    m.empty_polls = m.empty_polls + 1
+    if m.empty_polls >= 2 then self:endMenuSession("back") end
+end
+
+-- action: "back" (take the browser back, same page) or "quit" (KOReader went elsewhere).
+function KoboWebBrowser:endMenuSession(action, why)
+    local m = self.menu_session
+    if not m or m.quitting then return end
+    logger.info("KoboWebBrowser: menu closed:", action, why or "")
+    if m.quit and UIManager.quit ~= m.quit then UIManager.quit = m.quit end
+    m.quit = nil
+    if action == "quit" then
+        -- KOReader owns the screen now: leave the guard lifted while the browser exits
+        -- (onBrowserGone cleans up), so its new screen keeps drawing.
+        m.quitting = os.time()
+    else
+        -- Guard back up before the browser draws again (also drops our _repaint wrapper).
+        self:restoreDrawGuard()
+        self:freeMenuSnapshot()
+        self.menu_session = nil
+    end
+    if not writeAtomically(self.menu_reply, action .. "\n") then
+        logger.warn("KoboWebBrowser: cannot write", self.menu_reply)
+    end
+    pcall(Device.input.resetState, Device.input)
+end
+
+function KoboWebBrowser:freeMenuSnapshot()
+    local m = self.menu_session
+    if not m or not m.snap then return end
+    local snap = m.snap
+    m.snap = nil
+    if self.cover then self.cover.paintTo = self.guard_lifted and nop or nil end
+    pcall(function() if snap.free then snap:free() end end)
+end
+
+-- "Close web browser" in the plugin's menu while the menu is up over the browser.
+function KoboWebBrowser:closeFromMenu()
+    if not self.menu_session then return end
+    local menu = self.ui and self.ui.menu
+    local close = menu and (menu.onCloseFileManagerMenu or menu.onCloseReaderMenu)
+    if close then pcall(close, menu) end
+    self:endMenuSession("quit", "Close web browser")
+end
+
+-- The browser went away during a menu session (sleep, escape, crash): undo it.
+function KoboWebBrowser:dropMenuSession()
+    local m = self.menu_session
+    if not m then return end
+    if m.quit and UIManager.quit ~= m.quit then UIManager.quit = m.quit end
+    if not m.quitting then
+        -- The menu is still open over the page: close it (sleep reopens the browser).
+        local menu = m.ui and m.ui.menu
+        local close = menu and menu.menu_container and (menu.onCloseFileManagerMenu or menu.onCloseReaderMenu)
+        if close then pcall(close, menu) end
+    end
+    self:freeMenuSnapshot()
+    self.menu_session = nil
 end
 
 -- SIGTERM run.sh (it passes the signal on to the browser); if the browser doesn't quit in
@@ -846,6 +1040,7 @@ function KoboWebBrowser:onBrowserGone(reason)
     self.job = nil
     if active == self then active = nil end
     UIManager:unschedule(self.poll_action)
+    pcall(self.dropMenuSession, self)
     if self.kbd_dialog then
         local d = self.kbd_dialog
         self.kbd_dialog = nil

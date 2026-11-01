@@ -383,6 +383,23 @@ static FlatButton *toolButton(const QString &text, int w, int h)
     return b;
 }
 
+// Swipe down that starts on the toolbar: open KOReader's top menu over the page. Seen on
+// the application (whichever toolbar child got the touch); never eats the event.
+static const int kMenuSwipePx = 120;
+
+class BarSwipeFilter : public QObject {
+public:
+    BarSwipeFilter(Browser *b) : QObject(b), m_b(b) {}
+protected:
+    bool eventFilter(QObject *obj, QEvent *e) {
+        if (obj->isWidgetType() && (e->type() == QEvent::MouseButtonPress || e->type() == QEvent::MouseButtonRelease))
+            m_b->barSwipeEvent(static_cast<QMouseEvent *>(e));
+        return false;
+    }
+private:
+    Browser *m_b;
+};
+
 Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_restoreY(-1), m_relaunch(false), m_offline(false), m_offlineShown(false), m_onlineTimer(0)
 {
@@ -510,10 +527,18 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     connect(m_kbd, SIGNAL(backspacePressed()), this, SLOT(flashUrlBar()));
     // KOReader's own keyboard (when launched by the plugin with KB_KBD_FILE set).
     m_touch = 0;
-    m_native = new NativeTextEntry(this);
-    connect(m_native, SIGNAL(started()), this, SLOT(nativeStarted()));
-    connect(m_native, SIGNAL(replied(QString,QString)), this, SLOT(nativeReplied(QString,QString)));
-    connect(m_native, SIGNAL(unavailable()), this, SLOT(nativeUnavailable()));
+    m_native = new NativeTextEntry("KB_KBD_FILE", "KB_KBD_REPLY", this);
+    if (getenv("KB_NO_NATIVE_KBD")) { delete m_native; m_native = 0; }
+    if (m_native) connect(m_native, SIGNAL(started()), this, SLOT(nativeStarted()));
+    if (m_native) connect(m_native, SIGNAL(replied(QString,QString)), this, SLOT(nativeReplied(QString,QString)));
+    if (m_native) connect(m_native, SIGNAL(unavailable()), this, SLOT(nativeUnavailable()));
+    // KOReader's top menu over the browser: swipe down from the toolbar (see eventFilter).
+    m_menu = new NativeTextEntry("KB_MENU_FILE", "KB_MENU_REPLY", this);
+    m_barSwipe = false; m_swipeMenu = false;
+    connect(m_menu, SIGNAL(started()), this, SLOT(nativeStarted()));
+    connect(m_menu, SIGNAL(replied(QString,QString)), this, SLOT(menuReplied(QString)));
+    connect(m_menu, SIGNAL(unavailable()), this, SLOT(menuUnavailable()));
+    if (m_menu->available()) qApp->installEventFilter(new BarSwipeFilter(this));
     connect(m_view, SIGNAL(urlChanged(QUrl)), this, SLOT(urlChanged(QUrl)));
     connect(m_view, SIGNAL(loadStarted()), this, SLOT(loadStarted()));
     connect(m_view, SIGNAL(loadProgress(int)), this, SLOT(loadProgress(int)));
@@ -562,8 +587,35 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     loadUrlText(m_home);
 }
 
+// A mouse press / release anywhere in the app (one finger: the touch driver feeds the
+// first contact only). Qt delivers it to each widget up the parent chain; only the first
+// delivery of a press/release counts.
+void Browser::barSwipeEvent(QMouseEvent *me)
+{
+    QPoint g = me->globalPos();
+    if (me->type() == QEvent::MouseButtonPress) {
+        if (m_barTouch.isValid() && m_barTouch.elapsed() < 30 && g == m_barPress) return;   // same press, parent widget
+        QRect bar(m_bar->mapToGlobal(QPoint(0, 0)), m_bar->size());
+        m_barSwipe = bar.contains(g) && !m_kbd->isVisible();
+        m_swipeMenu = false;
+        m_barPress = g;
+        m_barTouch.start();
+    } else if (m_barSwipe) {
+        m_barSwipe = false;
+        QPoint d = g - m_barPress;
+        if (g.x() >= 0 && d.y() >= kMenuSwipePx && qAbs(d.x()) < d.y() && !KoboTouchInput::gestureActive()) {
+            m_swipeMenu = true;   // the address bar's own release handler skips this one
+            QTimer::singleShot(0, this, SLOT(openKoreaderMenu()));
+        }
+    }
+}
+
 bool Browser::eventFilter(QObject *obj, QEvent *e)
 {
+    if (obj == m_url && e->type() == QEvent::MouseButtonRelease && m_swipeMenu) {
+        m_swipeMenu = false;
+        return QMainWindow::eventFilter(obj, e);
+    }
     if (obj == m_view && (e->type() == QEvent::MouseButtonPress || e->type() == QEvent::MouseButtonRelease)) {
         m_lastPageTap.start();
         QPoint p = static_cast<QMouseEvent *>(e)->pos();
@@ -805,6 +857,35 @@ void Browser::nativeReplied(const QString &action, const QString &text)
         QKeyEvent release(QEvent::KeyRelease, Qt::Key_Return, Qt::NoModifier, "\r");
         QApplication::sendEvent(m_view, &release);
     }
+}
+
+// ---- KOReader's top menu over the browser (KB_MENU_FILE). Same hand-off as the keyboard:
+// we freeze, KOReader draws its menu over our picture; "back" = take the screen back as it
+// was (the page is never reloaded), "quit" = KOReader went elsewhere (home, a book): exit
+// without drawing anything, KOReader already owns the screen.
+
+void Browser::openKoreaderMenu()
+{
+    if (!m_menu || m_menu->active() || (m_native && m_native->active())) return;
+    qDebug() << "menu: toolbar swipe, opening KOReader's menu";
+    m_menu->request("menu", "", m_url->text());
+}
+
+void Browser::menuReplied(const QString &action)
+{
+    qDebug() << "menu: KOReader replied" << action;
+    if (action == "quit") {
+        qApp->quit();
+        return;
+    }
+    if (m_touch) m_touch->setHandedOff(false);
+    if (m_eink) m_eink->setSuspended(false);   // puts our picture back, flashed
+}
+
+void Browser::menuUnavailable()
+{
+    if (m_touch) m_touch->setHandedOff(false);
+    if (m_eink) m_eink->setSuspended(false);
 }
 
 void Browser::nativeUnavailable()

@@ -5,17 +5,16 @@
 #include <QtCore/QStringList>
 #include <stdlib.h>
 
-NativeTextEntry::NativeTextEntry(QObject *parent)
+NativeTextEntry::NativeTextEntry(const char *reqEnv, const char *replyEnv, QObject *parent)
     : QObject(parent), m_active(false), m_pickedUp(false)
 {
-    m_reqPath = QString::fromLocal8Bit(getenv("KB_KBD_FILE"));
-    m_replyPath = QString::fromLocal8Bit(getenv("KB_KBD_REPLY"));
-    if (getenv("KB_NO_NATIVE_KBD")) m_reqPath.clear();
+    m_reqPath = QString::fromLocal8Bit(getenv(reqEnv));
+    m_replyPath = QString::fromLocal8Bit(getenv(replyEnv));
     m_timer.setInterval(100);
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(poll()));
     if (available()) {
         QFile::remove(m_reqPath); QFile::remove(m_replyPath);
-        qDebug() << "textentry: KOReader keyboard via" << m_reqPath;
+        qDebug() << "textentry: KOReader hand-off via" << m_reqPath;
     }
 }
 
@@ -63,7 +62,7 @@ void NativeTextEntry::poll()
             m_pickedUp = true;
         } else if (m_since.elapsed() > 2500) {
             // The plugin isn't listening (old plugin, or launched another way).
-            qWarning() << "textentry: no reply from KOReader, using the built-in keyboard";
+            qWarning() << "textentry: KOReader didn't pick up" << m_reqPath;
             cancel();
             emit unavailable();
             return;

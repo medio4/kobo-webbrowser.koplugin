@@ -16,6 +16,7 @@ class QPushButton;
 
 class KoboEink;
 class KoboTouchInput;
+class QMouseEvent;
 class NativeTextEntry;
 
 // QWebView with e-ink friendly touch handling. A short tap clicks. A quick flick
@@ -102,6 +103,7 @@ class Browser : public QMainWindow {
 public:
     Browser(const QString &home, KoboEink *eink, QWidget *parent = 0);
     void setTouchInput(KoboTouchInput *t) { m_touch = t; }
+    void barSwipeEvent(QMouseEvent *me);   // app-wide press/release: toolbar swipe down
 public slots:
     void go();
     void loadUrlText(const QString &text);
@@ -138,6 +140,9 @@ private slots:
     void nativeStarted();        // KOReader keyboard: hand over screen + touch
     void nativeReplied(const QString &action, const QString &text);
     void nativeUnavailable();
+    void openKoreaderMenu();     // toolbar swipe down: KOReader's top menu over the page
+    void menuReplied(const QString &action);
+    void menuUnavailable();
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
     void resizeEvent(QResizeEvent *e);
@@ -165,6 +170,11 @@ private:
     QTimer *m_onlineTimer;    // offline copy: polls for a network connection
     KoboTouchInput *m_touch;
     NativeTextEntry *m_native;
+    NativeTextEntry *m_menu;  // KOReader's menu over the browser (KB_MENU_FILE)
+    bool m_barSwipe;          // the current touch started on the toolbar
+    bool m_swipeMenu;         // ... and turned into a menu swipe (ignore its release)
+    QPoint m_barPress;
+    QElapsedTimer m_barTouch;
     QString m_nativeKind;     // what the pending KOReader text entry is for: url / field / text
 };
 
