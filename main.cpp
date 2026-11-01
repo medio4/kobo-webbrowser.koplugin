@@ -41,7 +41,6 @@
 #include <QtCore/QFile>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
-#include <QtCore/QSettings>
 #include <QtWebKit/QWebSettings>
 #include <QtWebKitWidgets/QWebFrame>
 #include <QtWebKitWidgets/QWebPage>
@@ -53,17 +52,14 @@
 // ---------------------------------------------------------------- TouchWebView
 
 TouchWebView::TouchWebView(QWidget *parent)
-    : QWebView(parent), m_pressed(false), m_dragging(false), m_forwarding(false)
+    : QWebView(parent), m_pressed(false), m_dragging(false), m_forwarding(false),
+      m_horizontal(false), m_live(false)
 {
     m_pager = new PageScroller(this);
-    m_horizontal = false;
     // Edge swipes: in from the left = back one page in history, in from the right = forward.
     connect(m_pager, SIGNAL(goBack()), this, SLOT(back()));
     connect(m_pager, SIGNAL(goForward()), this, SLOT(forward()));
 }
-
-bool TouchWebView::pageMode() const { return m_pager->enabled(); }
-void TouchWebView::setPageMode(bool on) { m_pager->setEnabled(on); }
 
 bool TouchWebView::event(QEvent *e)
 {
@@ -81,32 +77,40 @@ void TouchWebView::mousePressEvent(QMouseEvent *e)
     if (m_forwarding) { QWebView::mousePressEvent(e); return; }
     m_pressed = true;
     m_dragging = false;
+    m_horizontal = false;
+    m_live = false;
     m_pressPos = e->pos();
     m_lastPos = e->pos();
     m_pressTime.start();
-    m_pager->handlePress(e->pos());
     e->accept();
 }
 
+// One gesture model, no modes: a drag locks to an axis once it starts. Vertical: if
+// the finger is still down after KB_FLICK_MS it becomes live scrolling (the page
+// follows the finger in big steps); released before that it was a flick and turns one
+// page. Horizontal: a swipe (page turn, or history back/forward from the edges).
 void TouchWebView::mouseMoveEvent(QMouseEvent *e)
 {
     if (m_forwarding) { QWebView::mouseMoveEvent(e); return; }
     if (!m_pressed) return;
-    if (KoboTouchInput::gestureActive()) { m_pressed = false; m_dragging = false; m_pager->cancel(); e->accept(); return; }
-    if (m_pager->handleMove(e->pos())) { e->accept(); return; }   // page mode: no live drag
-    // Live mode. The drag locks to an axis when it starts: vertical drags scroll the
-    // page live; horizontal ones are swipes (page turn, or history from the edges).
-    QPoint delta = e->pos() - m_lastPos;
+    if (KoboTouchInput::gestureActive()) { m_pressed = false; m_dragging = false; e->accept(); return; }
     QPoint fromPress = e->pos() - m_pressPos;
     if (!m_dragging && fromPress.manhattanLength() > 25) {
         m_dragging = true;
         m_horizontal = qAbs(fromPress.x()) > qAbs(fromPress.y());
     }
     if (m_dragging && !m_horizontal) {
-        // Scroll in big steps only; e-ink can't follow continuous scrolling well.
-        if (qAbs(delta.y()) >= 40) {
-            page()->mainFrame()->scroll(0, -delta.y());
+        if (!m_live && m_pressTime.elapsed() >= m_pager->flickMs()) {
+            m_live = true;          // sustained drag: catch up with the finger, then follow it
+            page()->mainFrame()->scroll(0, -fromPress.y());
             m_lastPos = e->pos();
+        } else if (m_live) {
+            // Scroll in big steps only; e-ink can't follow continuous scrolling well.
+            QPoint delta = e->pos() - m_lastPos;
+            if (qAbs(delta.y()) >= 40) {
+                page()->mainFrame()->scroll(0, -delta.y());
+                m_lastPos = e->pos();
+            }
         }
     }
     e->accept();
@@ -117,16 +121,19 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
     if (m_forwarding) { QWebView::mouseReleaseEvent(e); return; }
     if (!m_pressed) return;
     m_pressed = false;
-    if (KoboTouchInput::gestureActive() || e->pos().x() < 0) { m_dragging = false; m_pager->cancel(); e->accept(); return; }
-    if (m_pager->handleRelease(e->pos())) { m_dragging = false; e->accept(); return; }  // page turned
+    if (KoboTouchInput::gestureActive() || e->pos().x() < 0) { m_dragging = false; e->accept(); return; }
     if (m_dragging) {
         m_dragging = false;
+        QPoint d = e->pos() - m_pressPos;
         if (m_horizontal) {
             m_pager->handleHorizontalSwipe(m_pressPos, e->pos());
-        } else {
-            // Finish a vertical drag: scroll by the remaining delta.
+        } else if (m_live) {
+            // Finish the live drag: scroll by the remaining delta.
             QPoint delta = e->pos() - m_lastPos;
             if (delta.y() != 0) page()->mainFrame()->scroll(0, -delta.y());
+        } else if (qAbs(d.y()) >= m_pager->swipeMin()) {
+            // Flick: released quickly after a decent move. Up = next page, down = previous.
+            if (d.y() < 0) m_pager->nextPage(); else m_pager->prevPage();
         }
         e->accept();
         return;
@@ -363,13 +370,10 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     row1->addWidget(m_url, 1); row1->addWidget(clear); row1->addWidget(go);
     barBox->addLayout(row1);
 
-    // Ten buttons + 9 gaps of 6 px must fit in 1064 px: widths add up to 1010.
+    // Nine buttons + 8 gaps of 6 px must fit in 1064 px: widths add up to 900 (164 spare).
     FlatButton *back = toolButton("<", 90, bh);
     FlatButton *fwd  = toolButton(">", 90, bh);
     FlatButton *rel  = toolButton("Reload", 140, bh);
-    FlatButton *mode = toolButton("Page", 110, bh);
-    m_modeBtn = mode;
-    m_modeBtn->setToolTip("Scroll mode: Page (swipe/edge tap turns a screen) or Live (drag)");
     FlatButton *kbd  = toolButton("Keys", 110, bh);
     FlatButton *zi   = toolButton("A+", 90, bh);
     FlatButton *zo   = toolButton("A-", 90, bh);
@@ -378,7 +382,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     FlatButton *shot = toolButton("Shot", 100, bh);
     FlatButton *quit = toolButton("Exit", 80, bh);
     QHBoxLayout *row2 = new QHBoxLayout; row2->setSpacing(6);
-    row2->addWidget(back); row2->addWidget(fwd); row2->addWidget(rel); row2->addWidget(m_modeBtn);
+    row2->addWidget(back); row2->addWidget(fwd); row2->addWidget(rel);
     row2->addStretch(1);
     row2->addWidget(kbd); row2->addWidget(zi); row2->addWidget(zo); row2->addWidget(save); row2->addWidget(shot); row2->addWidget(quit);
     barBox->addLayout(row2);
@@ -454,15 +458,9 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     connect(m_view, SIGNAL(loadStarted()), this, SLOT(loadStarted()));
     connect(m_view, SIGNAL(loadProgress(int)), this, SLOT(loadProgress(int)));
     connect(m_view, SIGNAL(loadFinished(bool)), this, SLOT(loadFinished(bool)));
-    connect(m_modeBtn, SIGNAL(clicked()), this, SLOT(toggleScrollMode()));
     if (m_eink)
         connect(m_view->pager(), SIGNAL(pageTurned()), m_eink, SLOT(hintPageTurn()));
 
-    // Scroll mode is remembered between runs (settings.ini next to the binary).
-    {
-        QSettings st(QDir(QCoreApplication::applicationDirPath()).filePath("settings.ini"), QSettings::IniFormat);
-        applyScrollMode(st.value("scroll/pageMode", true).toBool(), false);
-    }
     // A tap on a text field in the page pops the keyboard up.
     connect(m_view->page(), SIGNAL(microFocusChanged()), this, SLOT(pageFocusChanged()));
 
@@ -625,16 +623,6 @@ void Browser::releaseLoadHold()
     if (m_eink) m_eink->releaseHold(true);
 }
 
-void Browser::toggleScrollMode() { applyScrollMode(!m_view->pageMode(), true); }
-void Browser::applyScrollMode(bool pageMode, bool save)
-{
-    m_view->setPageMode(pageMode);
-    m_modeBtn->setText(pageMode ? "Page" : "Live");   // shows the mode that is active
-    if (save) {
-        QSettings st(QDir(QCoreApplication::applicationDirPath()).filePath("settings.ini"), QSettings::IniFormat);
-        st.setValue("scroll/pageMode", pageMode);
-    }
-}
 
 // Reads the first line of a sysfs/proc file, trimmed; empty if unreadable.
 static QString readLine(const QString &path)

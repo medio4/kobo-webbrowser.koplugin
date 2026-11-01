@@ -16,18 +16,15 @@ class QPushButton;
 
 class KoboEink;
 
-// QWebView with two scroll modes. Live: a drag scrolls the page as it moves.
-// Page: a swipe or an edge tap turns one screen at a time (PageScroller).
-// In both, a short tap is forwarded as a click.
-
+// QWebView with e-ink friendly touch handling. A short tap clicks. A quick flick
+// turns one screen (up/left = next, down/right = previous; from the very left/right
+// edge = history back/forward). A drag held longer than KB_FLICK_MS scrolls live.
 class EpubSaver;
 class TouchWebView : public QWebView {
     Q_OBJECT
 public:
     explicit TouchWebView(QWidget *parent = 0);
     PageScroller *pager() const { return m_pager; }
-    bool pageMode() const;
-    void setPageMode(bool on);
 protected:
     bool event(QEvent *e);
     void mousePressEvent(QMouseEvent *e);
@@ -39,7 +36,8 @@ private:
     bool m_pressed;
     bool m_dragging;
     bool m_forwarding;
-    bool m_horizontal;      // live mode: this drag is horizontal (page turn / history swipe)
+    bool m_horizontal;      // this drag is horizontal (page turn / history swipe)
+    bool m_live;            // this drag turned into live scrolling (held past KB_FLICK_MS)
     QElapsedTimer m_pressTime;
     PageScroller *m_pager;
 };
@@ -108,7 +106,6 @@ public slots:
     void quit();
     void focusUrl();
     void screenshot();
-    void toggleScrollMode();
     void releaseLoadHold();
 private slots:
     void keyboardGo();
@@ -136,9 +133,7 @@ private:
     QTimer *m_sysTimer;
     QString m_home;
     KoboEink *m_eink;
-    FlatButton *m_modeBtn;
     QElapsedTimer m_lastPageTap;
-    void applyScrollMode(bool pageMode, bool save);
     EpubSaver *m_saver;
 };
 
