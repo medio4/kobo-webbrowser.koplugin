@@ -29,37 +29,49 @@ FbWriter::~FbWriter()
     if (m_fd >= 0) close(m_fd);
 }
 
-void FbWriter::write(const QImage &srcIn, const QPoint &dst)
+// Compare-then-copy one converted scanline; returns true if it differed.
+static inline bool putLine(unsigned char *dst, const unsigned char *src, int bytes)
 {
-    if (!isOpen() || srcIn.isNull()) return;
+    if (memcmp(dst, src, bytes) == 0) return false;
+    memcpy(dst, src, bytes);
+    return true;
+}
+
+bool FbWriter::write(const QImage &srcIn, const QPoint &dst)
+{
+    if (!isOpen() || srcIn.isNull()) return false;
+    bool changed = false;
+    int x0 = dst.x(), y0 = dst.y();
+    int w = qMin(srcIn.width(), m_w - x0), h = qMin(srcIn.height(), m_h - y0);
+    if (w <= 0 || h <= 0 || x0 < 0 || y0 < 0) return false;
+
     // 8-bit images without a palette are treated as raw grayscale.
     if (srcIn.depth() == 8 && srcIn.colorCount() == 0 && m_bpp == 8) {
-        int x0 = dst.x(), y0 = dst.y();
-        int w = qMin(srcIn.width(), m_w - x0), h = qMin(srcIn.height(), m_h - y0);
-        if (w <= 0 || h <= 0 || x0 < 0 || y0 < 0) return;
         for (int y = 0; y < h; ++y)
-            memcpy(m_mem + (unsigned long)(y0 + y) * m_stride + x0, srcIn.constScanLine(y), w);
-        return;
+            changed |= putLine(m_mem + (unsigned long)(y0 + y) * m_stride + x0, srcIn.constScanLine(y), w);
+        return changed;
     }
     QImage src = srcIn.format() == QImage::Format_RGB32 || srcIn.format() == QImage::Format_ARGB32
                  ? srcIn : srcIn.convertToFormat(QImage::Format_RGB32);
-    int x0 = dst.x(), y0 = dst.y();
-    int w = qMin(src.width(), m_w - x0), h = qMin(src.height(), m_h - y0);
-    if (w <= 0 || h <= 0 || x0 < 0 || y0 < 0) return;
+    const int outBytes = (m_bpp / 8) * w;
+    if (m_line.size() < outBytes) m_line.resize(outBytes);
+    unsigned char *tmp = (unsigned char *)m_line.data();
     for (int y = 0; y < h; ++y) {
         const QRgb *line = (const QRgb *)src.constScanLine(y);
         unsigned char *out = m_mem + (unsigned long)(y0 + y) * m_stride;
         if (m_bpp == 8) {
-            out += x0;
-            for (int x = 0; x < w; ++x) out[x] = (unsigned char)qGray(line[x]);
+            for (int x = 0; x < w; ++x) tmp[x] = (unsigned char)qGray(line[x]);
+            changed |= putLine(out + x0, tmp, w);
         } else if (m_bpp == 32) {
-            memcpy(out + x0 * 4, line, w * 4);
+            changed |= putLine(out + x0 * 4, (const unsigned char *)line, w * 4);
         } else if (m_bpp == 16) {
-            unsigned short *o16 = (unsigned short *)out + x0;
+            unsigned short *o16 = (unsigned short *)tmp;
             for (int x = 0; x < w; ++x) {
                 QRgb p = line[x];
                 o16[x] = (unsigned short)(((qRed(p) >> 3) << 11) | ((qGreen(p) >> 2) << 5) | (qBlue(p) >> 3));
             }
+            changed |= putLine(out + x0 * 2, tmp, w * 2);
         }
     }
+    return changed;
 }

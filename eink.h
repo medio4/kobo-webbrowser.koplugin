@@ -10,6 +10,7 @@
 #include <QtCore/QRect>
 class QWindow;
 class FbWriter;
+class HwtconRefresh;
 class KoboEink : public QObject {
     Q_OBJECT
 public:
@@ -20,6 +21,7 @@ public:
     void refreshAll(quint64 flags);
     quint64 flagsPartial() const { return m_flagsPartial; }
     quint64 flagsFull() const { return m_flagsFull; }
+    quint64 flagsFast() const { return m_flagsFast; }
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
 public slots:
@@ -33,11 +35,12 @@ private:
     void *m_dl;
     QTimer m_timer;
     QList<QPair<QRect, quint64> > m_pending;
-    quint64 m_flagsPartial, m_flagsFull;
+    quint64 m_flagsPartial, m_flagsFull, m_flagsFast;
     bool m_useFbink;
     bool m_grab;
     bool m_ready;
     QString m_fbink;
     FbWriter *m_fb;
+    HwtconRefresh *m_hw;
 };
 #endif

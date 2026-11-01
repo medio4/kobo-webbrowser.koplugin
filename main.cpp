@@ -19,6 +19,9 @@
 #include <QtGui/QMouseEvent>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QFont>
+#include <QtGui/QPainter>
+#include <QtGui/QPen>
+#include <QtGui/QPalette>
 #include <QtGui/QScreen>
 #include <QtGui/QWindow>
 #include <QtNetwork/QNetworkAccessManager>
@@ -110,156 +113,241 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
     e->accept();
 }
 
-// ------------------------------------------------------------ OnScreenKeyboard
+// ---------------------------------------------------------------- FlatButton
 
-static const char *kRowsLower[] = { "qwertyuiop", "asdfghjkl", "zxcvbnm", 0 };
-static const char *kRowsSym[]   = { "1234567890", "-/:;()$&@", ".,?!'\"", 0 };
-
-OnScreenKeyboard::OnScreenKeyboard(QWidget *parent)
-    : QWidget(parent), m_shift(false), m_symbols(false)
+FlatButton::FlatButton(const QString &text, QWidget *parent)
+    : QAbstractButton(parent), m_dark(false), m_flash(getenv("KB_KEY_FLASH") != 0)
 {
-    setLayout(new QVBoxLayout);
-    layout()->setContentsMargins(4, 4, 4, 4);
-    layout()->setSpacing(4);
-    rebuild();
+    setText(text);
+    setFocusPolicy(Qt::NoFocus);
+    setAttribute(Qt::WA_OpaquePaintEvent);
+    setPixelSize(40);
 }
 
-static QPushButton *makeKey(const QString &label, int minW, int h)
+void FlatButton::setBold(bool b) { QFont f = font(); f.setBold(b); setFont(f); }
+void FlatButton::setPixelSize(int px) { QFont f = font(); f.setPixelSize(px); setFont(f); }
+
+void FlatButton::paintEvent(QPaintEvent *)
 {
-    QPushButton *b = new QPushButton(label);
-    b->setMinimumSize(minW, h);
-    b->setFocusPolicy(Qt::NoFocus);
-    QFont f = b->font(); f.setPixelSize(40); b->setFont(f);
+    QPainter p(this);
+    QRect r = rect().adjusted(1, 1, -2, -2);
+    const bool inv = m_flash && isDown();
+    QColor face = inv ? Qt::black : (m_dark ? QColor(0xd8, 0xd8, 0xd8) : Qt::white);
+    QColor ink = inv ? Qt::white : Qt::black;
+    if (!isEnabled()) ink = QColor(0x90, 0x90, 0x90);
+    p.fillRect(rect(), Qt::white);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setPen(QPen(Qt::black, 2));
+    p.setBrush(face);
+    p.drawRoundedRect(r, 8, 8);
+    p.setPen(ink);
+    p.setFont(font());
+    p.drawText(r, Qt::AlignCenter, text());
+}
+
+// ------------------------------------------------------------ OnScreenKeyboard
+
+// Layers: lower / upper (shift) / symbols. Each string is one row, 10 keys.
+static const char *kLower[] = { "1234567890", "qwertyuiop", "asdfghjkl",  "zxcvbnm",  0 };
+static const char *kUpper[] = { "1234567890", "QWERTYUIOP", "ASDFGHJKL",  "ZXCVBNM",  0 };
+static const char *kSym[]   = { "!@#$%^&*()", "-_=+[]{}\\|", ";:'\",<>?",  "~`/.",     0 };
+
+OnScreenKeyboard::OnScreenKeyboard(QWidget *parent)
+    : QWidget(parent), m_shift(0), m_sym(0), m_shift_on(false), m_symbols(false), m_rows(0)
+{
+    setProperty("kb_fast", true);          // refreshed with the fast DU waveform
+    setAttribute(Qt::WA_OpaquePaintEvent);
+    setAutoFillBackground(true);
+    QPalette pal = palette(); pal.setColor(QPalette::Window, Qt::white); setPalette(pal);
+    build();
+}
+
+static FlatButton *key(const QString &label, int w, int h, bool dark = false, int px = 44)
+{
+    FlatButton *b = new FlatButton(label);
+    b->setFixedSize(w, h);
+    b->setDark(dark);
+    b->setPixelSize(px);
     return b;
 }
 
-void OnScreenKeyboard::rebuild()
+void OnScreenKeyboard::build()
 {
-    QLayout *l = layout();
-    while (QLayoutItem *item = l->takeAt(0)) {
-        if (item->widget()) item->widget()->deleteLater();
-        if (item->layout()) {
-            while (QLayoutItem *sub = item->layout()->takeAt(0)) {
-                if (sub->widget()) sub->widget()->deleteLater();
-                delete sub;
-            }
-            delete item->layout();
-        } else {
-            delete item;
+    const int gap = 6;
+    const int keyH = 88;
+    const int keyW = (1072 - 11 * gap) / 10;   // 10 keys per row at 1072 px wide
+    QVBoxLayout *v = new QVBoxLayout(this);
+    v->setContentsMargins(gap, gap, gap, gap);
+    v->setSpacing(gap);
+
+    // Row 0..3: characters (row 2 is indented half a key like KOReader; row 3 has
+    // shift on the left and backspace on the right).
+    for (int r = 0; kLower[r]; ++r) {
+        QHBoxLayout *row = new QHBoxLayout; row->setSpacing(gap);
+        if (r == 2) row->addSpacing(keyW / 2);
+        if (r == 3) {
+            m_shift = key("Shift", keyW + keyW / 2 + gap / 2, keyH, true, 34);
+            connect(m_shift, SIGNAL(clicked()), this, SLOT(toggleShift()));
+            row->addWidget(m_shift);
         }
-    }
-    const int keyH = 80;
-    const int keyW = 90;
-    const char **rows = m_symbols ? kRowsSym : kRowsLower;
-    for (int r = 0; rows[r]; ++r) {
-        QHBoxLayout *row = new QHBoxLayout;
-        row->setSpacing(4);
-        if (r == 1 && !m_symbols) row->addSpacing(keyW / 2);
-        if (r == 2) {
-            QPushButton *shift = makeKey(m_symbols ? "123" : (m_shift ? "ABC" : "abc"), keyW + 30, keyH);
-            connect(shift, SIGNAL(clicked()), this, m_symbols ? SLOT(toggleSymbols()) : SLOT(toggleShift()));
-            row->addWidget(shift);
-        }
-        for (const char *c = rows[r]; *c; ++c) {
-            QString s = QString(QChar(*c));
-            if (m_shift && !m_symbols) s = s.toUpper();
-            QPushButton *b = makeKey(s, keyW, keyH);
-            b->setProperty("keytext", s);
+        for (const char *c = kLower[r]; *c; ++c) {
+            FlatButton *b = key(QString(QChar(*c)), keyW, keyH);
             connect(b, SIGNAL(clicked()), this, SLOT(keyClicked()));
+            m_charKeys.append(b);
             row->addWidget(b);
         }
-        if (r == 2) {
-            QPushButton *bs = makeKey("<-", keyW + 30, keyH);
+        if (r == 2) row->addSpacing(keyW / 2);
+        if (r == 3) {
+            FlatButton *bs = key(QString::fromUtf8("\xE2\x86\x90"), keyW + keyW / 2 + gap / 2, keyH, true, 48);   // ← (backspace; the Kobo fonts lack ⌫)
             bs->setProperty("keycode", (int)Qt::Key_Backspace);
+            bs->setAutoRepeat(true); bs->setAutoRepeatDelay(500); bs->setAutoRepeatInterval(120);
             connect(bs, SIGNAL(clicked()), this, SLOT(keyClicked()));
             row->addWidget(bs);
         }
-        static_cast<QVBoxLayout *>(l)->addLayout(row);
+        row->addStretch(1);
+        v->addLayout(row);
+        ++m_rows;
     }
-    QHBoxLayout *bottom = new QHBoxLayout;
-    bottom->setSpacing(4);
-    QPushButton *sym = makeKey(m_symbols ? "abc" : "123", keyW + 30, keyH);
-    connect(sym, SIGNAL(clicked()), this, SLOT(toggleSymbols()));
-    bottom->addWidget(sym);
-    QPushButton *dot = makeKey(".", keyW, keyH);
-    dot->setProperty("keytext", "."); connect(dot, SIGNAL(clicked()), this, SLOT(keyClicked()));
-    bottom->addWidget(dot);
-    QPushButton *space = makeKey("space", keyW * 4, keyH);
-    space->setProperty("keytext", " "); connect(space, SIGNAL(clicked()), this, SLOT(keyClicked()));
+    // Bottom row: symbols, URL helpers, space, Enter/Go, hide.
+    QHBoxLayout *bottom = new QHBoxLayout; bottom->setSpacing(gap);
+    m_sym = key("?123", keyW + keyW / 2 + gap / 2, keyH, true, 34);
+    connect(m_sym, SIGNAL(clicked()), this, SLOT(toggleSymbols()));
+    bottom->addWidget(m_sym);
+    struct { const char *label, *text; int w; } fixed[] = {
+        { ".com", ".com", keyW + keyW / 2 },
+        { ".", ".", keyW },
+        { "/", "/", keyW },
+    };
+    for (unsigned i = 0; i < sizeof fixed / sizeof fixed[0]; ++i) {
+        FlatButton *b = key(fixed[i].label, fixed[i].w, keyH, false, 36);
+        b->setProperty("keytext", QString::fromLatin1(fixed[i].text));
+        connect(b, SIGNAL(clicked()), this, SLOT(keyClicked()));
+        bottom->addWidget(b);
+    }
+    FlatButton *space = key("", keyW * 2 + gap, keyH);
+    space->setProperty("keytext", " ");
+    connect(space, SIGNAL(clicked()), this, SLOT(keyClicked()));
     bottom->addWidget(space);
-    QPushButton *slash = makeKey("/", keyW, keyH);
-    slash->setProperty("keytext", "/"); connect(slash, SIGNAL(clicked()), this, SLOT(keyClicked()));
-    bottom->addWidget(slash);
-    QPushButton *hide = makeKey("Hide", keyW + 30, keyH);
+    FlatButton *hide = key("Hide", keyW + keyW / 2, keyH, true, 36);
     connect(hide, SIGNAL(clicked()), this, SIGNAL(hidePressed()));
     bottom->addWidget(hide);
-    QPushButton *go = makeKey("Go", keyW + 30, keyH);
+    FlatButton *go = key("Go", keyW + keyW / 2 + gap / 2, keyH, true, 40);
+    go->setBold(true);
     connect(go, SIGNAL(clicked()), this, SIGNAL(goPressed()));
     bottom->addWidget(go);
-    static_cast<QVBoxLayout *>(l)->addLayout(bottom);
+    bottom->addStretch(1);
+    v->addLayout(bottom);
+    ++m_rows;
+    setFixedHeight(preferredHeight());
 }
 
-void OnScreenKeyboard::keyClicked()
+int OnScreenKeyboard::preferredHeight() const { return m_rows * (88 + 6) + 6 + 2; }
+
+void OnScreenKeyboard::relabel()
+{
+    const char **rows = m_symbols ? kSym : (m_shift_on ? kUpper : kLower);
+    int i = 0;
+    for (int r = 0; rows[r] && kLower[r]; ++r)
+        for (const char *c = kLower[r]; *c; ++c, ++i) {
+            // Symbol rows can be shorter than the letter rows; blank the extra keys.
+            int pos = c - kLower[r];
+            QString s = (int)strlen(rows[r]) > pos ? QString(QChar(rows[r][pos])) : QString();
+            if (i < m_charKeys.size() && m_charKeys[i]->text() != s) {
+                m_charKeys[i]->setText(s);
+                m_charKeys[i]->setEnabled(!s.isEmpty());
+                m_charKeys[i]->update();
+            }
+        }
+    QString shiftLabel = m_shift_on ? "SHIFT" : "Shift";
+    if (m_shift->text() != shiftLabel) { m_shift->setText(shiftLabel); m_shift->update(); }
+    QString symLabel = m_symbols ? "abc" : "?123";
+    if (m_sym->text() != symLabel) { m_sym->setText(symLabel); m_sym->update(); }
+    m_shift->setEnabled(!m_symbols);
+}
+
+void OnScreenKeyboard::sendKey(int code, const QString &text)
 {
     QWidget *target = QApplication::focusWidget();
     if (!target) return;
-    QObject *s = sender();
-    QString text = s->property("keytext").toString();
-    int code = s->property("keycode").toInt();
-    if (code == 0 && !text.isEmpty())
-        code = text.at(0).unicode();
     QKeyEvent press(QEvent::KeyPress, code, Qt::NoModifier, text);
     QApplication::sendEvent(target, &press);
     QKeyEvent release(QEvent::KeyRelease, code, Qt::NoModifier, text);
     QApplication::sendEvent(target, &release);
-    if (m_shift) { m_shift = false; rebuild(); }
 }
 
-void OnScreenKeyboard::toggleShift()  { m_shift = !m_shift; rebuild(); }
-void OnScreenKeyboard::toggleSymbols() { m_symbols = !m_symbols; rebuild(); }
+void OnScreenKeyboard::keyClicked()
+{
+    QObject *s = sender();
+    QString text = s->property("keytext").toString();
+    int code = s->property("keycode").toInt();
+    if (text.isEmpty() && code == 0) text = static_cast<QAbstractButton *>(s)->text();
+    if (text.isEmpty() && code == 0) return;
+    if (code == 0) {
+        QChar ch = text.at(0);
+        code = ch.isLetter() ? ch.toUpper().unicode() : ch.unicode();
+    }
+    sendKey(code, text);
+    if (m_shift_on && !m_symbols) { m_shift_on = false; relabel(); }
+}
+
+void OnScreenKeyboard::toggleShift()   { m_shift_on = !m_shift_on; relabel(); }
+void OnScreenKeyboard::toggleSymbols() { m_symbols = !m_symbols; relabel(); }
 
 // -------------------------------------------------------------------- Browser
 
+static FlatButton *toolButton(const QString &text, int w, int h)
+{
+    FlatButton *b = new FlatButton(text);
+    b->setFixedSize(w, h);
+    b->setPixelSize(38);
+    return b;
+}
+
 Browser::Browser(const QString &home, QWidget *parent)
-    : QMainWindow(parent), m_home(home)
+    : QMainWindow(parent), m_home(home), m_eink(0)
 {
     setWindowTitle("Browser");
 
-    QWidget *central = new QWidget;
-    QVBoxLayout *vbox = new QVBoxLayout(central);
+    m_central = new QWidget;
+    QVBoxLayout *vbox = new QVBoxLayout(m_central);
     vbox->setContentsMargins(0, 0, 0, 0);
     vbox->setSpacing(0);
 
     // Toolbar: two rows (URL field on top, buttons below), sized in pixels for 300 dpi.
-    QWidget *bar = new QWidget;
-    QVBoxLayout *barBox = new QVBoxLayout(bar);
-    barBox->setContentsMargins(4, 4, 4, 0);
-    barBox->setSpacing(4);
+    // Marked kb_fast so its repaints use the quick DU waveform while typing.
+    m_bar = new QWidget;
+    m_bar->setProperty("kb_fast", true);
+    m_bar->setAutoFillBackground(true);
+    QPalette pal = m_bar->palette(); pal.setColor(QPalette::Window, Qt::white); m_bar->setPalette(pal);
+    QVBoxLayout *barBox = new QVBoxLayout(m_bar);
+    barBox->setContentsMargins(6, 6, 6, 6);
+    barBox->setSpacing(6);
     const int bh = 84;
-    QFont bf; bf.setPixelSize(40);
+    QFont bf; bf.setPixelSize(38);
 
-    m_url = new QLineEdit; m_url->setMinimumHeight(bh); m_url->setFont(bf);
+    m_url = new QLineEdit; m_url->setFixedHeight(bh); m_url->setFont(bf);
     m_url->setPlaceholderText("Search or type a web address");
-    QPushButton *go = new QPushButton("Go"); go->setMinimumSize(130, bh); go->setFont(bf);
-    QHBoxLayout *row1 = new QHBoxLayout; row1->setSpacing(4);
-    row1->addWidget(m_url, 1); row1->addWidget(go);
+    m_url->setStyleSheet("QLineEdit { border: 2px solid black; border-radius: 8px; background: white; color: black;"
+                         " padding: 0 12px; selection-background-color: black; selection-color: white; }");
+    FlatButton *clear = toolButton("Clear", 130, bh);
+    FlatButton *go = toolButton("Go", 130, bh); go->setBold(true);
+    QHBoxLayout *row1 = new QHBoxLayout; row1->setSpacing(6);
+    row1->addWidget(m_url, 1); row1->addWidget(clear); row1->addWidget(go);
     barBox->addLayout(row1);
 
-    QPushButton *back = new QPushButton("<");   back->setMinimumSize(110, bh); back->setFont(bf);
-    QPushButton *fwd  = new QPushButton(">");   fwd->setMinimumSize(110, bh);  fwd->setFont(bf);
-    QPushButton *rel  = new QPushButton("Reload"); rel->setMinimumSize(170, bh); rel->setFont(bf);
-    QPushButton *kbd  = new QPushButton("Keys"); kbd->setMinimumSize(150, bh); kbd->setFont(bf);
-    QPushButton *zi   = new QPushButton("A+");  zi->setMinimumSize(110, bh);   zi->setFont(bf);
-    QPushButton *zo   = new QPushButton("A-");  zo->setMinimumSize(110, bh);   zo->setFont(bf);
-    QPushButton *quit = new QPushButton("Exit"); quit->setMinimumSize(140, bh); quit->setFont(bf);
-    foreach (QPushButton *b, QList<QPushButton *>() << go << back << fwd << rel << kbd << zi << zo << quit)
-        b->setFocusPolicy(Qt::NoFocus);
-    QHBoxLayout *row2 = new QHBoxLayout; row2->setSpacing(4);
+    FlatButton *back = toolButton(QString::fromUtf8("\xE2\x97\x80"), 120, bh);   // ◀
+    FlatButton *fwd  = toolButton(QString::fromUtf8("\xE2\x96\xB6"), 120, bh);   // ▶
+    FlatButton *rel  = toolButton("Reload", 170, bh);
+    FlatButton *kbd  = toolButton("Keys", 130, bh);
+    FlatButton *zi   = toolButton("A+", 120, bh);
+    FlatButton *zo   = toolButton("A-", 120, bh);
+    FlatButton *quit = toolButton("Exit", 140, bh);
+    QHBoxLayout *row2 = new QHBoxLayout; row2->setSpacing(6);
     row2->addWidget(back); row2->addWidget(fwd); row2->addWidget(rel);
     row2->addStretch(1);
     row2->addWidget(kbd); row2->addWidget(zi); row2->addWidget(zo); row2->addWidget(quit);
     barBox->addLayout(row2);
-    vbox->addWidget(bar);
+    vbox->addWidget(m_bar);
 
     m_status = new QLabel;
     QFont sf; sf.setPixelSize(30);
@@ -270,12 +358,12 @@ Browser::Browser(const QString &home, QWidget *parent)
     m_view = new TouchWebView;
     vbox->addWidget(m_view, 1);
 
-    m_kbd = new OnScreenKeyboard;
+    // The keyboard is NOT in the layout: it floats over the bottom of the page, so
+    // showing it doesn't re-layout and repaint the whole web view.
+    m_kbd = new OnScreenKeyboard(m_central);
     m_kbd->hide();
-    vbox->addWidget(m_kbd);
 
-    setCentralWidget(central);
-    m_kbd->hide();
+    setCentralWidget(m_central);
     m_view->setFocus();
 
     QWebSettings *ws = m_view->settings();
@@ -297,6 +385,7 @@ Browser::Browser(const QString &home, QWidget *parent)
     m_view->page()->networkAccessManager()->setCache(cache);
 
     connect(go, SIGNAL(clicked()), this, SLOT(go()));
+    connect(clear, SIGNAL(clicked()), this, SLOT(clearUrl()));
     connect(back, SIGNAL(clicked()), m_view, SLOT(back()));
     connect(fwd, SIGNAL(clicked()), m_view, SLOT(forward()));
     connect(rel, SIGNAL(clicked()), m_view, SLOT(reload()));
@@ -305,12 +394,14 @@ Browser::Browser(const QString &home, QWidget *parent)
     connect(zo, SIGNAL(clicked()), this, SLOT(zoomOut()));
     connect(quit, SIGNAL(clicked()), this, SLOT(quit()));
     connect(m_url, SIGNAL(returnPressed()), this, SLOT(go()));
-    connect(m_kbd, SIGNAL(goPressed()), this, SLOT(go()));
+    connect(m_kbd, SIGNAL(goPressed()), this, SLOT(keyboardGo()));
     connect(m_kbd, SIGNAL(hidePressed()), this, SLOT(hideKeyboard()));
     connect(m_view, SIGNAL(urlChanged(QUrl)), this, SLOT(urlChanged(QUrl)));
     connect(m_view, SIGNAL(loadStarted()), this, SLOT(loadStarted()));
     connect(m_view, SIGNAL(loadProgress(int)), this, SLOT(loadProgress(int)));
     connect(m_view, SIGNAL(loadFinished(bool)), this, SLOT(loadFinished(bool)));
+    // A tap on a text field in the page pops the keyboard up.
+    connect(m_view->page(), SIGNAL(microFocusChanged()), this, SLOT(pageFocusChanged()));
 
     // Tapping the URL field shows the keyboard.
     m_url->installEventFilter(this);
@@ -325,10 +416,30 @@ bool Browser::eventFilter(QObject *obj, QEvent *e)
     return QMainWindow::eventFilter(obj, e);
 }
 
+void Browser::resizeEvent(QResizeEvent *e)
+{
+    QMainWindow::resizeEvent(e);
+    placeKeyboard();
+}
+
+void Browser::placeKeyboard()
+{
+    if (!m_central) return;
+    int h = m_kbd->preferredHeight();
+    m_kbd->setGeometry(0, m_central->height() - h, m_central->width(), h);
+}
+
 void Browser::focusUrl()
 {
     m_url->setFocus();
     m_url->selectAll();
+    showKeyboard();
+}
+
+void Browser::clearUrl()
+{
+    m_url->clear();
+    m_url->setFocus();
     showKeyboard();
 }
 
@@ -337,6 +448,27 @@ void Browser::go()
     loadUrlText(m_url->text());
     hideKeyboard();
     m_view->setFocus();
+}
+
+// Keyboard's Go/Enter key: load the URL when editing the address bar, otherwise
+// act as Enter in whatever page field has focus (search boxes, logins...).
+void Browser::keyboardGo()
+{
+    if (QApplication::focusWidget() == m_url) { go(); return; }
+    QWidget *target = QApplication::focusWidget();
+    if (!target) return;
+    QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier, "\r");
+    QApplication::sendEvent(target, &press);
+    QKeyEvent release(QEvent::KeyRelease, Qt::Key_Return, Qt::NoModifier, "\r");
+    QApplication::sendEvent(target, &release);
+}
+
+void Browser::pageFocusChanged()
+{
+    if (m_kbd->isVisible()) return;
+    QVariant v = m_view->page()->inputMethodQuery(Qt::ImEnabled);
+    if (v.isValid() && v.toBool() && QApplication::focusWidget() == m_view)
+        showKeyboard();
 }
 
 void Browser::loadUrlText(const QString &textIn)
@@ -356,12 +488,33 @@ void Browser::loadUrlText(const QString &textIn)
     m_view->load(url);
 }
 
-void Browser::showKeyboard()   { m_kbd->show(); }
-void Browser::hideKeyboard()   { m_kbd->hide(); }
+void Browser::showKeyboard()
+{
+    if (m_kbd->isVisible()) return;
+    placeKeyboard();
+    m_kbd->raise();
+    m_kbd->show();
+}
+
+void Browser::hideKeyboard()
+{
+    if (!m_kbd->isVisible()) return;
+    m_kbd->hide();
+    // Typing used the rough DU waveform; redraw the toolbar cleanly once it settles.
+    QTimer::singleShot(600, this, SLOT(cleanToolbar()));
+}
+
+void Browser::cleanToolbar()
+{
+    if (!m_eink) return;
+    QRect r = QRect(m_bar->mapTo(this, QPoint(0, 0)), m_bar->size());
+    m_eink->markDirty(r, m_eink->flagsPartial());
+}
+
 void Browser::toggleKeyboard()
 {
     if (m_kbd->isVisible()) hideKeyboard();
-    else { if (!QApplication::focusWidget()) m_url->setFocus(); showKeyboard(); }
+    else { if (!QApplication::focusWidget() || QApplication::focusWidget() == m_view) m_url->setFocus(); showKeyboard(); }
 }
 
 void Browser::zoomIn()  { m_view->setZoomFactor(m_view->zoomFactor() * 1.2); }
@@ -397,6 +550,8 @@ int main(int argc, char **argv)
         QLoggingCategory::setFilterRules(QStringLiteral("*.debug=true"));
     QApplication app(argc, argv);
     app.setApplicationName("kobo-browser");
+    // A blinking text cursor would refresh the address bar twice a second.
+    app.setCursorFlashTime(0);
 
     signal(SIGTERM, onSignal);
     signal(SIGINT, onSignal);
@@ -453,6 +608,7 @@ int main(int argc, char **argv)
     KoboEink *eink = new KoboEink(&app);
     app.installEventFilter(eink);
     Browser w(home);
+    w.setEink(eink);
     QScreen *scr = app.primaryScreen();
     if (scr) qDebug() << "screen:" << scr->geometry() << "dpi" << scr->logicalDotsPerInch();
     const char *showMode = getenv("KB_SHOWMODE");

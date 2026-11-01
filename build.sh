@@ -6,6 +6,6 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 mkdir -p "$HERE/build"
 podman run --rm --security-opt label=disable \
-  -v "$ROOT/browser":/work/browser -v "$ROOT/downloads":/work/downloads:ro \
+  -v "$HERE":/work/browser -v "$ROOT/downloads":/work/downloads:ro \
   -w /work/browser/build ghcr.io/pgaskin/nickeltc:1.0 \
   sh -c 'qmake -spec linux-arm-nickel-gnueabihf-g++ ../browser.pro && make -j"$(nproc)" && arm-nickel-linux-gnueabihf-strip kobo-browser && ls -la kobo-browser'
