@@ -3,11 +3,12 @@
 
 #include <QtWidgets/QMainWindow>
 #include <QtWidgets/QLineEdit>
-#include <QtWidgets/QToolBar>
+#include <QtWidgets/QAbstractButton>
 #include <QtWidgets/QWidget>
 #include <QtWidgets/QLabel>
 #include <QtCore/QPoint>
 #include <QtCore/QElapsedTimer>
+#include <QtCore/QList>
 #include <QtWebKitWidgets/QWebView>
 class PageScroller;
 class QPushButton;
@@ -40,11 +41,31 @@ private:
     PageScroller *m_pager;
 };
 
-// A simple on-screen keyboard that sends key events to the focused widget.
+// A flat, e-ink friendly button in the style of KOReader's keys: white face,
+// thin black border, rounded corners, plain text. It draws no pressed state
+// unless KB_KEY_FLASH is set, so a tap costs no extra screen refresh.
+class FlatButton : public QAbstractButton {
+    Q_OBJECT
+public:
+    explicit FlatButton(const QString &text, QWidget *parent = 0);
+    void setBold(bool b);
+    void setPixelSize(int px);
+    void setDark(bool d) { m_dark = d; update(); }   // gray face for utility keys
+    void setFlash(bool f) { m_flash = f; }
+protected:
+    void paintEvent(QPaintEvent *e);
+private:
+    bool m_dark;
+    bool m_flash;
+};
+
+// On-screen keyboard laid out like KOReader's English keyboard, with URL
+// helpers. Built once; shift / symbol layers only relabel the keys.
 class OnScreenKeyboard : public QWidget {
     Q_OBJECT
 public:
     explicit OnScreenKeyboard(QWidget *parent = 0);
+    int preferredHeight() const;
 signals:
     void goPressed();
     void hidePressed();
@@ -53,9 +74,15 @@ private slots:
     void toggleShift();
     void toggleSymbols();
 private:
-    void rebuild();
-    bool m_shift;
+    void build();
+    void relabel();
+    void sendKey(int code, const QString &text);
+    QList<FlatButton *> m_charKeys;   // keys whose label changes with the layer
+    FlatButton *m_shift;
+    FlatButton *m_sym;
+    bool m_shift_on;
     bool m_symbols;
+    int m_rows;
 };
 
 class Browser : public QMainWindow {
@@ -68,6 +95,7 @@ public slots:
     void showKeyboard();
     void hideKeyboard();
     void toggleKeyboard();
+    void clearUrl();
     void zoomIn();
     void zoomOut();
     void urlChanged(const QUrl &url);
@@ -79,16 +107,24 @@ public slots:
     void screenshot();
     void toggleScrollMode();
     void releaseLoadHold();
+private slots:
+    void keyboardGo();
+    void pageFocusChanged();
+    void cleanToolbar();
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
+    void resizeEvent(QResizeEvent *e);
 private:
+    void placeKeyboard();
     TouchWebView *m_view;
     QLineEdit *m_url;
     OnScreenKeyboard *m_kbd;
+    QWidget *m_bar;
+    QWidget *m_central;
     QLabel *m_status;
     QString m_home;
     KoboEink *m_eink;
-    QPushButton *m_modeBtn;
+    FlatButton *m_modeBtn;
     void applyScrollMode(bool pageMode, bool save);
 };
 

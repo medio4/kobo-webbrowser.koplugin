@@ -13,6 +13,7 @@
 class QWindow;
 class QWidget;
 class FbWriter;
+class HwtconRefresh;
 class KoboEink : public QObject {
     Q_OBJECT
 public:
@@ -38,6 +39,7 @@ public:
     void beginHold(QWidget *w);
     void releaseHold(bool fullFlash = true);
     bool holding() const { return m_holdWidget != 0; }
+    quint64 flagsFast() const { return m_flagsFast; }
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
 public slots:
@@ -70,5 +72,6 @@ private:
     bool m_ready;
     QString m_fbink;
     FbWriter *m_fb;
+    HwtconRefresh *m_hw;
 };
 #endif
