@@ -11,6 +11,7 @@
 #include "epub.h"
 #include "toc.h"
 #include "memtune.h"
+#include "power.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QPushButton>
@@ -56,8 +57,10 @@
 
 TouchWebView::TouchWebView(QWidget *parent)
     : QWebView(parent), m_pressed(false), m_dragging(false), m_forwarding(false),
-      m_horizontal(false), m_live(false)
+      m_horizontal(false), m_live(false), m_light(NoLight), m_lightStart(0)
 {
+    const char *le = getenv("KB_LIGHT_EDGE");
+    m_lightEdge = (le && *le) ? atoi(le) : 48;
     m_pager = new PageScroller(this);
     // Edge swipes: in from the left = back one page in history, in from the right = forward.
     connect(m_pager, SIGNAL(goBack()), this, SLOT(back()));
@@ -82,6 +85,7 @@ void TouchWebView::mousePressEvent(QMouseEvent *e)
     m_dragging = false;
     m_horizontal = false;
     m_live = false;
+    m_light = NoLight;
     m_pressPos = e->pos();
     m_lastPos = e->pos();
     m_pressTime.start();
@@ -101,6 +105,20 @@ void TouchWebView::mouseMoveEvent(QMouseEvent *e)
     if (!m_dragging && fromPress.manhattanLength() > 25) {
         m_dragging = true;
         m_horizontal = qAbs(fromPress.x()) > qAbs(fromPress.y());
+        // Vertical drag from the very left edge = frontlight, right edge = warmth (KOReader).
+        KoboFrontlight *fl = KoboFrontlight::instance();
+        if (!m_horizontal && fl && fl->available() && m_lightEdge > 0) {
+            if (m_pressPos.x() < m_lightEdge) { m_light = LightBrightness; m_lightStart = fl->brightness(); }
+            else if (m_pressPos.x() >= width() - m_lightEdge && fl->hasWarmth()) { m_light = LightWarmth; m_lightStart = fl->warmth(); }
+        }
+    }
+    if (m_light != NoLight) {
+        // Up = brighter / warmer. Three quarters of the page height covers the full range.
+        KoboFrontlight *fl = KoboFrontlight::instance();
+        int v = m_lightStart + (-fromPress.y()) * 100 / qMax(1, height() * 3 / 4);
+        if (m_light == LightBrightness) fl->setBrightness(v); else fl->setWarmth(v);
+        e->accept();
+        return;
     }
     if (m_dragging) {
         // Same rule on both axes: held past the flick time, the drag follows the finger
@@ -134,7 +152,14 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
     if (m_forwarding) { QWebView::mouseReleaseEvent(e); return; }
     if (!m_pressed) return;
     m_pressed = false;
-    if (KoboTouchInput::gestureActive() || e->pos().x() < 0) { m_dragging = false; e->accept(); return; }
+    if (KoboTouchInput::gestureActive() || e->pos().x() < 0) { m_dragging = false; m_light = NoLight; e->accept(); return; }
+    if (m_light != NoLight) {
+        KoboFrontlight::instance()->announce(m_light == LightWarmth);
+        m_light = NoLight;
+        m_dragging = false;
+        e->accept();
+        return;
+    }
     if (m_dragging) {
         m_dragging = false;
         QPoint d = e->pos() - m_pressPos;
@@ -832,7 +857,12 @@ int main(int argc, char **argv)
     if (touchInput) QObject::connect(touchInput, SIGNAL(twoFingerTap()), eink, SLOT(refreshAllFull()));
     // (pinch-to-zoom is connected to the Browser below, once it exists)
     app.installEventFilter(eink);
+    // Frontlight (edge swipes) and power button / sleep cover / auto-sleep (power.cpp).
+    KoboFrontlight *frontlight = new KoboFrontlight(&app);
     Browser w(home, eink);
+    KoboPower *power = new KoboPower(eink, &app);
+    QObject::connect(power, SIGNAL(message(QString)), &w, SLOT(saveProgress(QString)));
+    QObject::connect(frontlight, SIGNAL(message(QString)), &w, SLOT(saveProgress(QString)));
     if (touchInput) QObject::connect(touchInput, SIGNAL(pinch(double)), &w, SLOT(pinchZoom(double)));
     QScreen *scr = app.primaryScreen();
     if (scr) qDebug() << "screen:" << scr->geometry() << "dpi" << scr->logicalDotsPerInch();

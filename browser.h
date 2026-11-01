@@ -40,6 +40,12 @@ private:
     bool m_horizontal;      // this drag is horizontal (page turn / history swipe)
     bool m_live;            // this drag turned into live scrolling (held past KB_FLICK_MS)
     PageScroller::HTarget m_hTarget;   // what a horizontal live drag pans
+    // Vertical drag that started at the left/right edge: frontlight brightness / warmth
+    // (horizontal swipes from the same edges stay history back/forward).
+    enum LightDrag { NoLight, LightBrightness, LightWarmth };
+    LightDrag m_light;
+    int m_lightStart;       // brightness/warmth when the drag started
+    int m_lightEdge;        // KB_LIGHT_EDGE, px (0 = off)
     QElapsedTimer m_pressTime;
     PageScroller *m_pager;
 };
