@@ -18,7 +18,8 @@ class KoboEink;
 
 // QWebView with e-ink friendly touch handling. A short tap clicks. A quick flick
 // turns one screen (up/left = next, down/right = previous; from the very left/right
-// edge = history back/forward). A drag held longer than KB_FLICK_MS scrolls live.
+// edge = history back/forward). A drag held longer than KB_FLICK_MS follows the
+// finger: vertical drags scroll live, horizontal drags pan sideways on wide pages.
 class EpubSaver;
 class TouchWebView : public QWebView {
     Q_OBJECT

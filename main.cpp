@@ -100,16 +100,20 @@ void TouchWebView::mouseMoveEvent(QMouseEvent *e)
         m_dragging = true;
         m_horizontal = qAbs(fromPress.x()) > qAbs(fromPress.y());
     }
-    if (m_dragging && !m_horizontal) {
+    if (m_dragging) {
+        // Same rule on both axes: held past the flick time, the drag follows the finger
+        // (vertical scroll, or horizontal panning for wide tables / zoomed-in pages).
         if (!m_live && m_pressTime.elapsed() >= m_pager->flickMs()) {
             m_live = true;          // sustained drag: catch up with the finger, then follow it
-            page()->mainFrame()->scroll(0, -fromPress.y());
+            if (m_horizontal) page()->mainFrame()->scroll(-fromPress.x(), 0);
+            else page()->mainFrame()->scroll(0, -fromPress.y());
             m_lastPos = e->pos();
         } else if (m_live) {
             // Scroll in big steps only; e-ink can't follow continuous scrolling well.
             QPoint delta = e->pos() - m_lastPos;
-            if (qAbs(delta.y()) >= 40) {
-                page()->mainFrame()->scroll(0, -delta.y());
+            if (m_horizontal ? qAbs(delta.x()) >= 40 : qAbs(delta.y()) >= 40) {
+                if (m_horizontal) page()->mainFrame()->scroll(-delta.x(), 0);
+                else page()->mainFrame()->scroll(0, -delta.y());
                 m_lastPos = e->pos();
             }
         }
@@ -126,12 +130,14 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
     if (m_dragging) {
         m_dragging = false;
         QPoint d = e->pos() - m_pressPos;
-        if (m_horizontal) {
-            m_pager->handleHorizontalSwipe(m_pressPos, e->pos());
-        } else if (m_live) {
-            // Finish the live drag: scroll by the remaining delta.
+        if (m_live) {
+            // Finish the live drag/pan: scroll by the remaining delta.
             QPoint delta = e->pos() - m_lastPos;
-            if (delta.y() != 0) page()->mainFrame()->scroll(0, -delta.y());
+            if (m_horizontal) { if (delta.x() != 0) page()->mainFrame()->scroll(-delta.x(), 0); }
+            else if (delta.y() != 0) page()->mainFrame()->scroll(0, -delta.y());
+        } else if (m_horizontal) {
+            // Quick horizontal flick: page turn, or history from the edges.
+            m_pager->handleHorizontalSwipe(m_pressPos, e->pos());
         } else if (qAbs(d.y()) >= m_pager->swipeMin()) {
             // Flick: released quickly after a decent move. Up = next page, down = previous.
             if (d.y() < 0) m_pager->nextPage(); else m_pager->prevPage();
