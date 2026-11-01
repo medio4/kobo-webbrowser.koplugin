@@ -95,6 +95,11 @@ local KoboWebBrowser = WidgetContainer:extend{
 }
 
 function KoboWebBrowser:init()
+    -- KOReader hands plugins a path relative to its own directory ("plugins/x.koplugin");
+    -- our launch command does a `cd`, so every path we use has to be absolute.
+    if not self.path:match("^/") then
+        self.path = (lfs.currentdir() or ".") .. "/" .. self.path
+    end
     self.bin = self.path .. "/bin"
     self.script = self.bin .. "/run.sh"
     self.handoff = self.bin .. "/epub-handoff.txt"
