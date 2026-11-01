@@ -819,5 +819,7 @@ int main(int argc, char **argv)
     qDebug() << "window geometry" << w.geometry() << "handle" << (w.windowHandle() ? w.windowHandle()->geometry() : QRect());
     // Initial full refresh once the first layout/paint is done.
     QTimer::singleShot(1500, eink, SLOT(refreshAllFull()));
+    // Test hook: KB_TEST_SAVE=<seconds> triggers Save-as-EPUB automatically.
+    if (getenv("KB_TEST_SAVE")) QTimer::singleShot(atoi(getenv("KB_TEST_SAVE")) * 1000, &w, SLOT(saveEpub()));
     return app.exec();
 }

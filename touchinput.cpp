@@ -167,6 +167,8 @@ void KoboTouchInput::emitState()
         return;
     }
 
+    static const bool dbg = getenv("KB_TOUCH_DEBUG") != 0;
+    if (dbg && m_pendingDown && !m_sentDown) qDebug() << "touch: press" << pos << "raw" << m_rawX << m_rawY;
     if (m_pendingDown && !m_sentDown) {
         QWindowSystemInterface::handleMouseEvent(win, local, QPointF(pos), Qt::LeftButton);
         m_sentDown = true;
