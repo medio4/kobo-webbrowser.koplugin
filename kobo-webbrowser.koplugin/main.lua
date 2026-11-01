@@ -43,6 +43,7 @@ local logger = require("logger")
 local _ = require("gettext")
 local ffi = require("ffi")
 local ffiutil = require("ffi/util")
+local time = require("ui/time")
 local T = ffiutil.template
 local Blitbuffer = require("ffi/blitbuffer")
 local Button = require("ui/widget/button")
@@ -76,8 +77,14 @@ local ACTIVITY_EVERY = 4     -- polls between the InputEvents that keep AutoSusp
 -- SIGTERM grace before SIGKILL when going to sleep. The browser saves the screen (PNG)
 -- and the page before it writes its sleep line, which can take a second or two.
 local STOP_WAIT_SEC = 4
--- A resume this soon after a sleep request is a bounced suspend: suspend again (once).
-local BOUNCE_SEC = 8
+-- A resume this soon after KOReader's Suspend event, with no power key / sleep cover
+-- event since the sleep request and no kernel suspend in between, is a bounced suspend:
+-- suspend again (once). Any real wake is never re-suspended.
+local BOUNCE_SEC = 3
+-- More kernel suspend time than this since the sleep request: the device really slept.
+local KERNEL_SLEPT_SEC = 1
+-- Events that mean the user woke the device.
+local WAKE_EVENTS = { "PowerPress", "PowerRelease", "SleepCoverOpened" }
 -- Power held this long while the browser runs: kill it without sleeping. Must stay under
 -- the 2 s after which KOReader's PowerPress handler powers the device off.
 local ESCAPE_HOLD_SEC = 1.5
@@ -676,7 +683,6 @@ end
 function KoboWebBrowser:stopForSleep(dev, ev, orig_power)
     local pid = self.job.pid
     self.stopping_for_sleep = { dev = dev, ev = ev, t = os.time() }
-    self.bounce_retried = false
     ffi.C.kill(pid, SIGTERM)
     local ticks = 0
     local function check()
@@ -691,7 +697,8 @@ function KoboWebBrowser:stopForSleep(dev, ev, orig_power)
         end
         self.stopping_for_sleep = nil
         self:onBrowserGone("sleep")
-        self.sleep_requested_at = os.time()
+        -- After onBrowserGone: removeHooks puts the original power handlers back.
+        self:watchForWake()
         orig_power(dev, ev)
     end
     UIManager:scheduleIn(0.05, check)
@@ -950,9 +957,8 @@ function KoboWebBrowser:processHandoff(h, sleep_req, reason)
         -- The browser's idle timer asked for sleep: sleep the KOReader way (screensaver,
         -- Wi-Fi off, suspend). For "sleep", KOReader is already on its way there.
         if reason == "exit" then
-            self.bounce_retried = false
             UIManager:scheduleIn(0.1, function()
-                self.sleep_requested_at = os.time()
+                self:watchForWake()
                 UIManager:suspend()
             end)
         end
@@ -987,17 +993,81 @@ function KoboWebBrowser:deleteSleepFiles()
     os.remove(self.sleep_page)
 end
 
+-- From a sleep request until onResume: note power key / sleep cover events (the user
+-- waking the device) and the kernel's suspend time, so onResume can tell a real wake from
+-- a bounced suspend. Independent of the browser hooks, which are gone by then.
+function KoboWebBrowser:watchForWake()
+    self:unwatchWake()
+    self.bounce_retried = false
+    self.user_wake_at = nil
+    self.suspend_event_at = nil
+    self.sleep_requested_at = time.boottime_or_realtime_coarse()
+    self.suspend_time_at_request = Device.total_suspend_time
+    local handlers = UIManager.event_handlers
+    local saved, wrappers = {}, {}
+    for _, name in ipairs(WAKE_EVENTS) do
+        local orig = handlers[name]
+        saved[name] = orig
+        wrappers[name] = function(...)
+            -- Before the original: KOReader's handler may broadcast Resume right away.
+            self.user_wake_at = time.boottime_or_realtime_coarse()
+            if orig then return orig(...) end
+        end
+        handlers[name] = wrappers[name]
+    end
+    self.wake_watch = { saved = saved, wrappers = wrappers }
+end
+
+function KoboWebBrowser:unwatchWake()
+    local w = self.wake_watch
+    if not w then return end
+    self.wake_watch = nil
+    local handlers = UIManager.event_handlers
+    for _, name in ipairs(WAKE_EVENTS) do
+        -- Only if nobody replaced our wrapper in the meantime.
+        if handlers[name] == w.wrappers[name] then handlers[name] = w.saved[name] end
+    end
+end
+
+-- KOReader's Suspend broadcast (just before the screensaver and the kernel suspend).
+function KoboWebBrowser:onSuspend()
+    self.suspend_event_at = time.boottime_or_realtime_coarse()
+end
+
+-- Is this resume a bounced suspend (the kernel refused or woke straight back up, without
+-- the user)? Logs the decision.
+function KoboWebBrowser:isBouncedResume()
+    if not self.wake_watch then return false end
+    local now = time.boottime_or_realtime_coarse()
+    local since = self.suspend_event_at and time.to_s(now - self.suspend_event_at)
+    local slept
+    if self.suspend_time_at_request and Device.total_suspend_time then
+        slept = time.to_s(Device.total_suspend_time - self.suspend_time_at_request)
+    end
+    local user = self.user_wake_at ~= nil
+    local bounced = not self.bounce_retried and not user
+        and since ~= nil and since < BOUNCE_SEC
+        and not (slept and slept > KERNEL_SLEPT_SEC)
+    logger.info("KoboWebBrowser: resume:", since and string.format("%.2f s", since) or "no", "after Suspend,",
+        "user wake:", user, "kernel slept:", slept and string.format("%.2f s", slept) or "unknown",
+        "retried:", self.bounce_retried == true, "->", bounced and "bounce, suspending again" or "real wake")
+    return bounced
+end
+
 -- Woken up after a sleep that the browser handed to us: show the wake screen (the
 -- browser's last screen with the Wi-Fi progress) until KOReader's Wi-Fi restore is
 -- connected, then reopen the browser on the same page. Exit leaves the browser, Cancel
 -- opens the copy of the page saved at sleep time without waiting for the connection.
 function KoboWebBrowser:onResume()
     local req = self.resume_launch
-    if not req or self.job or self.wake then return end
-    local since = self.sleep_requested_at and os.time() - self.sleep_requested_at
-    if not self.bounce_retried and since and since <= BOUNCE_SEC then
+    if not req or self.job or self.wake then
+        self:unwatchWake()
+        return
+    end
+    local bounced = self:isBouncedResume()
+    self:unwatchWake()
+    if bounced then
         -- The white cover stays up, so the gap until the next suspend is white.
-        logger.info("KoboWebBrowser: resume", since, "s after the sleep request, suspend bounced; suspending again")
         self.bounce_retried = true
         UIManager:scheduleIn(1, function() UIManager:suspend() end)
         return
