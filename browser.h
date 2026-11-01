@@ -129,6 +129,7 @@ private slots:
     void saveEpub();
     void saveProgress(const QString &msg);
     void saveFinished(bool ok, const QString &msg);
+    void imageDownloaded();
     void updateSysInfo();
     void fullRefresh();
     void pinchZoom(double ratio);   // two-finger pinch: ratio > 1 zooms in
@@ -145,6 +146,7 @@ private:
     void placeKeyboard();
     bool nativeTextEntry();      // ask KOReader for text; false = use the built-in keyboard
     void showBuiltinKeyboard();
+    bool saveImageIfImagePage();   // Save on a page that is just an image: keep the image file
     TouchWebView *m_view;
     QLineEdit *m_url;
     OnScreenKeyboard *m_kbd;
