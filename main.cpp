@@ -528,6 +528,19 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     const char *rz = getenv("KB_RESTORE_ZOOM");
     if (rz && *rz && atof(rz) > 0.2) m_view->setZoomFactor(atof(rz));
 
+    // KB_RESTORE_FILE: the page saved at sleep time (wake screen "Cancel": no connection);
+    // shown with its original address as the base so links still work once online.
+    const char *rf = getenv("KB_RESTORE_FILE");
+    QFile restore(rf && *rf ? QString::fromLocal8Bit(rf) : QString());
+    if (rf && *rf && restore.open(QIODevice::ReadOnly)) {
+        QString html = QString::fromUtf8(restore.readAll());
+        restore.close();
+        qDebug() << "restore: offline copy" << restore.fileName() << "base" << m_home;
+        m_view->setHtml(html, QUrl(m_home));
+        m_status->setText("Offline copy (no connection)");
+        return;
+    }
+
     loadUrlText(m_home);
 }
 
@@ -689,6 +702,20 @@ void Browser::sleepToKoreader()
     if (url.isEmpty() || url == "about:blank") url = m_home;
     int y = m_view->page()->mainFrame()->scrollPosition().y();
     QString line = url + '\t' + QString::number(y) + '\t' + QString::number(m_view->zoomFactor(), 'f', 2);
+    // For the wake screen (kobo-webbrowser.koplugin): what the screen showed, and the page
+    // itself, so "Cancel" on the wake screen can reopen it without a connection.
+    // The plugin deletes both once the wake is over.
+    QString dir = QCoreApplication::applicationDirPath();
+    const char *sf = getenv("KB_SLEEP_SHOT_FILE");
+    QString shot = (sf && *sf) ? QString::fromLocal8Bit(sf) : dir + "/sleep-shot.png";
+    const char *pf = getenv("KB_SLEEP_PAGE_FILE");
+    QString pagePath = (pf && *pf) ? QString::fromLocal8Bit(pf) : dir + "/sleep-page.html";
+    if (m_eink) m_eink->saveScreenshotTo(shot);
+    QFile page(pagePath);
+    if (page.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        page.write(m_view->page()->mainFrame()->toHtml().toUtf8());
+        page.close();
+    }
     EpubSaver::appendHandoff("sleep", line);
     qDebug() << "power: sleep handoff" << line;
     qApp->quit();
