@@ -64,8 +64,14 @@ if [ "$KB_DISPLAY" != "kobo" ] && [ -x "$FBDEPTH" ]; then
     ORIG_BPP="$($FBDEPTH -g 2>/dev/null)"
     [ "$ORIG_BPP" != "32" ] && "$FBDEPTH" -q -d 32 >> "$LOG" 2>&1
 fi
-"$DIR/kobo-browser" -platform "$PLATFORM_ARG" $KB_EXTRA_ARGS "$@" >> "$LOG" 2>&1
+# Run in the background and forward TERM/INT, so killing run.sh also stops the browser
+# (it quits cleanly on SIGTERM and releases the touchscreen).
+"$DIR/kobo-browser" -platform "$PLATFORM_ARG" $KB_EXTRA_ARGS "$@" >> "$LOG" 2>&1 &
+BPID=$!
+trap 'kill -TERM $BPID 2>/dev/null' TERM INT
+wait $BPID
 RC=$?
+trap - TERM INT
 if [ -n "$ORIG_BPP" ] && [ "$ORIG_BPP" != "32" ]; then
     "$FBDEPTH" -q -d "$ORIG_BPP" >> "$LOG" 2>&1
 fi

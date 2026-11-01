@@ -9,15 +9,22 @@
 #include <QtCore/QPoint>
 #include <QtCore/QElapsedTimer>
 #include <QtWebKitWidgets/QWebView>
+class PageScroller;
+class QPushButton;
 
-// QWebView with touch-drag scrolling: a drag scrolls the page, a short tap
-// is forwarded as a click.
 class KoboEink;
+
+// QWebView with two scroll modes. Live: a drag scrolls the page as it moves.
+// Page: a swipe or an edge tap turns one screen at a time (PageScroller).
+// In both, a short tap is forwarded as a click.
 
 class TouchWebView : public QWebView {
     Q_OBJECT
 public:
     explicit TouchWebView(QWidget *parent = 0);
+    PageScroller *pager() const { return m_pager; }
+    bool pageMode() const;
+    void setPageMode(bool on);
 protected:
     bool event(QEvent *e);
     void mousePressEvent(QMouseEvent *e);
@@ -30,6 +37,7 @@ private:
     bool m_dragging;
     bool m_forwarding;
     QElapsedTimer m_pressTime;
+    PageScroller *m_pager;
 };
 
 // A simple on-screen keyboard that sends key events to the focused widget.
@@ -69,6 +77,8 @@ public slots:
     void quit();
     void focusUrl();
     void screenshot();
+    void toggleScrollMode();
+    void releaseLoadHold();
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
 private:
@@ -78,6 +88,8 @@ private:
     QLabel *m_status;
     QString m_home;
     KoboEink *m_eink;
+    QPushButton *m_modeBtn;
+    void applyScrollMode(bool pageMode, bool save);
 };
 
 #endif
