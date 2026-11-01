@@ -426,6 +426,24 @@ QString KoboEink::saveScreenshot(const QString &dir)
     return path;
 }
 
+bool KoboEink::saveScreenshotTo(const QString &path)
+{
+    QImage *src = 0;
+    foreach (QWidget *tw, QApplication::topLevelWidgets()) {
+        if (!tw->isVisible()) continue;
+        QBackingStore *bs = tw->backingStore();
+        if (!bs) continue;
+        QPaintDevice *pd = bs->paintDevice();
+        if (pd && pd->devType() == QInternal::Image) { src = static_cast<QImage *>(pd); break; }
+    }
+    if (!src || src->isNull()) return false;
+    QImage copy = src->convertToFormat(QImage::Format_RGB32);
+    // quality 80: zlib level ~2 instead of the default; a full screen saves in well under a second.
+    bool ok = copy.save(path, "PNG", 80);
+    qDebug() << "screenshot:" << path << (ok ? "saved" : "save failed");
+    return ok;
+}
+
 void KoboEink::clearScreenForExit()
 {
     m_timer.stop();

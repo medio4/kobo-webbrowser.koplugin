@@ -44,6 +44,22 @@ local _ = require("gettext")
 local ffi = require("ffi")
 local ffiutil = require("ffi/util")
 local T = ffiutil.template
+local Blitbuffer = require("ffi/blitbuffer")
+local Button = require("ui/widget/button")
+local CenterContainer = require("ui/widget/container/centercontainer")
+local Font = require("ui/font")
+local FrameContainer = require("ui/widget/container/framecontainer")
+local Geom = require("ui/geometry")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
+local HorizontalSpan = require("ui/widget/horizontalspan")
+local ImageWidget = require("ui/widget/imagewidget")
+local InputContainer = require("ui/widget/container/inputcontainer")
+local OverlapGroup = require("ui/widget/overlapgroup")
+local ProgressWidget = require("ui/widget/progresswidget")
+local Size = require("ui/size")
+local TextBoxWidget = require("ui/widget/textboxwidget")
+local VerticalGroup = require("ui/widget/verticalgroup")
+local VerticalSpan = require("ui/widget/verticalspan")
 
 local LOG_MAX_BYTES = 256 * 1024
 local DEFAULT_HOME = "https://lite.duckduckgo.com/lite/"
@@ -58,6 +74,8 @@ local SIGTERM, SIGKILL = 15, 9
 local POLL_SEC = 0.25        -- how often we check that the browser is still running / wants text
 local ACTIVITY_EVERY = 4     -- polls between the InputEvents that keep AutoSuspend quiet
 local STOP_WAIT_SEC = 1.5    -- SIGTERM grace before SIGKILL when going to sleep
+-- A resume this soon after a sleep request is a bounced suspend: suspend again (once).
+local BOUNCE_SEC = 8
 -- Power held this long while the browser runs: kill it without sleeping. Must stay under
 -- the 2 s after which KOReader's PowerPress handler powers the device off.
 local ESCAPE_HOLD_SEC = 1.5
@@ -71,6 +89,121 @@ local DRAW_FUNCS = { "_repaint", "_refresh", "setDirty" }
 local SCREEN_FUNCS = { "refreshFull", "refreshPartial", "refreshNoMergePartial", "refreshFlashPartial",
     "refreshUI", "refreshNoMergeUI", "refreshFlashUI", "refreshFast", "refreshA2", "refreshWaitForLast" }
 local function nop() end
+
+-- How long the wake screen waits for Wi-Fi before offering only Exit / Cancel.
+local WAKE_TIMEOUT_SEC = 30
+local WAKE_POLL_SEC = 0.5
+
+-- Plain white full-screen widget, shown for as long as a browser session lasts (including
+-- its sleeps). Whatever KOReader repaints in the gaps (an aborted suspend, the moment
+-- after waking) is then white instead of the home screen.
+local WhiteCover = InputContainer:extend{
+    name = "kobowebbrowser_cover",
+    covers_fullscreen = true,
+}
+function WhiteCover:init()
+    local Screen = Device.screen
+    self.dimen = Geom:new{ x = 0, y = 0, w = Screen:getWidth(), h = Screen:getHeight() }
+end
+function WhiteCover:paintTo(bb, x, y)
+    bb:paintRect(x, y, self.dimen.w, self.dimen.h, Blitbuffer.COLOR_WHITE)
+end
+
+-- Wake screen: the browser's last screen (sleep-shot.png) with a box at the bottom that
+-- shows the Wi-Fi reconnection, and Exit / Cancel buttons.
+local WakeScreen = InputContainer:extend{
+    name = "kobowebbrowser_wake",
+    covers_fullscreen = true,
+    image_file = nil,
+    on_exit = nil,       -- leave the browser
+    on_cancel = nil,     -- stop waiting, open the saved copy offline
+}
+function WakeScreen:init()
+    local Screen = Device.screen
+    local sw, sh = Screen:getWidth(), Screen:getHeight()
+    self.dimen = Geom:new{ x = 0, y = 0, w = sw, h = sh }
+    local box_w = math.floor(sw * 0.86)
+    local inner_w = box_w - 2 * Size.padding.large - 2 * Size.border.window
+    self.text = TextBoxWidget:new{
+        text = _("Reconnecting Wi-Fi…"),
+        face = Font:getFace("cfont", 24),
+        width = inner_w,
+        alignment = "center",
+    }
+    self.progress = ProgressWidget:new{
+        width = inner_w,
+        height = Screen:scaleBySize(16),
+        percentage = 0,
+        ticks = nil,
+        last = nil,
+    }
+    local btn_w = math.floor((inner_w - Size.span.horizontal_default) / 2)
+    local buttons = HorizontalGroup:new{
+        Button:new{
+            text = _("Exit"),
+            width = btn_w,
+            callback = function() if self.on_exit then self.on_exit() end end,
+        },
+        HorizontalSpan:new{ width = Size.span.horizontal_default },
+        Button:new{
+            text = _("Cancel"),
+            width = btn_w,
+            callback = function() if self.on_cancel then self.on_cancel() end end,
+        },
+    }
+    local hint = TextBoxWidget:new{
+        text = _("Exit closes the browser. Cancel opens the saved copy of this page without a connection."),
+        face = Font:getFace("cfont", 18),
+        width = inner_w,
+        alignment = "center",
+    }
+    self.box = FrameContainer:new{
+        background = Blitbuffer.COLOR_WHITE,
+        bordersize = Size.border.window,
+        radius = Size.radius.window,
+        padding = Size.padding.large,
+        VerticalGroup:new{
+            align = "center",
+            self.text,
+            VerticalSpan:new{ width = Size.span.vertical_large },
+            self.progress,
+            VerticalSpan:new{ width = Size.span.vertical_large },
+            buttons,
+            VerticalSpan:new{ width = Size.span.vertical_default },
+            hint,
+        },
+    }
+    local layers = OverlapGroup:new{ dimen = self.dimen:copy() }
+    if self.image_file and lfs.attributes(self.image_file, "mode") == "file" then
+        local ok, img = pcall(ImageWidget.new, ImageWidget, {
+            file = self.image_file,
+            width = sw,
+            height = sh,
+            scale_factor = 0,      -- fit
+            file_do_cache = false,
+        })
+        if ok and img then table.insert(layers, CenterContainer:new{ dimen = self.dimen:copy(), img }) end
+    end
+    local box_size = self.box:getSize()
+    table.insert(layers, CenterContainer:new{
+        dimen = Geom:new{ x = 0, y = sh - box_size.h - Screen:scaleBySize(40), w = sw, h = box_size.h },
+        self.box,
+    })
+    self.layers = layers
+    self[1] = layers
+end
+function WakeScreen:paintTo(bb, x, y)
+    bb:paintRect(x, y, self.dimen.w, self.dimen.h, Blitbuffer.COLOR_WHITE)
+    self.layers:paintTo(bb, x, y)
+end
+function WakeScreen:setStatus(text, percentage)
+    if text then self.text:setText(text) end
+    if percentage then self.progress:setPercentage(percentage) end
+    UIManager:setDirty(self, function() return "ui", self.box.dimen end)
+end
+function WakeScreen:onCloseWidget()
+    if self.layers then self.layers:free() end
+end
 
 local function alive(pid)
     return pid ~= nil and ffi.C.kill(pid, 0) == 0
@@ -119,6 +252,8 @@ function KoboWebBrowser:init()
     self.rc_file = self.bin .. "/exit-code"
     self.kbd_request = self.bin .. "/kbd-request.txt"
     self.kbd_reply = self.bin .. "/kbd-reply.txt"
+    self.sleep_shot = self.bin .. "/sleep-shot.png"
+    self.sleep_page = self.bin .. "/sleep-page.html"
     self.settings = G_reader_settings:readSetting("kobo_webbrowser") or {}
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
@@ -281,6 +416,9 @@ function KoboWebBrowser:launch(extra)
         })
         return
     end
+    -- A fresh start: drop anything left over from an earlier sleep/wake.
+    self.resume_launch = nil
+    self:deleteSleepFiles()
     -- Let the menu close and the screen settle before the browser takes over.
     UIManager:scheduleIn(0.3, function() self:run(extra) end)
 end
@@ -309,6 +447,8 @@ function KoboWebBrowser:run(extra)
         KB_NO_ESCAPE = "1",
         KB_HANDOFF_FILE = self.handoff,
         KB_CACHE_DIR = self.bin .. "/cache",
+        KB_SLEEP_SHOT_FILE = self.sleep_shot,
+        KB_SLEEP_PAGE_FILE = self.sleep_page,
     }
     if self.settings.home then env.KB_HOME = self.settings.home end
     os.remove(self.kbd_request); os.remove(self.kbd_reply)
@@ -362,6 +502,7 @@ function KoboWebBrowser:run(extra)
     logger.info("KoboWebBrowser: browser running, pid", pid)
     self.job = { pid = pid }
     active = self
+    self:showCover()
     self:installHooks()
     UIManager:preventStandby()
     self.poll_action = self.poll_action or function() self:poll() end
@@ -374,6 +515,10 @@ end
 
 function KoboWebBrowser:poll()
     if not self.job then return end
+    if self.stopping_for_sleep then   -- stopForSleep takes it from here
+        UIManager:scheduleIn(POLL_SEC, self.poll_action)
+        return
+    end
     if alive(self.job.pid) then
         self.poll_tick = (self.poll_tick or 0) + 1
         if self.poll_tick % ACTIVITY_EVERY == 0 then
@@ -398,6 +543,8 @@ function KoboWebBrowser:liftDrawGuard()
     local saved = self.hooks
     if not saved or self.guard_lifted then return end
     self.guard_lifted = true
+    -- The white cover must not be painted over the page while KOReader's keyboard is up.
+    if self.cover then self.cover.paintTo = nop end
     for _, name in ipairs(DRAW_FUNCS) do UIManager[name] = saved[name] end
     local screen = Device.screen
     if saved.screen then
@@ -412,6 +559,7 @@ end
 function KoboWebBrowser:restoreDrawGuard()
     if not self.guard_lifted then return end
     self.guard_lifted = nil
+    if self.cover then self.cover.paintTo = nil end   -- back to WhiteCover:paintTo
     if not self.hooks then return end   -- hooks already removed (browser gone)
     for _, name in ipairs(DRAW_FUNCS) do UIManager[name] = nop end
     local screen = Device.screen
@@ -507,6 +655,33 @@ function KoboWebBrowser:stopBrowser(sig, wait)
     end
 end
 
+-- Stop the browser for sleep without blocking KOReader's input loop (so a late key event
+-- is handled now, not after the screensaver is up): SIGTERM, poll until it has quit
+-- (SIGKILL after STOP_WAIT_SEC), then sleep the KOReader way.
+function KoboWebBrowser:stopForSleep(dev, ev, orig_power)
+    local pid = self.job.pid
+    self.stopping_for_sleep = { dev = dev, ev = ev, t = os.time() }
+    self.bounce_retried = false
+    ffi.C.kill(pid, SIGTERM)
+    local ticks = 0
+    local function check()
+        ticks = ticks + 1
+        if alive(pid) and ticks * 0.05 < STOP_WAIT_SEC then
+            UIManager:scheduleIn(0.05, check)
+            return
+        end
+        if alive(pid) then
+            logger.warn("KoboWebBrowser: browser ignored SIGTERM, killing it")
+            self:stopBrowser(SIGKILL)
+        end
+        self.stopping_for_sleep = nil
+        self:onBrowserGone("sleep")
+        self.sleep_requested_at = os.time()
+        orig_power(dev, ev)
+    end
+    UIManager:scheduleIn(0.05, check)
+end
+
 -- Draw guard, sleep hook and power-hold escape, active while the browser runs.
 function KoboWebBrowser:installHooks()
     local saved = {}
@@ -537,11 +712,15 @@ function KoboWebBrowser:installHooks()
     saved.onPowerEvent = rawget(Device, "onPowerEvent")
     local orig_power = Device.onPowerEvent
     Device.onPowerEvent = function(dev, ev)
+        if (ev == "Power" or ev == "Suspend") and self.stopping_for_sleep then
+            logger.info("KoboWebBrowser: ignoring", ev, "while the browser stops for sleep")
+            return
+        end
         if (ev == "Power" or ev == "Suspend") and not dev.screen_saver_mode and self:isRunning() then
             logger.info("KoboWebBrowser: sleep requested, stopping the browser")
             UIManager:unschedule(self.escape_action)
-            self:stopBrowser(SIGTERM, STOP_WAIT_SEC)
-            self:onBrowserGone("sleep")
+            self:stopForSleep(dev, ev, orig_power)
+            return
         end
         return orig_power(dev, ev)
     end
@@ -551,12 +730,16 @@ function KoboWebBrowser:installHooks()
     local handlers = UIManager.event_handlers
     saved.PowerPress, saved.PowerRelease = handlers.PowerPress, handlers.PowerRelease
     self.escape_action = self.escape_action or function()
-        if not self:isRunning() then return end
+        if not self:isRunning() or self.stopping_for_sleep then return end
         logger.warn("KoboWebBrowser: power held, killing the browser")
         self.escaped_hold = true
         -- KOReader's PowerPress already scheduled its power-off (fires at ~2 s of hold);
         -- cancel it now, or holding a little longer reboots the device.
         if UIManager.poweroff_action then UIManager:unschedule(UIManager.poweroff_action) end
+        -- Instant feedback: kill the browser (so it can't draw again) and flash white,
+        -- before stopBrowser's wait for run.sh (up to 1.5 s) and the full repaint.
+        os.execute("kill -KILL $(pidof kobo-browser) 2>/dev/null")
+        self:flashWhite()
         self:stopBrowser(SIGKILL)
         self:onBrowserGone("escape")
     end
@@ -580,6 +763,21 @@ function KoboWebBrowser:installHooks()
         if saved.PowerRelease then return saved.PowerRelease(...) end
     end
     self.hooks = saved
+end
+
+-- Paint the real framebuffer white and flash it, bypassing the draw guard for a moment.
+function KoboWebBrowser:flashWhite()
+    local saved, screen = self.hooks, Device.screen
+    if not saved then return end
+    local scratch, guard = screen.bb, screen.refreshFull
+    if saved.bb then screen.bb = saved.bb end
+    screen.refreshFull = saved.screen.refreshFull   -- nil: the class method
+    local ok, err = pcall(function()
+        screen.bb:fill(Blitbuffer.COLOR_WHITE)
+        screen:refreshFull()
+    end)
+    if not ok then logger.warn("KoboWebBrowser: white flash failed:", err) end
+    screen.bb, screen.refreshFull = scratch, guard
 end
 
 function KoboWebBrowser:removeHooks()
@@ -653,10 +851,13 @@ function KoboWebBrowser:onBrowserGone(reason)
     local sleeping = reason == "sleep" or (reason == "exit" and sleep_req ~= nil)
 
     if sleeping then
-        -- KOReader's screensaver goes up next: mark everything for repaint under it, but
-        -- don't flash KOReader's UI first.
+        -- KOReader's screensaver goes up next (over the white cover): mark everything for
+        -- repaint under it, but don't flash KOReader's UI first.
         UIManager:setDirty("all")
     else
+        -- The session is over: no white cover, no temp files.
+        self:closeCover()
+        self:deleteSleepFiles()
         -- The browser drew over everything. Repaint KOReader's UI first, then flash the
         -- whole screen (flashing before repainting would just re-show the browser's last
         -- image), and do it again a moment later in case the browser left a refresh in
@@ -732,7 +933,11 @@ function KoboWebBrowser:processHandoff(h, sleep_req, reason)
         -- The browser's idle timer asked for sleep: sleep the KOReader way (screensaver,
         -- Wi-Fi off, suspend). For "sleep", KOReader is already on its way there.
         if reason == "exit" then
-            UIManager:scheduleIn(0.1, function() UIManager:suspend() end)
+            self.bounce_retried = false
+            UIManager:scheduleIn(0.1, function()
+                self.sleep_requested_at = os.time()
+                UIManager:suspend()
+            end)
         end
     end
 
@@ -748,30 +953,107 @@ function KoboWebBrowser:processHandoff(h, sleep_req, reason)
     end
 end
 
--- Woken up after a sleep that the browser handed to us: reopen it where it was. Wait a
--- little for KOReader's own Wi-Fi restore (auto_restore_wifi) so the page can load.
+function KoboWebBrowser:showCover()
+    if self.cover then return end
+    self.cover = WhiteCover:new{}
+    UIManager:show(self.cover)
+end
+
+function KoboWebBrowser:closeCover()
+    if not self.cover then return end
+    UIManager:close(self.cover)
+    self.cover = nil
+end
+
+function KoboWebBrowser:deleteSleepFiles()
+    os.remove(self.sleep_shot)
+    os.remove(self.sleep_page)
+end
+
+-- Woken up after a sleep that the browser handed to us: show the wake screen (the
+-- browser's last screen with the Wi-Fi progress) until KOReader's Wi-Fi restore is
+-- connected, then reopen the browser on the same page. Exit leaves the browser, Cancel
+-- opens the copy of the page saved at sleep time without waiting for the connection.
 function KoboWebBrowser:onResume()
     local req = self.resume_launch
-    if not req or self.job then return end
+    if not req or self.job or self.wake then return end
+    local since = self.sleep_requested_at and os.time() - self.sleep_requested_at
+    if not self.bounce_retried and since and since <= BOUNCE_SEC then
+        -- The white cover stays up, so the gap until the next suspend is white.
+        logger.info("KoboWebBrowser: resume", since, "s after the sleep request, suspend bounced; suspending again")
+        self.bounce_retried = true
+        UIManager:scheduleIn(1, function() UIManager:suspend() end)
+        return
+    end
     self.resume_launch = nil
+    self:showCover()
     local NetworkMgr = require("ui/network/manager")
     local extra = { args = {}, env = {} }
     if req.url and req.url:match("^https?://") then extra.args[1] = req.url end
     if tonumber(req.y) then extra.env.KB_RESTORE_Y = req.y end
     if tonumber(req.zoom) then extra.env.KB_RESTORE_ZOOM = req.zoom end
-    local tries = 0
-    local function launch()
-        tries = tries + 1
-        local connected = false
-        pcall(function() connected = NetworkMgr:isConnected() end)
-        if connected or tries > 15 then
-            logger.info("KoboWebBrowser: relaunching after wake, connected:", connected)
-            self:run(extra)
-        else
-            UIManager:scheduleIn(1, launch)
-        end
+
+    local wake
+    local started = os.time()
+    local tick
+    local function finish()
+        UIManager:unschedule(tick)
+        if self.wake == wake then self.wake = nil end
+        UIManager:close(wake)
     end
-    UIManager:scheduleIn(1, launch)
+    wake = WakeScreen:new{
+        image_file = self.sleep_shot,
+        on_exit = function()
+            logger.info("KoboWebBrowser: wake screen: Exit")
+            finish()
+            self:closeCover()
+            self:deleteSleepFiles()
+            UIManager:setDirty("all", "full")
+        end,
+        on_cancel = function()
+            logger.info("KoboWebBrowser: wake screen: Cancel, opening the saved copy")
+            finish()
+            if lfs.attributes(self.sleep_page, "mode") == "file" then
+                extra.env.KB_RESTORE_FILE = self.sleep_page
+            end
+            -- The page file is read at start-up; it's deleted when this session ends.
+            self:run(extra)
+        end,
+    }
+    self.wake = wake
+    UIManager:show(wake, "full")
+
+    local asked_wifi = false
+    tick = function()
+        if self.wake ~= wake then return end
+        local connected, wifi_on = false, false
+        pcall(function() connected = NetworkMgr:isConnected() end)
+        pcall(function() wifi_on = NetworkMgr:isWifiOn() end)
+        local elapsed = os.time() - started
+        if connected then
+            logger.info("KoboWebBrowser: connected after", elapsed, "s, relaunching")
+            wake:setStatus(_("Connected. Opening the page…"), 1)
+            UIManager:forceRePaint()
+            finish()
+            self:deleteSleepFiles()   -- reloading online: the saved copy isn't needed
+            self:run(extra)
+            return
+        end
+        -- KOReader restores Wi-Fi by itself when it was on (auto_restore_wifi); if it
+        -- hasn't started after a few seconds, turn it on ourselves.
+        if not wifi_on and not asked_wifi and elapsed >= 3 then
+            asked_wifi = true
+            pcall(function() NetworkMgr:turnOnWifi(nil, false) end)
+        end
+        if elapsed >= WAKE_TIMEOUT_SEC then
+            wake:setStatus(_("Wi-Fi didn't connect. Exit, or Cancel to read the saved copy."), 1)
+            return
+        end
+        wake:setStatus(wifi_on and _("Connecting to the network…") or _("Turning on Wi-Fi…"),
+            math.min(0.95, elapsed / WAKE_TIMEOUT_SEC))
+        UIManager:scheduleIn(WAKE_POLL_SEC, tick)
+    end
+    UIManager:scheduleIn(WAKE_POLL_SEC, tick)
 end
 
 return KoboWebBrowser

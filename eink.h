@@ -24,6 +24,8 @@ public:
     void refreshAll(quint64 flags);
     // Save what is currently painted (the widget backing store) as PNG. Returns the path or empty.
     QString saveScreenshot(const QString &dir);
+    // Same, to an exact path, with light PNG compression (quick: used right before sleep).
+    bool saveScreenshotTo(const QString &path);
     quint64 flagsPartial() const { return m_flagsPartial; }
     quint64 flagsFull() const { return m_flagsFull; }
     static KoboEink *instance() { return s_instance; }
