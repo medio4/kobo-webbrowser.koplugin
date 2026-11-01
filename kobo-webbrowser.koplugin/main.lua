@@ -21,6 +21,12 @@ The browser talks back through a handoff file (bin/epub-handoff.txt), one reques
   sleep<TAB>url<TAB>scrollY<TAB>zoom     sleep (power button, cover or the browser's idle
                                          timer); reopen the page on wake
 
+Text entry uses KOReader's own keyboard (setting "Use KOReader keyboard", default on): the
+browser writes bin/kbd-request.txt (line 1: url|field|text, line 2: label, rest: current
+text) and releases the touchscreen. We notice it within POLL_SEC, lift the draw guard, show
+an InputDialog over the browser's frozen picture and answer in bin/kbd-reply.txt (line 1:
+go|set|cancel, rest: text); the browser then takes the screen back and repaints itself.
+
 @module koplugin.KoboWebBrowser
 --]]
 
@@ -49,7 +55,8 @@ end
 
 pcall(ffi.cdef, "int kill(int pid, int sig);")   -- may already be declared
 local SIGTERM, SIGKILL = 15, 9
-local POLL_SEC = 1           -- how often we check that the browser is still running
+local POLL_SEC = 0.25        -- how often we check that the browser is still running / wants text
+local ACTIVITY_EVERY = 4     -- polls between the InputEvents that keep AutoSuspend quiet
 local STOP_WAIT_SEC = 1.5    -- SIGTERM grace before SIGKILL when going to sleep
 -- Power held this long while the browser runs: kill it without sleeping. Must stay under
 -- the 2 s after which KOReader's PowerPress handler powers the device off.
@@ -110,6 +117,8 @@ function KoboWebBrowser:init()
     self.handoff = self.bin .. "/epub-handoff.txt"
     self.log_file = self.bin .. "/launcher.log"
     self.rc_file = self.bin .. "/exit-code"
+    self.kbd_request = self.bin .. "/kbd-request.txt"
+    self.kbd_reply = self.bin .. "/kbd-reply.txt"
     self.settings = G_reader_settings:readSetting("kobo_webbrowser") or {}
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
@@ -162,6 +171,16 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                 callback = function(touchmenu_instance)
                     self:askSetting("collection", _("Collection for saved articles"), DEFAULT_COLLECTION, touchmenu_instance)
                 end,
+            },
+            {
+                text = _("Use KOReader keyboard"),
+                help_text = _("Type addresses and form fields with KOReader's keyboard instead of the browser's own. Takes effect the next time the browser starts."),
+                checked_func = function() return self.settings.native_keyboard ~= false end,
+                callback = function()
+                    self.settings.native_keyboard = (self.settings.native_keyboard == false) and nil or false
+                    self:saveSettings()
+                end,
+                separator = true,
             },
             {
                 text = _("Show log"),
@@ -292,6 +311,11 @@ function KoboWebBrowser:run(extra)
         KB_CACHE_DIR = self.bin .. "/cache",
     }
     if self.settings.home then env.KB_HOME = self.settings.home end
+    os.remove(self.kbd_request); os.remove(self.kbd_reply)
+    if self.settings.native_keyboard ~= false then
+        env.KB_KBD_FILE = self.kbd_request
+        env.KB_KBD_REPLY = self.kbd_reply
+    end
     local timeout = G_reader_settings:readSetting("auto_suspend_timeout_seconds")
     if type(timeout) == "number" then
         env.KB_AUTOSLEEP_MIN = tostring(timeout > 0 and math.ceil(timeout / 60) or 0)
@@ -351,12 +375,120 @@ end
 function KoboWebBrowser:poll()
     if not self.job then return end
     if alive(self.job.pid) then
-        -- Counts as user activity, so AutoSuspend doesn't sleep under the browser.
-        UIManager:broadcastEvent(Event:new("InputEvent"))
+        self.poll_tick = (self.poll_tick or 0) + 1
+        if self.poll_tick % ACTIVITY_EVERY == 0 then
+            -- Counts as user activity, so AutoSuspend doesn't sleep under the browser.
+            UIManager:broadcastEvent(Event:new("InputEvent"))
+        end
+        if not self.kbd_dialog and lfs.attributes(self.kbd_request, "mode") == "file" then
+            local ok, err = pcall(self.onKeyboardRequest, self)
+            if not ok then logger.warn("KoboWebBrowser: keyboard request failed:", err) end
+        end
         UIManager:scheduleIn(POLL_SEC, self.poll_action)
     else
         self:onBrowserGone("exit")
     end
+end
+
+-- ---- Text entry for the browser with KOReader's keyboard -----------------------------
+
+-- Let KOReader draw again (only widgets marked dirty from now on get painted, i.e. our
+-- dialog and its keyboard; the file manager / reader underneath stay as they are).
+function KoboWebBrowser:liftDrawGuard()
+    local saved = self.hooks
+    if not saved or self.guard_lifted then return end
+    self.guard_lifted = true
+    for _, name in ipairs(DRAW_FUNCS) do UIManager[name] = saved[name] end
+    local screen = Device.screen
+    if saved.screen then
+        for _, name in ipairs(SCREEN_FUNCS) do screen[name] = saved.screen[name] end
+    end
+    if saved.bb then
+        self.scratch_bb = screen.bb
+        screen.bb = saved.bb
+    end
+end
+
+function KoboWebBrowser:restoreDrawGuard()
+    if not self.guard_lifted then return end
+    self.guard_lifted = nil
+    if not self.hooks then return end   -- hooks already removed (browser gone)
+    for _, name in ipairs(DRAW_FUNCS) do UIManager[name] = nop end
+    local screen = Device.screen
+    for _, name in ipairs(SCREEN_FUNCS) do screen[name] = nop end
+    if self.scratch_bb then
+        screen.bb = self.scratch_bb
+        self.scratch_bb = nil
+    end
+end
+
+local function writeAtomically(path, data)
+    local f = io.open(path .. ".tmp", "w")
+    if not f then return false end
+    f:write(data)
+    f:close()
+    os.remove(path)
+    return os.rename(path .. ".tmp", path)
+end
+
+function KoboWebBrowser:onKeyboardRequest()
+    local f = io.open(self.kbd_request, "r")
+    if not f then return end
+    local data = f:read("*a") or ""
+    f:close()
+    os.remove(self.kbd_request)
+    local kind, label, text = data:match("^([^\n]*)\n([^\n]*)\n?(.*)$")
+    kind = kind or "url"
+    label = label or ""
+    text = text or ""
+    logger.info("KoboWebBrowser: keyboard request", kind, label)
+
+    local dialog
+    local function finish(action, value)
+        if not self.kbd_dialog then return end
+        self.kbd_dialog = nil
+        -- Re-arm the guard BEFORE closing: UIManager:close marks every widget underneath
+        -- dirty and queues a repaint; with the guard up those are no-ops, so the file
+        -- manager / reader never gets painted over the browser (now or at the next lift).
+        -- The dialog's pixels stay on screen until the browser repaints everything.
+        self:restoreDrawGuard()
+        UIManager:close(dialog)
+        if not writeAtomically(self.kbd_reply, action .. "\n" .. (value or "")) then
+            logger.warn("KoboWebBrowser: cannot write", self.kbd_reply)
+        end
+        pcall(Device.input.resetState, Device.input)
+    end
+    local buttons = {
+        { text = _("Cancel"), id = "close", callback = function() finish("cancel") end },
+    }
+    if kind ~= "url" then
+        buttons[#buttons + 1] = { text = _("Set"), callback = function() finish("set", dialog:getInputText()) end }
+    end
+    buttons[#buttons + 1] = {
+        text = kind == "url" and _("Go") or _("Enter"),
+        is_enter_default = true,
+        callback = function() finish("go", dialog:getInputText()) end,
+    }
+    local title
+    if kind == "url" then
+        title = _("Address or search")
+    elseif label ~= "" then
+        title = label
+    else
+        title = _("Text field")
+    end
+    self:liftDrawGuard()
+    dialog = InputDialog:new{
+        title = title,
+        input = text,
+        input_hint = kind == "url" and _("https://example.com or search words") or nil,
+        allow_newline = kind == "text",
+        cursor_at_end = true,
+        buttons = { buttons },
+    }
+    self.kbd_dialog = dialog
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
 end
 
 -- SIGTERM run.sh (it passes the signal on to the browser); if the browser doesn't quit in
@@ -451,6 +583,14 @@ function KoboWebBrowser:removeHooks()
     local saved = self.hooks
     if not saved then return end
     self.hooks = nil
+    if self.guard_lifted then
+        -- The keyboard dialog had the real screen: only the scratch buffer is left to free.
+        self.guard_lifted = nil
+        local scratch = self.scratch_bb
+        self.scratch_bb = nil
+        pcall(function() if scratch and scratch.free then scratch:free() end end)
+        saved.bb = nil
+    end
     for _, name in ipairs(DRAW_FUNCS) do
         UIManager[name] = saved[name]
     end
@@ -481,6 +621,11 @@ function KoboWebBrowser:onBrowserGone(reason)
     self.job = nil
     if active == self then active = nil end
     UIManager:unschedule(self.poll_action)
+    if self.kbd_dialog then
+        local d = self.kbd_dialog
+        self.kbd_dialog = nil
+        pcall(UIManager.close, UIManager, d)
+    end
     self:removeHooks()
     UIManager:allowStandby()
     pcall(Device.input.resetState, Device.input)

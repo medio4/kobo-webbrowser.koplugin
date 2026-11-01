@@ -84,3 +84,11 @@ reads the power button itself (without grabbing it), outside the Qt event loop:
   since a heavy page can block the UI thread for a while).
 - Hold time and heartbeat use CLOCK_MONOTONIC, so time asleep doesn't count.
   KB_NO_ESCAPE=1 turns it off. Log lines start with "kb-escape:".
+
+KOReader keyboard (textentry.cpp + plugin): when launched by kobo-webbrowser.koplugin with
+KB_KBD_FILE/KB_KBD_REPLY set, tapping the address bar, the Keys button or a text field in a
+page asks KOReader for the text: the browser writes the request file, stops refreshing and
+releases the touchscreen; the plugin lifts its draw guard, shows an InputDialog over the
+frozen page and writes the reply; the browser then takes the screen back (full flash) and
+fills the field (Go = load / Enter in the field). Falls back to the built-in keyboard when
+nobody picks the request up within 2.5 s. KB_NO_NATIVE_KBD=1 forces the built-in keyboard.

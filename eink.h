@@ -46,6 +46,10 @@ public:
     // Clean grayscale (GL16) partial refresh of a rect, regardless of whether its
     // pixels changed: clears the ghosting left by fast DU updates.
     void cleanRect(const QRect &r);
+    // While suspended (KOReader is drawing its keyboard over our picture) nothing is
+    // pushed to the framebuffer or refreshed; resuming repaints and flashes everything.
+    void setSuspended(bool on);
+    bool suspended() const { return m_suspended; }
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
 public slots:
@@ -74,6 +78,7 @@ private:
     QRect m_held;               // bounding rect of repaints swallowed during a hold
     QTimer m_holdTimer;
     QTimer m_settleTimer;
+    bool m_suspended;
     QRegion m_fastDirty;        // areas refreshed with the fast waveform since the last cleanup
     QString m_wfClean;
     bool m_logRefresh;

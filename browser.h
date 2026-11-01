@@ -15,6 +15,8 @@
 class QPushButton;
 
 class KoboEink;
+class KoboTouchInput;
+class NativeTextEntry;
 
 // QWebView with e-ink friendly touch handling. A short tap clicks. A quick flick
 // turns one screen (up/left = next, down/right = previous; from the very left/right
@@ -78,6 +80,7 @@ public:
 signals:
     void goPressed();
     void hidePressed();
+    void backspacePressed();
 private slots:
     void keyClicked();
     void toggleShift();
@@ -98,6 +101,7 @@ class Browser : public QMainWindow {
     Q_OBJECT
 public:
     Browser(const QString &home, KoboEink *eink, QWidget *parent = 0);
+    void setTouchInput(KoboTouchInput *t) { m_touch = t; }
 public slots:
     void go();
     void loadUrlText(const QString &text);
@@ -128,11 +132,17 @@ private slots:
     void pinchZoom(double ratio);   // two-finger pinch: ratio > 1 zooms in
     void openSavedEpub(const QString &path);
     void showToc();
+    void flashUrlBar();          // Clear / Del: redraw the address bar with a flashing refresh
+    void nativeStarted();        // KOReader keyboard: hand over screen + touch
+    void nativeReplied(const QString &action, const QString &text);
+    void nativeUnavailable();
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
     void resizeEvent(QResizeEvent *e);
 private:
     void placeKeyboard();
+    bool nativeTextEntry();      // ask KOReader for text; false = use the built-in keyboard
+    void showBuiltinKeyboard();
     TouchWebView *m_view;
     QLineEdit *m_url;
     OnScreenKeyboard *m_kbd;
@@ -146,6 +156,9 @@ private:
     QElapsedTimer m_lastPageTap;
     EpubSaver *m_saver;
     int m_restoreY;           // KB_RESTORE_Y: scroll position to restore after the first load (-1 = none)
+    KoboTouchInput *m_touch;
+    NativeTextEntry *m_native;
+    QString m_nativeKind;     // what the pending KOReader text entry is for: url / field / text
 };
 
 #endif

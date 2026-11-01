@@ -52,7 +52,7 @@ KoboEink::KoboEink(QObject *parent)
     : QObject(parent), m_repaint(0), m_dl(0), m_grab(false), m_ready(false), m_fb(0), m_hw(0)
 {
     s_instance = this;
-    m_nextFlags = 0; m_fullEvery = 0; m_turnsSinceFull = 0; m_holdWidget = 0;
+    m_nextFlags = 0; m_fullEvery = 0; m_turnsSinceFull = 0; m_holdWidget = 0; m_suspended = false;
     m_flagsPartial = envFlags("KB_FLAGS_PARTIAL", 0);
     m_flagsFull = envFlags("KB_FLAGS_FULL", 16);
     // Pseudo-flags for the fbink backend: they only select a waveform (refreshpolicy).
@@ -108,7 +108,7 @@ KoboEink::KoboEink(QObject *parent)
 
 void KoboEink::markDirty(const QRect &r, quint64 flags)
 {
-    if (!available() || r.isEmpty()) return;
+    if (!available() || r.isEmpty() || m_suspended) return;
     m_pending.append(qMakePair(r, flags));
     if (!m_timer.isActive()) m_timer.start();
 }
@@ -294,10 +294,24 @@ void KoboEink::chooseWaveform(quint64 flags, const QRect &r, QString *wfOut, boo
     *flashOut = flash;
 }
 
+void KoboEink::setSuspended(bool on)
+{
+    if (on == m_suspended) return;
+    m_suspended = on;
+    if (on) {
+        m_timer.stop();
+        m_settleTimer.stop();
+        m_pending.clear();
+        m_fastDirty = QRegion();
+    } else {
+        refreshAllFull();   // our backing store still has the page: put it all back, flashed
+    }
+}
+
 void KoboEink::cleanRect(const QRect &rIn)
 {
     QRect r = rIn;
-    if (r.isEmpty() || !m_useFbink) return;
+    if (r.isEmpty() || !m_useFbink || m_suspended) return;
     QWindowList wl = QGuiApplication::topLevelWindows();
     if (!wl.isEmpty()) r &= QRect(QPoint(0, 0), wl.first()->geometry().size());
     if (r.isEmpty()) return;

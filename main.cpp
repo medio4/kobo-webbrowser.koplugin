@@ -12,6 +12,7 @@
 #include "toc.h"
 #include "memtune.h"
 #include "power.h"
+#include "textentry.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QPushButton>
@@ -365,6 +366,7 @@ void OnScreenKeyboard::keyClicked()
         code = ch.isLetter() ? ch.toUpper().unicode() : ch.unicode();
     }
     sendKey(code, text);
+    if (code == Qt::Key_Backspace) emit backspacePressed();
     if (m_shift_on && !m_symbols) { m_shift_on = false; relabel(); }
 }
 
@@ -505,6 +507,13 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     connect(m_url, SIGNAL(returnPressed()), this, SLOT(go()));
     connect(m_kbd, SIGNAL(goPressed()), this, SLOT(keyboardGo()));
     connect(m_kbd, SIGNAL(hidePressed()), this, SLOT(hideKeyboard()));
+    connect(m_kbd, SIGNAL(backspacePressed()), this, SLOT(flashUrlBar()));
+    // KOReader's own keyboard (when launched by the plugin with KB_KBD_FILE set).
+    m_touch = 0;
+    m_native = new NativeTextEntry(this);
+    connect(m_native, SIGNAL(started()), this, SLOT(nativeStarted()));
+    connect(m_native, SIGNAL(replied(QString,QString)), this, SLOT(nativeReplied(QString,QString)));
+    connect(m_native, SIGNAL(unavailable()), this, SLOT(nativeUnavailable()));
     connect(m_view, SIGNAL(urlChanged(QUrl)), this, SLOT(urlChanged(QUrl)));
     connect(m_view, SIGNAL(loadStarted()), this, SLOT(loadStarted()));
     connect(m_view, SIGNAL(loadProgress(int)), this, SLOT(loadProgress(int)));
@@ -566,7 +575,18 @@ void Browser::clearUrl()
 {
     m_url->clear();
     m_url->setFocus();
+    flashUrlBar();
     showKeyboard();
+}
+
+// The address bar is normally refreshed with the fast 1-bit waveform; after Clear or a
+// backspace redraw it at once with a flashing GC16 so nothing of the old text lingers.
+void Browser::flashUrlBar()
+{
+    if (!m_eink) return;
+    if (QApplication::focusWidget() != m_url && sender() == m_kbd) return;
+    QRect r(m_url->mapTo(this, QPoint(0, 0)), m_url->size());
+    m_eink->markDirty(r.adjusted(-4, -4, 4, 4), m_eink->flagsFull());
 }
 
 void Browser::go()
@@ -619,10 +639,107 @@ void Browser::loadUrlText(const QString &textIn)
 
 void Browser::showKeyboard()
 {
+    if (m_kbd->isVisible() || (m_native && m_native->active())) return;
+    if (nativeTextEntry()) return;
+    showBuiltinKeyboard();
+}
+
+void Browser::showBuiltinKeyboard()
+{
     if (m_kbd->isVisible()) return;
     placeKeyboard();
     m_kbd->raise();
     m_kbd->show();
+}
+
+// ---- Text entry with KOReader's keyboard (textentry.h). The plugin draws its InputDialog
+// over our frozen picture; we stop refreshing and hand it the touchscreen meanwhile.
+
+static QString jsString(const QString &s)
+{
+    QString out = "\"";
+    foreach (QChar c, s) {
+        ushort u = c.unicode();
+        if (c == '\"' || c == '\\') { out += '\\'; out += c; }
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') out += "\\r";
+        else if (u < 0x20 || u == 0x2028 || u == 0x2029) out += QString("\\u%1").arg(u, 4, 16, QChar('0'));
+        else out += c;
+    }
+    return out + "\"";
+}
+
+// What the focused page element is: "kind\nlabel\nvalue", or empty if it isn't editable.
+static const char *kJsActiveField =
+    "(function(){var e=document.activeElement;if(!e)return '';"
+    "var tag=e.tagName?e.tagName.toLowerCase():'';"
+    "var editable=(tag=='input'&&!/^(button|submit|reset|checkbox|radio|file|image|hidden|range|color)$/i.test(e.type||''))"
+    "||tag=='textarea'||e.isContentEditable;if(!editable)return '';"
+    "var kind=(tag=='textarea'||e.isContentEditable)?'text':'field';"
+    "var label=e.placeholder||e.getAttribute('aria-label')||e.title||e.name||'';"
+    "var val=('value' in e)?e.value:e.textContent;"
+    "return kind+'\\n'+String(label).replace(/\\n/g,' ')+'\\n'+val;})()";
+
+bool Browser::nativeTextEntry()
+{
+    if (!m_native || !m_native->available() || m_native->active()) return false;
+    QWidget *focus = QApplication::focusWidget();
+    if (focus == m_view) {
+        QString info = m_view->page()->mainFrame()->evaluateJavaScript(kJsActiveField).toString();
+        int a = info.indexOf('\n');
+        int b = a < 0 ? -1 : info.indexOf('\n', a + 1);
+        if (a > 0 && b > a) {
+            m_nativeKind = info.left(a);
+            return m_native->request(m_nativeKind, info.mid(a + 1, b - a - 1), info.mid(b + 1));
+        }
+        // Nothing editable has focus in the page: the keyboard is for the address bar.
+        m_url->setFocus();
+    }
+    m_nativeKind = "url";
+    return m_native->request("url", "Address or search", m_url->text());
+}
+
+void Browser::nativeStarted()
+{
+    if (m_kbd->isVisible()) m_kbd->hide();
+    if (m_eink) m_eink->setSuspended(true);
+    if (m_touch) m_touch->setHandedOff(true);
+}
+
+void Browser::nativeReplied(const QString &action, const QString &text)
+{
+    if (m_touch) m_touch->setHandedOff(false);
+    if (m_eink) m_eink->setSuspended(false);   // puts our picture back, flashed
+    if (action == "cancel") { if (m_nativeKind == "url") m_view->setFocus(); return; }
+    if (m_nativeKind == "url") {
+        m_url->setText(text);
+        if (action == "go") { loadUrlText(text); m_view->setFocus(); }
+        return;
+    }
+    // Page field: set the value (with input/change events for scripts that watch it),
+    // then Enter if asked, which submits forms the way a hardware keyboard would.
+    QString js = QString(
+        "(function(v){var e=document.activeElement;if(!e)return false;"
+        "if('value' in e){e.value=v;}else if(e.isContentEditable){e.textContent=v;}else return false;"
+        "try{var ev=document.createEvent('Event');ev.initEvent('input',true,true);e.dispatchEvent(ev);"
+        "var ev2=document.createEvent('Event');ev2.initEvent('change',true,true);e.dispatchEvent(ev2);}catch(x){}"
+        "return true;})(%1)").arg(jsString(text));
+    bool ok = m_view->page()->mainFrame()->evaluateJavaScript(js).toBool();
+    if (!ok) qWarning() << "textentry: no editable element has focus any more";
+    if (ok && action == "go") {
+        m_view->setFocus();
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier, "\r");
+        QApplication::sendEvent(m_view, &press);
+        QKeyEvent release(QEvent::KeyRelease, Qt::Key_Return, Qt::NoModifier, "\r");
+        QApplication::sendEvent(m_view, &release);
+    }
+}
+
+void Browser::nativeUnavailable()
+{
+    if (m_touch) m_touch->setHandedOff(false);
+    if (m_eink) m_eink->setSuspended(false);
+    showBuiltinKeyboard();
 }
 
 void Browser::hideKeyboard()
@@ -931,6 +1048,7 @@ int main(int argc, char **argv)
     // Frontlight (edge swipes) and power button / sleep cover / auto-sleep (power.cpp).
     KoboFrontlight *frontlight = new KoboFrontlight(&app);
     Browser w(home, eink);
+    w.setTouchInput(touchInput);
     quitPoller.setBrowser(&w);
     KoboPower *power = new KoboPower(eink, &app);
     QObject::connect(power, SIGNAL(message(QString)), &w, SLOT(saveProgress(QString)));
