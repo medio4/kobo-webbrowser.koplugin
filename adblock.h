@@ -6,7 +6,12 @@
 //   KB_NO_ADBLOCK=1          off for this run
 //   KB_ADBLOCK_LIST=path     use another list (one host per line; "0.0.0.0 host" also accepted)
 //   KB_ADBLOCK_LOG=1         log every blocked URL
-// The on/off choice made with setEnabled() persists in adblock-off.txt beside the binary.
+// Settings files beside the binary, written by the KOReader plugin's "Ad blocking" menu
+// and re-read (when changed) at the start of each page load:
+//   adblock-off.txt          present = blocking off (setEnabled() writes it too)
+//   adblock-allow.txt        sites never blocked, and pages on them get no blocking at all
+//   adblock-extra.txt        more sites to block
+// Both lists: one domain per line, subdomains included, "#" starts a comment.
 #ifndef ADBLOCK_H
 #define ADBLOCK_H
 #include <QtCore/QObject>
@@ -22,7 +27,9 @@ public:
     // True when this request should be dropped.
     bool shouldBlock(const QUrl &url);
     // The main frame is about to load this URL: let it through even if listed.
-    void allowNavigation(const QUrl &url) { m_navUrl = url; }
+    void allowNavigation(const QUrl &url);
+    // Re-read the settings files above if they changed. Cheap: a few stat() calls.
+    void refresh();
     int blockedSinceReset() const { return m_blocked; }
     void resetCount() { m_blocked = 0; }
 public slots:
@@ -34,7 +41,12 @@ private:
     explicit AdBlock(QObject *parent = 0);
     void load();
     QVector<quint64> m_hashes;   // sorted
+    QVector<quint64> m_extra;    // sorted, from adblock-extra.txt
+    QVector<quint64> m_allow;    // sorted, from adblock-allow.txt
+    qint64 m_extraStamp, m_allowStamp;
     QUrl m_navUrl;
+    QByteArray m_pageHost;
+    bool m_envOff;
     bool m_enabled;
     bool m_loaded;
     bool m_log;
