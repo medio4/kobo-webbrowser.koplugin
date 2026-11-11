@@ -10,6 +10,8 @@
 #include <QtCore/QtEndian>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QJsonArray>
+#include <QtWebKit/QWebSettings>
 #include <QtCore/QUuid>
 #include <QtGui/QImage>
 #include <QtGui/QImageReader>
@@ -38,6 +40,8 @@ const int kMaxImages = 60;
 const int kMaxImageBytes = 8 * 1024 * 1024;
 const int kMaxImageWidth = 1200;      // Kobo Clara BW screen is 1072 px wide
 const int kImageTimeoutMs = 25000;
+const int kMaxChapters = 300;
+const int kChapterTimeoutMs = 60000;
 
 // ------------------------------------------------------------- stored zip
 
@@ -130,15 +134,107 @@ QString tagAttr(const QString &tag, const QString &name)
 
 EpubSaver::EpubSaver(QWebPage *page, const QString &outDir, QObject *parent)
     : QObject(parent), m_page(page), m_outDir(outDir), m_running(false), m_fallback(false),
-      m_current(-1), m_reply(0)
+      m_current(-1), m_reply(0), m_series(false), m_chapterIndex(-1), m_hidden(0)
 {
     m_timer.setSingleShot(true);
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(imageTimeout()));
+    m_chapterTimer.setSingleShot(true);
+    connect(&m_chapterTimer, SIGNAL(timeout()), this, SLOT(chapterTimeout()));
 }
 
 EpubSaver::~EpubSaver()
 {
     if (m_reply) { m_reply->abort(); m_reply->deleteLater(); }
+    if (m_hidden) { m_hidden->triggerAction(QWebPage::Stop); m_hidden->deleteLater(); }
+}
+
+// ------------------------------------------------------------- series
+
+QList<EpubSaver::ChapterLink> EpubSaver::findChapters(QWebPage *page, QString *listTitle)
+{
+    QList<ChapterLink> out;
+    QVariant v = page->mainFrame()->evaluateJavaScript(readResource(":/js/js/series.js"));
+    QJsonDocument doc = QJsonDocument::fromJson(v.toString().toUtf8());
+    if (!doc.isObject()) return out;
+    QJsonObject o = doc.object();
+    if (listTitle) *listTitle = o.value("title").toString().simplified();
+    QJsonArray arr = o.value("chapters").toArray();
+    for (int i = 0; i < arr.size() && i < kMaxChapters; ++i) {
+        QJsonObject ch = arr.at(i).toObject();
+        ChapterLink l;
+        l.url = QUrl(ch.value("url").toString());
+        l.title = ch.value("title").toString().simplified();
+        if (l.url.isValid()) out << l;
+    }
+    return out;
+}
+
+void EpubSaver::startSeries(const QList<QUrl> &urls, const QString &seriesTitle)
+{
+    if (m_running || urls.isEmpty()) return;
+    m_running = true;
+    m_series = true;
+    m_urls = urls;
+    m_seriesTitle = seriesTitle.simplified();
+    m_chapters.clear();
+    m_chapterIndex = -1;
+    if (!m_hidden) {
+        // Off-screen page sharing the browser's network stack (cookies, cache). Images are
+        // not decoded here; the saver fetches the ones the article keeps.
+        m_hidden = new QWebPage(this);
+        m_hidden->setNetworkAccessManager(m_page->networkAccessManager());
+        m_hidden->settings()->setAttribute(QWebSettings::AutoLoadImages, false);
+        m_hidden->settings()->setAttribute(QWebSettings::JavascriptEnabled, true);
+        m_hidden->settings()->setAttribute(QWebSettings::PluginsEnabled, false);
+        m_hidden->setViewportSize(QSize(1000, 1400));
+        connect(m_hidden, SIGNAL(loadFinished(bool)), this, SLOT(chapterLoaded(bool)));
+    }
+    loadNextChapter();
+}
+
+void EpubSaver::loadNextChapter()
+{
+    ++m_chapterIndex;
+    if (m_chapterIndex >= m_urls.size()) {
+        if (m_chapters.isEmpty()) { fail("None of the chapters could be read"); return; }
+        writeEpub();
+        return;
+    }
+    emit progress(QString("Saving series: chapter %1 of %2...").arg(m_chapterIndex + 1).arg(m_urls.size()));
+    m_chapterTimer.start(kChapterTimeoutMs);
+    m_hidden->mainFrame()->load(m_urls[m_chapterIndex]);
+}
+
+void EpubSaver::chapterLoaded(bool ok)
+{
+    if (!m_running || !m_series) return;
+    m_chapterTimer.stop();
+    if (!ok) {
+        qWarning() << "epub: chapter failed to load" << m_urls[m_chapterIndex];
+        loadNextChapter();
+        return;
+    }
+    m_images.clear();
+    m_title.clear(); m_content.clear(); m_byline.clear();
+    blockSignals(true);               // extract() reports failure via fail(); a bad chapter is skipped
+    bool got = extract(m_hidden);
+    blockSignals(false);
+    if (!got) {
+        m_running = true;
+        loadNextChapter();
+        return;
+    }
+    collectImages();
+    m_current = -1;
+    fetchNext();
+}
+
+void EpubSaver::chapterTimeout()
+{
+    if (!m_running || !m_series) return;
+    qWarning() << "epub: chapter timed out" << m_urls[m_chapterIndex];
+    m_hidden->triggerAction(QWebPage::Stop);
+    loadNextChapter();
 }
 
 QString EpubSaver::defaultOutDir()
@@ -165,7 +261,8 @@ void EpubSaver::start()
     if (m_running) return;
     m_running = true;
     emit progress("Saving: extracting article...");
-    if (!extract()) return;
+    m_series = false;
+    if (!extract(m_page)) return;
     collectImages();
     m_current = -1;
     fetchNext();
@@ -178,9 +275,9 @@ void EpubSaver::fail(const QString &why)
     emit finished(false, why);
 }
 
-bool EpubSaver::extract()
+bool EpubSaver::extract(QWebPage *page)
 {
-    QWebFrame *frame = m_page->mainFrame();
+    QWebFrame *frame = page->mainFrame();
     m_pageUrl = frame->url();
     QString script = "(function(){\n" + readResource(":/js/js/prelude.js") + "\n" +
                      readResource(":/js/js/Readability.js") + "\n" +
@@ -196,7 +293,7 @@ bool EpubSaver::extract()
         qWarning() << "epub: Readability failed, using plain page:" << o.value("readabilityError").toString();
     if (o.contains("error")) { fail("Could not read the page: " + o.value("error").toString()); return false; }
     m_title = o.value("title").toString().simplified();
-    if (m_title.isEmpty()) m_title = m_page->mainFrame()->title().simplified();
+    if (m_title.isEmpty()) m_title = frame->title().simplified();
     if (m_title.isEmpty()) m_title = m_pageUrl.host();
     m_byline = o.value("byline").toString().simplified();
     m_siteName = o.value("siteName").toString().simplified();
@@ -235,7 +332,8 @@ void EpubSaver::collectImages()
             (url.scheme() == "http" || url.scheme() == "https" || url.scheme() == "data")) {
             Image img;
             img.url = url;
-            img.name = QString("images/img%1").arg(m_images.size() + 1);   // extension added once fetched
+            img.name = m_series ? QString("images/c%1img%2").arg(m_chapterIndex + 1).arg(m_images.size() + 1)
+                                : QString("images/img%1").arg(m_images.size() + 1);   // extension added once fetched
             m_images << img;
             idx = m_images.size() - 1;
         }
@@ -252,7 +350,7 @@ void EpubSaver::collectImages()
 void EpubSaver::fetchNext()
 {
     ++m_current;
-    if (m_current >= m_images.size()) { writeEpub(); return; }
+    if (m_current >= m_images.size()) { imagesDone(); return; }
     Image &img = m_images[m_current];
     emit progress(QString("Saving: image %1 of %2...").arg(m_current + 1).arg(m_images.size()));
     if (img.url.scheme() == "data") {
@@ -274,6 +372,30 @@ void EpubSaver::fetchNext()
     m_reply = m_page->networkAccessManager()->get(req);
     connect(m_reply, SIGNAL(finished()), this, SLOT(imageFinished()));
     m_timer.start(kImageTimeoutMs);
+}
+
+void EpubSaver::imagesDone()
+{
+    // Substitute image placeholders in the content just extracted.
+    for (int i = 0; i < m_images.size(); ++i) {
+        QString ph = QString("@@IMG%1@@").arg(i);
+        if (m_images[i].ok) m_content.replace(ph, xmlEscape(m_images[i].name));
+        else {
+            QRegExp tagRe("<img src=\"" + QRegExp::escape(ph) + "\"[^>]*/>");
+            m_content.replace(tagRe, "");
+        }
+    }
+    if (m_series) {
+        Chapter ch;
+        ch.title = m_title.isEmpty() ? QString("Chapter %1").arg(m_chapters.size() + 1) : m_title;
+        ch.content = m_content;
+        ch.url = m_pageUrl;
+        ch.images = m_images;
+        m_chapters << ch;
+        loadNextChapter();
+        return;
+    }
+    writeEpub();
 }
 
 void EpubSaver::imageFinished()
@@ -367,16 +489,16 @@ void EpubSaver::storeImage(Image &img, const QByteArray &raw)
 void EpubSaver::writeEpub()
 {
     emit progress("Saving: writing EPUB...");
-    // Substitute image placeholders.
-    for (int i = 0; i < m_images.size(); ++i) {
-        QString ph = QString("@@IMG%1@@").arg(i);
-        if (m_images[i].ok) m_content.replace(ph, xmlEscape(m_images[i].name));
-        else {
-            QRegExp tagRe("<img src=\"" + QRegExp::escape(ph) + "\"[^>]*/>");
-            m_content.replace(tagRe, "");
-        }
+    if (m_series) {
+        // One EPUB from the collected chapters: gather their images, use the first chapter's
+        // metadata for the book-level fields.
+        m_images.clear();
+        for (int i = 0; i < m_chapters.size(); ++i) m_images += m_chapters[i].images;
+        if (m_seriesTitle.isEmpty()) m_seriesTitle = m_chapters[0].title;
+        m_title = m_seriesTitle;
+        m_pageUrl = m_chapters[0].url;
+        m_excerpt.clear();
     }
-
     QString t = m_title.isEmpty() ? QString("Saved page") : m_title;
     QString srcUrl = m_pageUrl.toString();
     QString date = QDateTime::currentDateTime().toString("yyyy-MM-dd");
@@ -414,6 +536,36 @@ void EpubSaver::writeEpub()
         manifestImages += "<item id=\"img" + QString::number(i) + "\" href=\"" + xmlEscape(m_images[i].name) +
                           "\" media-type=\"" + m_images[i].mediaType + "\"/>\n";
     }
+    // Chapter documents (series) or the single page.
+    QStringList chapterNames, chapterTitles, chapterDocs;
+    if (m_series) {
+        for (int i = 0; i < m_chapters.size(); ++i) {
+            QString nm = QString("ch%1.xhtml").arg(i + 1, 3, 10, QChar('0'));
+            QString ct = m_chapters[i].title;
+            QString doc = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+                "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\" \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\">\n"
+                "<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"" + xmlEscape(m_lang) + "\">\n<head>\n"
+                "<title>" + xmlEscape(ct) + "</title>\n"
+                "<link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\"/>\n"
+                "</head>\n<body>\n<h1 class=\"title\">" + xmlEscape(ct) + "</h1>\n"
+                "<p class=\"source\"><a href=\"" + xmlEscape(m_chapters[i].url.toString()) + "\">" +
+                xmlEscape(m_chapters[i].url.toString()) + "</a></p>\n<hr/>\n<div class=\"article\">\n" +
+                m_chapters[i].content + "\n</div>\n</body>\n</html>\n";
+            chapterNames << nm; chapterTitles << ct; chapterDocs << doc;
+        }
+    } else {
+        chapterNames << "page.xhtml"; chapterTitles << t; chapterDocs << xhtml;
+    }
+    QString manifestDocs, spine, navPoints;
+    for (int i = 0; i < chapterNames.size(); ++i) {
+        manifestDocs += "<item id=\"doc" + QString::number(i) + "\" href=\"" + chapterNames[i] +
+                        "\" media-type=\"application/xhtml+xml\"/>\n";
+        spine += "<itemref idref=\"doc" + QString::number(i) + "\"/>";
+        navPoints += "<navPoint id=\"p" + QString::number(i + 1) + "\" playOrder=\"" + QString::number(i + 1) +
+                     "\"><navLabel><text>" + xmlEscape(chapterTitles[i]) + "</text></navLabel><content src=\"" +
+                     chapterNames[i] + "\"/></navPoint>";
+    }
+
     QString opf = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
         "<package xmlns=\"http://www.idpf.org/2007/opf\" unique-identifier=\"uid\" version=\"2.0\">\n"
         "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:opf=\"http://www.idpf.org/2007/opf\">\n"
@@ -426,12 +578,11 @@ void EpubSaver::writeEpub()
         "<dc:date>" + date + "</dc:date>\n" +
         (m_excerpt.isEmpty() ? QString() : "<dc:description>" + xmlEscape(m_excerpt) + "</dc:description>\n") +
         "</metadata>\n"
-        "<manifest>\n"
-        "<item id=\"page\" href=\"page.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
+        "<manifest>\n" + manifestDocs +
         "<item id=\"css\" href=\"style.css\" media-type=\"text/css\"/>\n"
         "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>\n" + manifestImages +
         "</manifest>\n"
-        "<spine toc=\"ncx\"><itemref idref=\"page\"/></spine>\n"
+        "<spine toc=\"ncx\">" + spine + "</spine>\n"
         "</package>\n";
     QString ncx = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
         "<ncx xmlns=\"http://www.daisy.org/z3986/2005/ncx/\" version=\"2005-1\">\n"
@@ -439,8 +590,7 @@ void EpubSaver::writeEpub()
         "<meta name=\"dtb:depth\" content=\"1\"/><meta name=\"dtb:totalPageCount\" content=\"0\"/>"
         "<meta name=\"dtb:maxPageNumber\" content=\"0\"/></head>\n"
         "<docTitle><text>" + xmlEscape(t) + "</text></docTitle>\n"
-        "<navMap><navPoint id=\"p1\" playOrder=\"1\"><navLabel><text>" + xmlEscape(t) +
-        "</text></navLabel><content src=\"page.xhtml\"/></navPoint></navMap>\n</ncx>\n";
+        "<navMap>" + navPoints + "</navMap>\n</ncx>\n";
     QString container = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
         "<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">\n"
         "<rootfiles><rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles>\n"
@@ -453,7 +603,7 @@ void EpubSaver::writeEpub()
     e.name = "OEBPS/content.opf"; e.data = opf.toUtf8(); entries << e;
     e.name = "OEBPS/toc.ncx"; e.data = ncx.toUtf8(); entries << e;
     e.name = "OEBPS/style.css"; e.data = css.toUtf8(); entries << e;
-    e.name = "OEBPS/page.xhtml"; e.data = xhtml.toUtf8(); entries << e;
+    for (int i = 0; i < chapterNames.size(); ++i) { e.name = ("OEBPS/" + chapterNames[i]).toUtf8(); e.data = chapterDocs[i].toUtf8(); entries << e; }
     for (int i = 0; i < m_images.size(); ++i) {
         if (!m_images[i].ok) continue;
         e.name = ("OEBPS/" + m_images[i].name).toUtf8(); e.data = m_images[i].data; entries << e;
@@ -471,7 +621,7 @@ void EpubSaver::writeEpub()
     f.close();
     appendHandoff("saved", path);
     ::sync();
-    qDebug() << "epub: wrote" << path << zip.size() << "bytes," << m_images.size() << "images";
+    qDebug() << "epub: wrote" << path << zip.size() << "bytes," << m_images.size() << "images," << chapterNames.size() << "documents";
     m_running = false;
     emit finished(true, path);
 }
@@ -594,3 +744,68 @@ void SavedDialog::laterClicked()
     emit dismissed();
     close();
 }
+
+
+// ------------------------------------------------------------- SaveChoiceDialog
+
+SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle, QWidget *parent)
+    : QWidget(parent)
+{
+    setAttribute(Qt::WA_DeleteOnClose);
+    setAutoFillBackground(false);
+    m_box = new QFrame(this);
+    static_cast<QFrame *>(m_box)->setFrameStyle(QFrame::Box | QFrame::Plain);
+    static_cast<QFrame *>(m_box)->setLineWidth(3);
+    m_box->setAutoFillBackground(true);
+    QPalette pal = m_box->palette();
+    pal.setColor(QPalette::Window, Qt::white);
+    pal.setColor(QPalette::WindowText, Qt::black);
+    m_box->setPalette(pal);
+
+    QVBoxLayout *v = new QVBoxLayout(m_box);
+    v->setContentsMargins(30, 30, 30, 30);
+    v->setSpacing(24);
+    QFont f; f.setPixelSize(38);
+    QFont fs; fs.setPixelSize(30);
+
+    QLabel *head = new QLabel("Save to the library");
+    head->setFont(f); head->setAlignment(Qt::AlignCenter);
+    v->addWidget(head);
+    QLabel *q = new QLabel(QString("This page links to %1 parts of a series%2. Save just this page, or all of them as one book with a chapter list?")
+                           .arg(chapterCount).arg(seriesTitle.isEmpty() ? QString() : " (" + seriesTitle + ")"));
+    q->setFont(fs); q->setWordWrap(true); q->setAlignment(Qt::AlignCenter);
+    v->addWidget(q);
+
+    QPushButton *series = new QPushButton(QString("Whole series (%1 parts)").arg(chapterCount));
+    QPushButton *page = new QPushButton("Just this page");
+    QPushButton *cancel = new QPushButton("Cancel");
+    foreach (QPushButton *b, QList<QPushButton *>() << series << page << cancel) {
+        b->setFont(f);
+        b->setMinimumSize(300, 100);
+        b->setFocusPolicy(Qt::NoFocus);
+        b->setProperty("kb_fast", true);
+        v->addWidget(b);
+    }
+    connect(series, SIGNAL(clicked()), this, SIGNAL(seriesChosen()));
+    connect(page, SIGNAL(clicked()), this, SIGNAL(pageChosen()));
+    connect(cancel, SIGNAL(clicked()), this, SIGNAL(cancelled()));
+    connect(series, SIGNAL(clicked()), this, SLOT(close()));
+    connect(page, SIGNAL(clicked()), this, SLOT(close()));
+    connect(cancel, SIGNAL(clicked()), this, SLOT(close()));
+
+    if (parent) resize(parent->size());
+    place();
+    raise();
+    show();
+}
+
+void SaveChoiceDialog::place()
+{
+    int w = qMin(width() - 40, 900);
+    m_box->setFixedWidth(w);
+    m_box->adjustSize();
+    m_box->move((width() - m_box->width()) / 2, (height() - m_box->height()) / 2);
+}
+
+void SaveChoiceDialog::resizeEvent(QResizeEvent *e) { QWidget::resizeEvent(e); place(); }
+void SaveChoiceDialog::mousePressEvent(QMouseEvent *e) { e->accept(); }

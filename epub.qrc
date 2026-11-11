@@ -3,5 +3,6 @@
     <file>js/prelude.js</file>
     <file>js/Readability.js</file>
     <file>js/extract.js</file>
+        <file>js/series.js</file>
 </qresource>
 </RCC>

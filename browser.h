@@ -23,7 +23,7 @@ class NativeTextEntry;
 // turns one screen (up/left = next, down/right = previous; from the very left/right
 // edge = history back/forward). A drag held longer than KB_FLICK_MS follows the
 // finger: vertical drags scroll live, horizontal drags pan sideways on wide pages.
-class EpubSaver;
+#include "epub.h"
 class TouchWebView : public QWebView {
     Q_OBJECT
 public:
@@ -131,6 +131,8 @@ private slots:
     void pageTapped();           // a tap landed in the page: keyboard for a text box, else hide it
     void cleanToolbar();
     void saveEpub();
+    void savePageOnly();
+    void saveSeries();
     void saveProgress(const QString &msg);
     void saveFinished(bool ok, const QString &msg);
     void imageDownloaded();
@@ -167,6 +169,8 @@ private:
     QElapsedTimer m_lastPageTap;
     QPoint m_tapPress, m_tapRelease;   // last press/release in the page (view coordinates)
     EpubSaver *m_saver;
+    QList<EpubSaver::ChapterLink> m_seriesLinks;
+    QString m_seriesTitle;
     qreal m_textZoom;         // A+/A-: text-only zoom on top of the page zoom (1.0 = normal)
     void setTextZoom(qreal z, bool save);
     int m_restoreY;           // KB_RESTORE_Y: scroll position to restore after the first load (-1 = none)

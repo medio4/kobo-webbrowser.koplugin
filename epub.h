@@ -25,7 +25,15 @@ public:
     EpubSaver(QWebPage *page, const QString &outDir, QObject *parent = 0);
     ~EpubSaver();
     void start();
+    // Save several pages (a chapter list) as one EPUB with a chapter table of contents.
+    // Each URL is loaded in a hidden page and extracted like start() does.
+    void startSeries(const QList<QUrl> &urls, const QString &seriesTitle);
     bool isRunning() const { return m_running; }
+
+    // Chapters of the work this page belongs to, found by js/series.js (same-site links
+    // under the page's folder). Empty when the page doesn't look like part of a series.
+    struct ChapterLink { QUrl url; QString title; };
+    static QList<ChapterLink> findChapters(QWebPage *page, QString *listTitle = 0);
 
     // Folder for saved pages: $KB_LIBRARY_DIR, else <KOReader home>/Web.
     static QString defaultOutDir();
@@ -43,6 +51,8 @@ signals:
 private slots:
     void imageFinished();
     void imageTimeout();
+    void chapterLoaded(bool ok);
+    void chapterTimeout();
 
 private:
     struct Image {
@@ -53,12 +63,15 @@ private:
         bool ok;
         Image() : ok(false) {}
     };
-    bool extract();
+    struct Chapter { QString title; QString content; QUrl url; QList<Image> images; };
+    bool extract(QWebPage *page);
     void collectImages();
     void fetchNext();
+    void imagesDone();
     void storeImage(Image &img, const QByteArray &raw);
     void writeEpub();
     void fail(const QString &why);
+    void loadNextChapter();
 
     QWebPage *m_page;
     QString m_outDir;
@@ -70,6 +83,31 @@ private:
     int m_current;
     QNetworkReply *m_reply;
     QTimer m_timer;
+    // series mode
+    bool m_series;
+    QList<QUrl> m_urls;
+    QString m_seriesTitle;
+    QList<Chapter> m_chapters;
+    int m_chapterIndex;
+    QWebPage *m_hidden;
+    QTimer m_chapterTimer;
+};
+
+// Overlay asking whether to save just this page or the whole series it belongs to.
+class SaveChoiceDialog : public QWidget {
+    Q_OBJECT
+public:
+    SaveChoiceDialog(int chapterCount, const QString &seriesTitle, QWidget *parent);
+signals:
+    void pageChosen();
+    void seriesChosen();
+    void cancelled();
+protected:
+    void resizeEvent(QResizeEvent *e);
+    void mousePressEvent(QMouseEvent *e);
+private:
+    void place();
+    QWidget *m_box;
 };
 
 

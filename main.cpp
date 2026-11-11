@@ -500,19 +500,19 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     MemTune::applySettings(ws);   // caches, JS (KB_NO_JS), plugins etc.
     ws->setAttribute(QWebSettings::AutoLoadImages, true);
     ws->setAttribute(QWebSettings::ZoomTextOnly, false);
-    ws->setFontSize(QWebSettings::DefaultFontSize, 20);
-    ws->setFontSize(QWebSettings::MinimumFontSize, 16);
+    // Readable on a 300 dpi e-ink panel: pages may not shrink text below this.
+    ws->setFontSize(QWebSettings::DefaultFontSize, 22);
+    ws->setFontSize(QWebSettings::MinimumFontSize, 20);
     m_view->setZoomFactor(2.0);
     // A+/A- scale the text only (saved in bin/text-size.txt), so the page keeps its layout
     // width; pinch still zooms the whole page.
     m_textZoom = 1.0;
     {
         QFile tf(QDir(QCoreApplication::applicationDirPath()).filePath("text-size.txt"));
-        if (tf.open(QIODevice::ReadOnly)) {
-            bool ok = false;
-            qreal t = QString::fromLatin1(tf.readAll()).trimmed().toDouble(&ok);
-            if (ok) setTextZoom(t, false);
-        }
+        bool ok = false;
+        qreal t = 1.0;
+        if (tf.open(QIODevice::ReadOnly)) t = QString::fromLatin1(tf.readAll()).trimmed().toDouble(&ok);
+        setTextZoom(ok ? t : 1.25, false);   // first run: a notch larger than the pages ask for
     }
     m_view->page()->setLinkDelegationPolicy(QWebPage::DontDelegateLinks);
 
@@ -1206,12 +1206,40 @@ void Browser::screenshot()
 void Browser::saveEpub()
 {
     if (m_saver && m_saver->isRunning()) return;
+    // Part of a multi-part work? Offer the whole thing as one book.
+    QString listTitle;
+    m_seriesLinks = EpubSaver::findChapters(m_view->page(), &listTitle);
+    if (m_seriesLinks.size() >= 2) {
+        m_seriesTitle = listTitle;
+        SaveChoiceDialog *d = new SaveChoiceDialog(m_seriesLinks.size(), QString(), centralWidget());
+        connect(d, SIGNAL(pageChosen()), this, SLOT(savePageOnly()));
+        connect(d, SIGNAL(seriesChosen()), this, SLOT(saveSeries()));
+        return;
+    }
+    savePageOnly();
+}
+
+void Browser::savePageOnly()
+{
+    if (m_saver && m_saver->isRunning()) return;
     if (saveImageIfImagePage()) return;
     delete m_saver;
     m_saver = new EpubSaver(m_view->page(), EpubSaver::defaultOutDir(), this);
     connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
     connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(saveFinished(bool,QString)));
     m_saver->start();
+}
+
+void Browser::saveSeries()
+{
+    if (m_saver && m_saver->isRunning()) return;
+    delete m_saver;
+    m_saver = new EpubSaver(m_view->page(), EpubSaver::defaultOutDir(), this);
+    connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
+    connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(saveFinished(bool,QString)));
+    QList<QUrl> urls;
+    for (int i = 0; i < m_seriesLinks.size(); ++i) urls << m_seriesLinks[i].url;
+    m_saver->startSeries(urls, m_seriesTitle);
 }
 
 void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }
