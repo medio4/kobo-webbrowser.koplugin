@@ -1,4 +1,5 @@
 #include "memtune.h"
+#include "adblock.h"
 #include <QtWebKit/QWebSettings>
 #include <QtGui/QPixmapCache>
 #include <QtGui/QImage>
@@ -118,6 +119,8 @@ static bool isImageRequest(const QNetworkRequest &req)
 
 QNetworkReply *KoboNetworkAccessManager::createRequest(Operation op, const QNetworkRequest &req, QIODevice *outgoingData)
 {
+    if (AdBlock::instance()->shouldBlock(req.url()))
+        return new BlockedReply(req, op, this);
     QNetworkReply *r = QNetworkAccessManager::createRequest(op, req, outgoingData);
     QString scheme = req.url().scheme();
     if (!m_filter || op != GetOperation || (scheme != "http" && scheme != "https") || !isImageRequest(req))
