@@ -784,8 +784,9 @@ void Browser::showBuiltinKeyboard()
     placeKeyboard();
     m_kbd->raise();
     m_kbd->show();
-    // The keys are painted with the fast waveform; flash the area once so they come up crisp.
-    if (m_eink) m_eink->markDirty(QRect(m_kbd->mapTo(this, QPoint(0, 0)), m_kbd->size()), m_eink->flagsFull());
+    // The keys are painted with the fast waveform; give the area one grayscale update so
+    // they come up crisp, without flashing the screen black.
+    if (m_eink) m_eink->markDirty(QRect(m_kbd->mapTo(this, QPoint(0, 0)), m_kbd->size()), m_eink->flagsPartial());
 }
 
 // ---- Text entry with KOReader's keyboard (textentry.h). The plugin draws its InputDialog
@@ -910,7 +911,7 @@ void Browser::nativeUnavailable()
 void Browser::hideKeyboard()
 {
     if (!m_kbd->isVisible()) return;
-    if (m_eink) m_eink->hintFull();   // the keys leave ghosts: flash the relayout that follows
+    // The page repaints where the keys were with a normal grayscale update (no black flash).
     m_kbd->hide();
     // Typing used the rough DU waveform; redraw the toolbar cleanly once it settles.
     QTimer::singleShot(600, this, SLOT(cleanToolbar()));
@@ -1238,7 +1239,7 @@ void Browser::showPhoneHint()
     if (!m_phone) return;
     QString a = m_phone->address();
     if (a.isEmpty()) return;
-    m_status->setText("From your phone: " + a + "  (QR code: Menu > From phone)");
+    m_status->setText("Phone: " + a + "  (QR in Menu)");
 }
 
 void Browser::showMenu()
@@ -1258,13 +1259,26 @@ void Browser::showMenu()
     m->addAction("Exit browser", this, SLOT(quit()), true);
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
     m->popup();
-    if (m_eink) m_eink->hintFull();   // the panel comes up crisp, no ghost of the page under it
+    // No full-screen flash: the panel's own repaint is a plain partial update of its area.
+    m_menuRect = QRect(m->mapTo(this, QPoint(0, 0)), m->size());
+    foreach (QObject *o, m->children())
+        if (QWidget *w = qobject_cast<QWidget *>(o)) { m_menuRect = QRect(w->mapTo(this, QPoint(0, 0)), w->size()); break; }
 }
 
-// The panel was drawn over the page: redraw that area cleanly once it is gone.
+// The panel was drawn over the page: once the page has repainted there, give that area
+// a non-flashing grayscale pass so no outline of the buttons lingers.
 void Browser::menuClosed()
 {
-    if (m_eink) m_eink->hintFull();
+    // The page's own repaint (a grayscale partial) already covers the panel area; an extra
+    // cleanup pass only added a third refresh. Kept as a hook (KB_MENU_CLEAN=1 turns it on).
+    if (getenv("KB_MENU_CLEAN")) QTimer::singleShot(300, this, SLOT(cleanMenuArea()));
+    else m_menuRect = QRect();
+}
+
+void Browser::cleanMenuArea()
+{
+    if (m_eink && !m_menuRect.isEmpty()) m_eink->cleanRect(m_menuRect);
+    m_menuRect = QRect();
 }
 
 void Browser::showPhoneDialog()

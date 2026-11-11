@@ -7,6 +7,7 @@
 #include <QtWidgets/QWidget>
 #include <QtWidgets/QLabel>
 #include <QtCore/QPoint>
+#include <QtCore/QRect>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QList>
 #include <QtCore/QTimer>
@@ -136,6 +137,7 @@ private slots:
     void showPhoneDialog();
     void showMenu();
     void menuClosed();
+    void cleanMenuArea();
     void saveEpub();
     void savePageOnly();
     void saveSeries();
@@ -176,6 +178,7 @@ private:
     QPoint m_tapPress, m_tapRelease;   // last press/release in the page (view coordinates)
     EpubSaver *m_saver;
     PhoneShare *m_phone;
+    QRect m_menuRect;
     QList<EpubSaver::ChapterLink> m_seriesLinks;
     QString m_seriesTitle;
     qreal m_textZoom;         // A+/A-: text-only zoom on top of the page zoom (1.0 = normal)

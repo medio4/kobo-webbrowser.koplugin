@@ -181,7 +181,7 @@ void KoboEink::flush()
         QList<QPair<QRect, quint64> > merged = mergeRects(m_pending);
         m_pending.clear();
         for (int j = 0; j < merged.size(); ++j) {
-            const QRect &r = merged[j].first;
+            QRect r = merged[j].first;
             const bool full = merged[j].second == m_flagsFull;
             bool changed = true;
             if (m_grab && m_fb && m_fb->isOpen()) {
@@ -203,7 +203,12 @@ void KoboEink::flush()
                                  << "depth" << src->depth();
                         if (getenv("KB_DEBUG_GRAB")) img.save(QCoreApplication::applicationDirPath() + QString("/grab%1.png").arg(dbg));
                     }
-                    changed = m_fb->write(img, r.topLeft());
+                    int fy = -1, ly = -1;
+                    changed = m_fb->write(img, r.topLeft(), &fy, &ly);
+                    // Only refresh the rows that really changed (a panel over the page, a
+                    // repaint of identical text): a smaller update is quicker and flashes less.
+                    if (changed && !full && fy >= r.top() && ly >= fy && (ly - fy + 1) < r.height())
+                        r = QRect(r.left(), fy, r.width(), ly - fy + 1);
                 } else if (dbg < 3) {
                     ++dbg;
                     qDebug() << "grab: no backing store image";

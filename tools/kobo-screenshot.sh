@@ -4,12 +4,12 @@
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 OUT="${1:-$HERE/../build/kobo-$(date +%Y%m%d-%H%M%S).png}"
-ssh kobo 'cat /dev/fb0 > /tmp/fb.raw; /mnt/onboard/.adds/koreader/fbink -e 2>/dev/null | tr ";" "\n" | grep -E "^(viewWidth|viewHeight|BPP|lineLength)=" | tr "\n" " "' > /tmp/kobo-fbinfo.$$ || true
+ssh -o HostName=192.168.1.237 kobo 'cat /dev/fb0 > /tmp/fb.raw; /mnt/onboard/.adds/koreader/fbink -e 2>/dev/null | tr ";" "\n" | grep -E "^(viewWidth|viewHeight|BPP|lineLength)=" | tr "\n" " "' > /tmp/kobo-fbinfo.$$ || true
 INFO="$(cat /tmp/kobo-fbinfo.$$)"; rm -f /tmp/kobo-fbinfo.$$
 W=$(echo "$INFO" | sed -n 's/.*viewWidth=\([0-9]*\).*/\1/p'); H=$(echo "$INFO" | sed -n 's/.*viewHeight=\([0-9]*\).*/\1/p')
 BPP=$(echo "$INFO" | sed -n 's/.*BPP=\([0-9]*\).*/\1/p'); LL=$(echo "$INFO" | sed -n 's/.*lineLength=\([0-9]*\).*/\1/p')
 : "${W:=1072}" "${H:=1448}" "${BPP:=8}" "${LL:=1072}"
-scp -q kobo:/tmp/fb.raw /tmp/kobo-fb.$$.raw
+scp -q -o HostName=192.168.1.237 kobo:/tmp/fb.raw /tmp/kobo-fb.$$.raw
 python3 -I - /tmp/kobo-fb.$$.raw "$OUT" "$W" "$H" "$BPP" "$LL" <<'PY'
 import sys, zlib, struct
 src, dst, w, h, bpp, ll = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6])

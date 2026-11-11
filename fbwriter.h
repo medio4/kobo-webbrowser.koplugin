@@ -14,7 +14,9 @@ public:
     // Writes src at dst. Returns true if any pixel actually changed (so callers can
     // skip the e-ink refresh for repaints that drew the same picture again, e.g. a
     // button's pressed/released repaint or a non-blinking cursor).
-    bool write(const QImage &src, const QPoint &dst);
+    // Copies src to the framebuffer at dst; returns whether any pixel changed. With
+    // firstY/lastY, also reports the first and last changed row (screen coordinates).
+    bool write(const QImage &src, const QPoint &dst, int *firstY = 0, int *lastY = 0);
 private:
     int m_fd;
     unsigned char *m_mem;

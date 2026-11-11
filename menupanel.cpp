@@ -82,7 +82,11 @@ void MenuPanel::place()
 
 void MenuPanel::resizeEvent(QResizeEvent *e) { QWidget::resizeEvent(e); place(); }
 
-void MenuPanel::mousePressEvent(QMouseEvent *e)
+// A tap outside the panel closes it. Close on the release, not the press: otherwise the
+// release lands on the page underneath and follows whatever link is there.
+void MenuPanel::mousePressEvent(QMouseEvent *e) { e->accept(); }
+
+void MenuPanel::mouseReleaseEvent(QMouseEvent *e)
 {
     e->accept();
     if (!m_box->geometry().contains(e->pos())) { hide(); emit closed(); close(); }

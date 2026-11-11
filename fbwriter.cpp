@@ -37,8 +37,9 @@ static inline bool putLine(unsigned char *dst, const unsigned char *src, int byt
     return true;
 }
 
-bool FbWriter::write(const QImage &srcIn, const QPoint &dst)
+bool FbWriter::write(const QImage &srcIn, const QPoint &dst, int *firstY, int *lastY)
 {
+    int fy = -1, ly = -1;
     if (!isOpen() || srcIn.isNull()) return false;
     bool changed = false;
     int x0 = dst.x(), y0 = dst.y();
@@ -48,7 +49,9 @@ bool FbWriter::write(const QImage &srcIn, const QPoint &dst)
     // 8-bit images without a palette are treated as raw grayscale.
     if (srcIn.depth() == 8 && srcIn.colorCount() == 0 && m_bpp == 8) {
         for (int y = 0; y < h; ++y)
-            changed |= putLine(m_mem + (unsigned long)(y0 + y) * m_stride + x0, srcIn.constScanLine(y), w);
+            if (putLine(m_mem + (unsigned long)(y0 + y) * m_stride + x0, srcIn.constScanLine(y), w)) { changed = true; if (fy < 0) fy = y0 + y; ly = y0 + y; }
+        if (firstY) *firstY = fy;
+        if (lastY) *lastY = ly;
         return changed;
     }
     QImage src = srcIn.format() == QImage::Format_RGB32 || srcIn.format() == QImage::Format_ARGB32
@@ -61,17 +64,19 @@ bool FbWriter::write(const QImage &srcIn, const QPoint &dst)
         unsigned char *out = m_mem + (unsigned long)(y0 + y) * m_stride;
         if (m_bpp == 8) {
             for (int x = 0; x < w; ++x) tmp[x] = (unsigned char)qGray(line[x]);
-            changed |= putLine(out + x0, tmp, w);
+            if (putLine(out + x0, tmp, w)) { changed = true; if (fy < 0) fy = y0 + y; ly = y0 + y; }
         } else if (m_bpp == 32) {
-            changed |= putLine(out + x0 * 4, (const unsigned char *)line, w * 4);
+            if (putLine(out + x0 * 4, (const unsigned char *)line, w * 4)) { changed = true; if (fy < 0) fy = y0 + y; ly = y0 + y; }
         } else if (m_bpp == 16) {
             unsigned short *o16 = (unsigned short *)tmp;
             for (int x = 0; x < w; ++x) {
                 QRgb p = line[x];
                 o16[x] = (unsigned short)(((qRed(p) >> 3) << 11) | ((qGreen(p) >> 2) << 5) | (qBlue(p) >> 3));
             }
-            changed |= putLine(out + x0 * 2, tmp, w * 2);
+            if (putLine(out + x0 * 2, tmp, w * 2)) { changed = true; if (fy < 0) fy = y0 + y; ly = y0 + y; }
         }
     }
+    if (firstY) *firstY = fy;
+    if (lastY) *lastY = ly;
     return changed;
 }

@@ -24,6 +24,7 @@ signals:
 protected:
     void resizeEvent(QResizeEvent *e);
     void mousePressEvent(QMouseEvent *e);
+    void mouseReleaseEvent(QMouseEvent *e);
 private slots:
     void picked();
 private:
