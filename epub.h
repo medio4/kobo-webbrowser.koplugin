@@ -30,6 +30,9 @@ public:
     struct ChapterLink { QUrl url; QString title; };
     void startSeries(const QList<ChapterLink> &links, const QString &seriesTitle);
     bool isRunning() const { return m_running; }
+    // false: a temporary copy (reader mode), no "saved" handoff line, so it never joins
+    // the KOReader collection.
+    void setLibrary(bool library) { m_library = library; }
 
     // Chapters of the work this page belongs to, found by js/series.js (same-site links
     // under the page's folder). Empty when the page doesn't look like part of a series.
@@ -37,10 +40,15 @@ public:
 
     // Folder for saved pages: $KB_LIBRARY_DIR, else <KOReader home>/Web.
     static QString defaultOutDir();
+    // Folder for reader-mode copies: $KB_READER_DIR, else reader-tmp next to the program.
+    // Holds one book at a time; clearReaderDir() empties it before each new one.
+    static QString readerDir();
+    static void clearReaderDir();
     static QString safeFileName(const QString &title);
 
     // Handoff to KOReader (read by applauncher.koplugin after the browser exits):
-    // $KB_HANDOFF_FILE, lines "saved\t<path>" for every EPUB written, "open\t<path>" to open one.
+    // $KB_HANDOFF_FILE, lines "saved\t<path>" for every EPUB written, "open\t<path>" to open one,
+    // "read\t<path>\t<url>\t<scrollY>\t<zoom>" to read a reader-mode copy and come back here.
     static QString handoffFile();
     static bool appendHandoff(const QString &kind, const QString &path);
 
@@ -76,6 +84,7 @@ private:
     QWebPage *m_page;
     QString m_outDir;
     bool m_running;
+    bool m_library;
     QString m_title, m_byline, m_siteName, m_lang, m_excerpt, m_content;
     QUrl m_pageUrl;
     bool m_fallback;

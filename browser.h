@@ -128,6 +128,7 @@ public slots:
     void screenshot();
     void releaseLoadHold();
     void sleepToKoreader();   // power button with KB_KO_SLEEP=1: hand off and exit
+    void readInKoreader();    // reader mode: article as a temporary EPUB in KOReader, then back here
 private slots:
     void keyboardGo();
     void pageTapped();           // a tap landed in the page: keyboard for a text box, else hide it
@@ -147,6 +148,7 @@ private slots:
     void saveSeries();
     void saveProgress(const QString &msg);
     void saveFinished(bool ok, const QString &msg);
+    void readerFinished(bool ok, const QString &msg);
     void imageDownloaded();
     void updateSysInfo();
     void fullRefresh();

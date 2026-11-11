@@ -20,6 +20,10 @@ The browser talks back through a handoff file (bin/epub-handoff.txt), one reques
   open<TAB>/path/book.epub               open it in the reader now
   sleep<TAB>url<TAB>scrollY<TAB>zoom     sleep (power button, cover or the browser's idle
                                          timer); reopen the page on wake
+  read<TAB>/path/tmp.epub<TAB>url<TAB>scrollY<TAB>zoom
+                                         reader mode: open the temporary EPUB (in bin/reader-tmp,
+                                         never the library); when that book is closed, delete it
+                                         and reopen the browser on the same page
 
 Text entry uses KOReader's own keyboard (setting "Use KOReader keyboard", default on): the
 browser writes bin/kbd-request.txt (line 1: url|field|text, line 2: label, rest: current
@@ -254,6 +258,11 @@ end
 -- between file manager and reader; the browser outlives neither, but be safe).
 local active = nil
 
+-- Reader mode: the temporary EPUB being read in KOReader and the page to go back to
+-- ({ file, url, y, zoom }). Module-level like `active`: the ReaderUI showing the book has
+-- its own plugin instance.
+local reading = nil
+
 local function lastLines(path, n)
     local f = io.open(path, "r")
     if not f then return "" end
@@ -298,7 +307,10 @@ function KoboWebBrowser:init()
     self.menu_reply = self.bin .. "/menu-reply.txt"
     self.sleep_shot = self.bin .. "/sleep-shot.png"
     self.sleep_page = self.bin .. "/sleep-page.html"
+    self.reader_dir = self.bin .. "/reader-tmp"
     self.settings = G_reader_settings:readSetting("kobo_webbrowser") or {}
+    -- Reader-mode copies left over from a crash or a restart while reading.
+    if not reading then self:clearReaderDir() end
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
 end
@@ -504,6 +516,7 @@ function KoboWebBrowser:run(extra)
         KB_CACHE_DIR = self.bin .. "/cache",
         KB_SLEEP_SHOT_FILE = self.sleep_shot,
         KB_SLEEP_PAGE_FILE = self.sleep_page,
+        KB_READER_DIR = self.reader_dir,
     }
     if self.settings.home then env.KB_HOME = self.settings.home end
     os.remove(self.kbd_request); os.remove(self.kbd_reply)
@@ -1134,7 +1147,7 @@ function KoboWebBrowser:onBrowserGone(reason)
     -- Use a sleep line only when we stopped the browser for sleep, or when it asked
     -- for sleep itself (idle timer). Not after an escape.
     local sleep_req = h.sleep
-    if reason == "escape" or h.to_open then sleep_req = nil end
+    if reason == "escape" or h.to_open or h.read then sleep_req = nil end
     local sleeping = reason == "sleep" or (reason == "exit" and sleep_req ~= nil)
 
     if sleeping then
@@ -1182,6 +1195,9 @@ function KoboWebBrowser:readHandoff()
             h.saved[#h.saved + 1] = rest
         elseif kind == "open" then
             h.to_open = rest
+        elseif kind == "read" then
+            local file, url, y, zoom = rest:match("^([^\t]+)\t([^\t]*)\t?([^\t]*)\t?([^\t]*)$")
+            if file then h.read = { file = file, url = url, y = y, zoom = zoom } end
         elseif kind == "sleep" then
             local url, y, zoom = rest:match("^([^\t]*)\t?([^\t]*)\t?([^\t]*)$")
             h.sleep = { url = url, y = y, zoom = zoom }
@@ -1227,6 +1243,20 @@ function KoboWebBrowser:processHandoff(h, sleep_req, reason)
         end
     end
 
+    if h.read and not to_open and reason ~= "escape" then
+        local r = h.read
+        if lfs.attributes(r.file, "mode") == "file" then
+            r.file = ffiutil.realpath(r.file) or r.file
+            reading = r
+            logger.info("KoboWebBrowser: reader mode:", r.file, "back to", r.url, "y", r.y)
+            UIManager:scheduleIn(0.8, function()
+                require("apps/reader/readerui"):showReader(r.file)
+            end)
+        else
+            UIManager:show(InfoMessage:new{ text = T(_("Reader mode file not found:\n%1"), r.file) })
+        end
+    end
+
     if to_open then
         if lfs.attributes(to_open, "mode") == "file" then
             -- Let the repaint above settle, then open (showReader closes the current FM/Reader itself).
@@ -1235,6 +1265,74 @@ function KoboWebBrowser:processHandoff(h, sleep_req, reason)
             end)
         else
             UIManager:show(InfoMessage:new{ text = T(_("Saved file not found:\n%1"), to_open) })
+        end
+    end
+end
+
+-- ---- Reader mode: going back to the browser when the temporary book is closed
+
+local function isReadingCopy(ui)
+    local file = ui and ui.document and ui.document.file
+    return reading ~= nil and file ~= nil and (ffiutil.realpath(file) or file) == reading.file
+end
+
+-- Another book is about to replace ours (History, Open last, a link): no way back then.
+function KoboWebBrowser:onShowingReader()
+    if isReadingCopy(self.ui) then reading.switching = true end
+end
+
+function KoboWebBrowser:onCloseDocument()
+    if not isReadingCopy(self.ui) then return end
+    local r = reading
+    reading = nil
+    -- After ReaderUI has finished closing (the file is released, the file manager is up).
+    UIManager:scheduleIn(0.7, function() self:returnFromReader(r) end)
+end
+
+function KoboWebBrowser:returnFromReader(r)
+    self:deleteReaderCopy(r.file)
+    local ReaderUI = require("apps/reader/readerui")
+    if r.switching or ReaderUI.instance then
+        logger.info("KoboWebBrowser: reader mode: another book was opened, not going back")
+        return
+    end
+    -- The file manager would otherwise sit in our temp folder once the browser exits.
+    local FileManager = require("apps/filemanager/filemanager")
+    local fm = FileManager.instance
+    pcall(function()
+        local home = G_reader_settings:readSetting("home_dir")
+        if fm and home then fm.file_chooser:changeToPath(home) end
+    end)
+    -- This instance belonged to the closed ReaderUI: start the browser from the file manager's.
+    local plugin = fm and fm.kobowebbrowser or self
+    if active and active.job then return end
+    local extra = { args = {}, env = {} }
+    if r.url and r.url:match("^https?://") then extra.args[1] = r.url end
+    if tonumber(r.y) then extra.env.KB_RESTORE_Y = r.y end
+    if tonumber(r.zoom) then extra.env.KB_RESTORE_ZOOM = r.zoom end
+    logger.info("KoboWebBrowser: reader mode: back to", r.url, "y", r.y)
+    plugin:launch(extra)
+end
+
+-- Delete a reader-mode copy and everything KOReader keeps about it (book settings,
+-- history entry, cover cache), so it leaves no trace in History or "Open last".
+function KoboWebBrowser:deleteReaderCopy(file)
+    file = ffiutil.realpath(file) or file   -- as History stores it; nil once deleted
+    os.remove(file)
+    pcall(function() require("ui/widget/booklist").resetBookInfoCache(file) end)
+    pcall(function() require("docsettings").updateLocation(file) end)
+    pcall(function()
+        local ReadHistory = require("readhistory")
+        ReadHistory:removeItemByPath(file)
+        ReadHistory:ensureLastFile()
+    end)
+end
+
+function KoboWebBrowser:clearReaderDir()
+    if lfs.attributes(self.reader_dir, "mode") ~= "directory" then return end
+    for name in lfs.dir(self.reader_dir) do
+        if name:match("%.epub$") then
+            self:deleteReaderCopy(self.reader_dir .. "/" .. name)
         end
     end
 end
