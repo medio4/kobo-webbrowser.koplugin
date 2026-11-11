@@ -109,6 +109,11 @@ KoboEink::KoboEink(QObject *parent)
     m_timer.setSingleShot(true);
     m_timer.setInterval(80);
     m_fastDelayMs = (int)envFlags("KB_FAST_DELAY_MS", 25);
+    if (getenv("KB_AUDIT")) {
+        QTimer *at = new QTimer(this);
+        connect(at, SIGNAL(timeout()), this, SLOT(audit()));
+        at->start(1500);
+    }
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(flush()));
 }
 
@@ -502,4 +507,34 @@ void KoboEink::clearScreenForExit()
     QStringList args; args << "-q" << "-c" << "-f" << "-W" << "GC16" << "-w";
     if (m_logRefresh) qDebug() << "eink: fbink" << args.join(" ");
     QProcess::execute(m_fbink, args);
+}
+
+
+// Refresh audit (KB_AUDIT=1): every 1.5 s, when nothing is waiting to be flushed, compare
+// what Qt painted (the backing store) with the framebuffer. Rows that differ were painted
+// but never copied out, so the panel still shows something old there. Logged only when the
+// same difference is seen twice in a row (not a repaint that is still on its way).
+void KoboEink::audit()
+{
+    static QRect last;
+    if (!m_grab || !m_fb || !m_fb->isOpen() || m_suspended || !m_pending.isEmpty() || m_timer.isActive()) { last = QRect(); return; }
+    QImage *src = 0;
+    foreach (QWidget *tw, QApplication::topLevelWidgets()) {
+        if (!tw->isVisible()) continue;
+        QBackingStore *bs = tw->backingStore();
+        if (!bs) continue;
+        QPaintDevice *pd = bs->paintDevice();
+        if (pd && pd->devType() == QInternal::Image) { src = static_cast<QImage *>(pd); break; }
+    }
+    if (!src || src->isNull()) return;
+    int fy = -1, ly = -1;
+    bool differs = m_fb->write(*src, QPoint(0, 0), &fy, &ly, true);
+    QRect r = differs ? QRect(0, fy, src->width(), ly - fy + 1) : QRect();
+    if (differs && r == last) {
+        qWarning() << "audit: STALE rows" << fy << "-" << ly << "(painted, never sent to the panel)";
+        static int dumps = 0;
+        if (getenv("KB_AUDIT_DUMP") && dumps < 6)
+            src->copy(r).save(QString("/tmp/kb-test/stale%1.png").arg(dumps++));
+    }
+    last = r;
 }

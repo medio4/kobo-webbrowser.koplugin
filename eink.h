@@ -63,7 +63,8 @@ public slots:
     void setReady() { m_ready = true; }
     void hintPageTurn();
     void hintFast();   // next flush uses the fast waveform (DU), for small UI changes
-    void hintFull();   // next flush is a flashing full refresh (e.g. after the keyboard hides)
+    void hintFull();
+    void audit();      // KB_AUDIT=1: log screen areas Qt painted that never reached the panel   // next flush is a flashing full refresh (e.g. after the keyboard hides)
 private slots:
     void flush();
     void holdTick();

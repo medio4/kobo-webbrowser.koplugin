@@ -30,15 +30,17 @@ FbWriter::~FbWriter()
 }
 
 // Compare-then-copy one converted scanline; returns true if it differed.
+static bool s_compareOnly = false;   // audit: report differences without copying
 static inline bool putLine(unsigned char *dst, const unsigned char *src, int bytes)
 {
     if (memcmp(dst, src, bytes) == 0) return false;
-    memcpy(dst, src, bytes);
+    if (!s_compareOnly) memcpy(dst, src, bytes);
     return true;
 }
 
-bool FbWriter::write(const QImage &srcIn, const QPoint &dst, int *firstY, int *lastY)
+bool FbWriter::write(const QImage &srcIn, const QPoint &dst, int *firstY, int *lastY, bool compareOnly)
 {
+    struct CmpGuard { CmpGuard(bool c) { s_compareOnly = c; } ~CmpGuard() { s_compareOnly = false; } } guard(compareOnly);
     int fy = -1, ly = -1;
     if (!isOpen() || srcIn.isNull()) return false;
     bool changed = false;

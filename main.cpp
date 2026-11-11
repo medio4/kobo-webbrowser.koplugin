@@ -697,7 +697,8 @@ void Browser::flashUrlBar()
     if (!m_eink) return;
     if (QApplication::focusWidget() != m_url && sender() == m_kbd) return;
     QRect r(m_url->mapTo(this, QPoint(0, 0)), m_url->size());
-    m_eink->markDirty(r.adjusted(-4, -4, 4, 4), m_eink->flagsFull());
+    // A grayscale update (no black flash) is enough to clear deleted characters.
+    m_eink->markDirty(r.adjusted(-4, -4, 4, 4), m_eink->flagsPartial());
 }
 
 void Browser::go()
@@ -1426,7 +1427,7 @@ void Browser::showToc()
     TocOverlay *t = new TocOverlay(m_view, centralWidget());
     if (m_eink) {
         connect(t, SIGNAL(beforeJump()), m_eink, SLOT(hintPageTurn()));
-        connect(t, SIGNAL(closed()), this, SLOT(fullRefresh()));
+        // Closing it repaints the page under it with a normal partial update (no flash).
     }
 }
 
