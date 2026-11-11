@@ -895,7 +895,7 @@ void Browser::nativeReplied(const QString &action, const QString &text)
 void Browser::openKoreaderMenu()
 {
     if (!m_menu || m_menu->active() || (m_native && m_native->active())) return;
-    qDebug() << "menu: toolbar swipe, opening KOReader's menu";
+    qDebug() << "menu: opening KOReader's menu";
     m_menu->request("menu", "", m_url->text());
 }
 
@@ -1274,7 +1274,9 @@ void Browser::showMenu()
     m->addAction("Screenshot", this, SLOT(screenshot()));
     m->addAction("Keyboard", this, SLOT(toggleKeyboard()));
     m->addAction("From phone", this, SLOT(showPhoneDialog()));
-    m->addAction("Clean screen", this, SLOT(fullRefresh()), true);
+    if (m_menu && m_menu->available())   // launched from the KOReader plugin
+        m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()));
+    m->addAction("Clean screen", this, SLOT(fullRefresh()), !(m_menu && m_menu->available()));
     m->addAction("Exit browser", this, SLOT(quit()), true);
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
     m->popup();
