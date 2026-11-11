@@ -564,9 +564,6 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     // Tapping the URL field shows the keyboard.
     m_url->installEventFilter(this);
     m_view->installEventFilter(this);
-    // Tapping the title/status line forces a full-screen refresh (so does a two-finger tap).
-    m_status->installEventFilter(this);
-    m_sysInfo->installEventFilter(this);
 
     // Relaunched after a KOReader sleep: put the page back where it was.
     const char *ry = getenv("KB_RESTORE_Y");
@@ -646,21 +643,7 @@ bool Browser::eventFilter(QObject *obj, QEvent *e)
         if (!m_kbd->isVisible()) QTimer::singleShot(0, m_url, SLOT(selectAll()));
         QTimer::singleShot(0, this, SLOT(showKeyboard()));
     }
-    // Status line: a plain tap forces a full refresh. A drag (a swipe down for KOReader's
-    // menu that started here) doesn't.
-    if (obj == m_status && e->type() == QEvent::MouseButtonPress)
-        m_statusPress = static_cast<QMouseEvent *>(e)->globalPos();
-    if (obj == m_status && e->type() == QEvent::MouseButtonRelease && !KoboTouchInput::gestureActive()
-            && (static_cast<QMouseEvent *>(e)->globalPos() - m_statusPress).manhattanLength() < 40) {
-        fullRefresh();
-    }
-    // Clock / battery corner: a tap shows the QR code for the phone page.
-    if (obj == m_sysInfo && e->type() == QEvent::MouseButtonPress)
-        m_statusPress = static_cast<QMouseEvent *>(e)->globalPos();
-    if (obj == m_sysInfo && e->type() == QEvent::MouseButtonRelease && !KoboTouchInput::gestureActive()
-            && (static_cast<QMouseEvent *>(e)->globalPos() - m_statusPress).manhattanLength() < 40) {
-        QTimer::singleShot(0, this, SLOT(showPhoneDialog()));
-    }
+    // The status line only shows information: its actions live in the Menu panel.
     return QMainWindow::eventFilter(obj, e);
 }
 
@@ -1255,7 +1238,7 @@ void Browser::showPhoneHint()
     if (!m_phone) return;
     QString a = m_phone->address();
     if (a.isEmpty()) return;
-    m_status->setText("From your phone: " + a + "  (Menu > From phone for a QR code)");
+    m_status->setText("From your phone: " + a + "  (QR code: Menu > From phone)");
 }
 
 void Browser::showMenu()
@@ -1271,6 +1254,7 @@ void Browser::showMenu()
     m->addAction("Screenshot", this, SLOT(screenshot()));
     m->addAction("Keyboard", this, SLOT(toggleKeyboard()));
     m->addAction("From phone", this, SLOT(showPhoneDialog()));
+    m->addAction("Clean screen", this, SLOT(fullRefresh()), true);
     m->addAction("Exit browser", this, SLOT(quit()), true);
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
     m->popup();
