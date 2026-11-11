@@ -309,6 +309,9 @@ function KoboWebBrowser:init()
     self.sleep_page = self.bin .. "/sleep-page.html"
     self.reader_dir = self.bin .. "/reader-tmp"
     self.settings = G_reader_settings:readSetting("kobo_webbrowser") or {}
+    -- e.g. after reinstalling the plugin (bin/ is new); not while a browser runs, whose
+    -- Menu may have just changed the on/off file
+    if not active then pcall(self.writeAdblockFiles, self) end
     -- Reader-mode copies left over from a crash or a restart while reading.
     if not reading then self:clearReaderDir() end
     self:onDispatcherRegisterActions()
@@ -375,6 +378,10 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                 end,
             },
             {
+                text = _("Ad blocking"),
+                sub_item_table = self:adblockMenu(),
+            },
+            {
                 text = _("Use KOReader keyboard (experimental)"),
                 help_text = _("Type addresses and form fields in a KOReader input dialog instead of the browser's own keyboard. Off by default: the browser's keyboard types straight into the field. Takes effect the next time the browser starts."),
                 checked_func = function() return self.settings.native_keyboard == true end,
@@ -434,6 +441,110 @@ function KoboWebBrowser:askSetting(key, title, default, touchmenu_instance)
     }
     UIManager:show(dialog)
     dialog:onShowKeyboard()
+end
+
+-- Ad blocking settings live in KOReader's settings (they survive reinstalling the plugin)
+-- and are copied into bin/ for the browser, which re-reads them at each page load.
+-- The browser's own Menu toggle writes bin/adblock-off.txt too, so for on/off that file
+-- is what counts while it exists; we copy it back into the settings when the browser exits.
+--   adblock_off = true       blocking off
+--   adblock_allow = "a\nb"   sites where nothing is blocked
+--   adblock_block = "a\nb"   extra sites to block
+function KoboWebBrowser:adblockMenu()
+    local function listCount(key)
+        local n = 0
+        for line in (self.settings[key] or ""):gmatch("[^\n]+") do
+            if line:match("%S") and not line:match("^%s*#") then n = n + 1 end
+        end
+        return n
+    end
+    return {
+        {
+            text = _("Block ads and trackers"),
+            help_text = _("Stops pages from loading ads and trackers from a list of about 42,000 known ad and tracking sites. Pages load faster and with less clutter. A page you open yourself is never blocked. Changes apply from the next page you load."),
+            checked_func = function() return not self:adblockOff() end,
+            callback = function()
+                self.settings.adblock_off = (not self:adblockOff()) or nil
+                self:saveSettings()
+                self:writeAdblockFiles()
+            end,
+            separator = true,
+        },
+        {
+            text_func = function()
+                return T(_("Sites where ads are allowed: %1"), listCount("adblock_allow"))
+            end,
+            help_text = _("Nothing is blocked on these sites, and they are never blocked on other sites. Use this for a site that breaks with blocking on. One domain per line, for example example.com (its subdomains are included)."),
+            keep_menu_open = true,
+            callback = function(touchmenu_instance)
+                self:editAdblockList("adblock_allow", _("Sites where ads are allowed"), touchmenu_instance)
+            end,
+        },
+        {
+            text_func = function()
+                return T(_("Extra sites to block: %1"), listCount("adblock_block"))
+            end,
+            help_text = _("Your own additions to the block list. One domain per line, for example ads.example.com (its subdomains are included)."),
+            keep_menu_open = true,
+            callback = function(touchmenu_instance)
+                self:editAdblockList("adblock_block", _("Extra sites to block"), touchmenu_instance)
+            end,
+        },
+    }
+end
+
+function KoboWebBrowser:editAdblockList(key, title, touchmenu_instance)
+    local dialog
+    dialog = InputDialog:new{
+        title = title,
+        description = _("One domain per line."),
+        input = self.settings[key] or "",
+        allow_newline = true,
+        fullscreen = true,
+        buttons = {{
+            {
+                text = _("Cancel"),
+                id = "close",
+                callback = function() UIManager:close(dialog) end,
+            },
+            {
+                text = _("Save"),
+                callback = function()
+                    local v = dialog:getInputText() or ""
+                    self.settings[key] = v:match("%S") and v or nil
+                    self:saveSettings()
+                    self:writeAdblockFiles()
+                    UIManager:close(dialog)
+                    if touchmenu_instance then touchmenu_instance:updateItems() end
+                end,
+            },
+        }},
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+function KoboWebBrowser:adblockOff()
+    return lfs.attributes(self.bin .. "/adblock-off.txt", "mode") == "file"
+end
+
+-- Copy the ad blocking settings into the files the browser reads.
+function KoboWebBrowser:writeAdblockFiles()
+    local function put(name, text)
+        local path = self.bin .. "/" .. name
+        if not text then
+            os.remove(path)
+            return
+        end
+        local f = io.open(path .. ".tmp", "w")
+        if not f then return end
+        f:write(text, "\n")
+        f:close()
+        os.rename(path .. ".tmp", path)
+    end
+    put("adblock-off.txt", self.settings.adblock_off == true and "ad blocking turned off in KOReader's menu" or nil)
+    put("adblock-allow.txt", self.settings.adblock_allow)
+    put("adblock-extra.txt", self.settings.adblock_block)
 end
 
 function KoboWebBrowser:askUrl()
@@ -519,6 +630,7 @@ function KoboWebBrowser:run(extra)
         KB_READER_DIR = self.reader_dir,
     }
     if self.settings.home then env.KB_HOME = self.settings.home end
+    self:writeAdblockFiles()
     os.remove(self.kbd_request); os.remove(self.kbd_reply)
     os.remove(self.menu_request); os.remove(self.menu_reply)
     env.KB_MENU_FILE = self.menu_request
@@ -1119,6 +1231,11 @@ end
 function KoboWebBrowser:onBrowserGone(reason)
     if not self.job then return end
     self.job = nil
+    -- Keep an on/off choice made in the browser's own Menu.
+    if (self.settings.adblock_off == true) ~= self:adblockOff() then
+        self.settings.adblock_off = self:adblockOff() or nil
+        self:saveSettings()
+    end
     if active == self then active = nil end
     UIManager:unschedule(self.poll_action)
     pcall(self.dropMenuSession, self)

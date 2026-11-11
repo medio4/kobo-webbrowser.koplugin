@@ -143,6 +143,7 @@ bool KoboWebPage::acceptNavigationRequest(QWebFrame *frame, const QNetworkReques
 
 void KoboWebPage::adblockReset()
 {
+    AdBlock::instance()->refresh();   // settings changed in KOReader's menu apply from here on
     AdBlock::instance()->resetCount();
 }
 
