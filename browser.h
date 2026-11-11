@@ -133,6 +133,7 @@ private slots:
     void cleanToolbar();
     void phoneUrl(const QString &url);
     void showPhoneHint();
+    void showPhoneDialog();
     void saveEpub();
     void savePageOnly();
     void saveSeries();

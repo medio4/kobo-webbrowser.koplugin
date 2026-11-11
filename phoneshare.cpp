@@ -152,3 +152,99 @@ QByteArray PhoneShare::page(const QString &notice) const
          "works by pasting it here.</div></body></html>";
     return h;
 }
+
+// ------------------------------------------------------------- PhoneDialog
+
+#include "third_party/qrcodegen.h"
+#include <QtGui/QImage>
+#include <QtGui/QPixmap>
+#include <QtGui/QResizeEvent>
+#include <QtGui/QMouseEvent>
+#include <QtWidgets/QFrame>
+#include <QtWidgets/QLabel>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QVBoxLayout>
+
+static QImage qrImage(const QString &text, int pixels)
+{
+    uint8_t qr[qrcodegen_BUFFER_LEN_MAX], tmp[qrcodegen_BUFFER_LEN_MAX];
+    QByteArray t = text.toUtf8();
+    if (!qrcodegen_encodeText(t.constData(), tmp, qr, qrcodegen_Ecc_MEDIUM, qrcodegen_VERSION_MIN,
+                              qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true))
+        return QImage();
+    int n = qrcodegen_getSize(qr);
+    const int quiet = 4;
+    int scale = qMax(1, pixels / (n + 2 * quiet));
+    int side = (n + 2 * quiet) * scale;
+    QImage img(side, side, QImage::Format_RGB32);
+    img.fill(Qt::white);
+    for (int y = 0; y < n; ++y)
+        for (int x = 0; x < n; ++x)
+            if (qrcodegen_getModule(qr, x, y))
+                for (int dy = 0; dy < scale; ++dy)
+                    for (int dx = 0; dx < scale; ++dx)
+                        img.setPixel((x + quiet) * scale + dx, (y + quiet) * scale + dy, 0xff000000);
+    return img;
+}
+
+PhoneDialog::PhoneDialog(const QString &url, QWidget *parent) : QWidget(parent)
+{
+    setAttribute(Qt::WA_DeleteOnClose);
+    setAutoFillBackground(false);
+    QFrame *box = new QFrame(this);
+    m_box = box;
+    box->setFrameStyle(QFrame::Box | QFrame::Plain);
+    box->setLineWidth(3);
+    box->setAutoFillBackground(true);
+    QPalette pal = box->palette();
+    pal.setColor(QPalette::Window, Qt::white);
+    pal.setColor(QPalette::WindowText, Qt::black);
+    box->setPalette(pal);
+
+    QVBoxLayout *v = new QVBoxLayout(box);
+    v->setContentsMargins(30, 30, 30, 30);
+    v->setSpacing(20);
+    QFont f; f.setPixelSize(38);
+    QFont fs; fs.setPixelSize(28);
+
+    QLabel *head = new QLabel("Send to Kobo from your phone");
+    head->setFont(f); head->setAlignment(Qt::AlignCenter); head->setWordWrap(true);
+    v->addWidget(head);
+
+    QLabel *pic = new QLabel;
+    pic->setAlignment(Qt::AlignCenter);
+    QImage img = url.isEmpty() ? QImage() : qrImage(url, 620);
+    if (!img.isNull()) pic->setPixmap(QPixmap::fromImage(img));
+    else { pic->setText(url.isEmpty() ? "Not connected to Wi-Fi" : "QR code unavailable"); pic->setFont(fs); }
+    v->addWidget(pic);
+
+    QLabel *txt = new QLabel(url.isEmpty()
+        ? QString("Connect the Kobo to Wi-Fi, then come back here.")
+        : "Scan with the phone's camera, or type " + url + " into its browser. Paste a link there and it opens here. "
+          "Works while this browser is open.");
+    txt->setFont(fs); txt->setWordWrap(true); txt->setAlignment(Qt::AlignCenter);
+    v->addWidget(txt);
+
+    QPushButton *close = new QPushButton("Close");
+    close->setFont(f); close->setMinimumSize(300, 100); close->setFocusPolicy(Qt::NoFocus);
+    close->setProperty("kb_fast", true);
+    v->addWidget(close);
+    connect(close, SIGNAL(clicked()), this, SIGNAL(dismissed()));
+    connect(close, SIGNAL(clicked()), this, SLOT(close()));
+
+    if (parent) resize(parent->size());
+    place();
+    raise();
+    show();
+}
+
+void PhoneDialog::place()
+{
+    int w = qMin(width() - 40, 900);
+    m_box->setFixedWidth(w);
+    m_box->adjustSize();
+    m_box->move((width() - m_box->width()) / 2, (height() - m_box->height()) / 2);
+}
+
+void PhoneDialog::resizeEvent(QResizeEvent *e) { QWidget::resizeEvent(e); place(); }
+void PhoneDialog::mousePressEvent(QMouseEvent *e) { e->accept(); }

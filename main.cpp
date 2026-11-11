@@ -591,6 +591,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     m_view->installEventFilter(this);
     // Tapping the title/status line forces a full-screen refresh (so does a two-finger tap).
     m_status->installEventFilter(this);
+    m_sysInfo->installEventFilter(this);
 
     // Relaunched after a KOReader sleep: put the page back where it was.
     const char *ry = getenv("KB_RESTORE_Y");
@@ -674,6 +675,13 @@ bool Browser::eventFilter(QObject *obj, QEvent *e)
     if (obj == m_status && e->type() == QEvent::MouseButtonRelease && !KoboTouchInput::gestureActive()
             && (static_cast<QMouseEvent *>(e)->globalPos() - m_statusPress).manhattanLength() < 40) {
         fullRefresh();
+    }
+    // Clock / battery corner: a tap shows the QR code for the phone page.
+    if (obj == m_sysInfo && e->type() == QEvent::MouseButtonPress)
+        m_statusPress = static_cast<QMouseEvent *>(e)->globalPos();
+    if (obj == m_sysInfo && e->type() == QEvent::MouseButtonRelease && !KoboTouchInput::gestureActive()
+            && (static_cast<QMouseEvent *>(e)->globalPos() - m_statusPress).manhattanLength() < 40) {
+        QTimer::singleShot(0, this, SLOT(showPhoneDialog()));
     }
     return QMainWindow::eventFilter(obj, e);
 }
@@ -1269,7 +1277,14 @@ void Browser::showPhoneHint()
     if (!m_phone) return;
     QString a = m_phone->address();
     if (a.isEmpty()) return;
-    m_status->setText("From your phone: " + a);
+    m_status->setText("From your phone: " + a + "  (tap the clock for a QR code)");
+}
+
+void Browser::showPhoneDialog()
+{
+    if (!m_phone) return;
+    PhoneDialog *d = new PhoneDialog(m_phone->address(), centralWidget());
+    connect(d, SIGNAL(dismissed()), this, SLOT(fullRefresh()));
 }
 
 void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }

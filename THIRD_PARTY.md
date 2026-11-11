@@ -5,9 +5,10 @@
 | Component | Where | License |
 |---|---|---|
 | Mozilla Readability 0.4.4 (transpiled to ES5) | compiled into `bin/kobo-browser` (Qt resource `js/Readability.js`) | Apache-2.0, see [js/LICENSE-Readability.md](js/LICENSE-Readability.md) |
+| QR Code generator library (C), Project Nayuki | compiled into `bin/kobo-browser` (`third_party/qrcodegen.c`) | MIT, see [third_party/LICENSE-qrcodegen.txt](third_party/LICENSE-qrcodegen.txt) |
 | CA certificate bundle (Mozilla root store) | `bin/ca-bundle.crt` | MPL-2.0 |
 
-Apache-2.0 and MPL-2.0 code may be combined with AGPL-3.0 code. Everything else in the zip
+Apache-2.0, MIT and MPL-2.0 code may be combined with AGPL-3.0 code. Everything else in the zip
 (`kobo-browser`, `kb-escape`, the shell scripts and the Lua plugin) is this project's own
 code under AGPL-3.0-or-later.
 

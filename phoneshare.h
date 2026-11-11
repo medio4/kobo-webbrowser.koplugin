@@ -40,4 +40,24 @@ private:
     QStringList m_recent;
 };
 
+
+#include <QtWidgets/QWidget>
+class QResizeEvent;
+class QMouseEvent;
+
+// Overlay with a QR code of the phone page's address (scan it with the phone's camera).
+class PhoneDialog : public QWidget {
+    Q_OBJECT
+public:
+    PhoneDialog(const QString &url, QWidget *parent);
+signals:
+    void dismissed();
+protected:
+    void resizeEvent(QResizeEvent *e);
+    void mousePressEvent(QMouseEvent *e);
+private:
+    void place();
+    QWidget *m_box;
+};
+
 #endif
