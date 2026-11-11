@@ -18,6 +18,7 @@ class KoboEink;
 class KoboTouchInput;
 class QMouseEvent;
 class NativeTextEntry;
+class PhoneShare;
 
 // QWebView with e-ink friendly touch handling. A short tap clicks. A quick flick
 // turns one screen (up/left = next, down/right = previous; from the very left/right
@@ -130,6 +131,8 @@ private slots:
     void keyboardGo();
     void pageTapped();           // a tap landed in the page: keyboard for a text box, else hide it
     void cleanToolbar();
+    void phoneUrl(const QString &url);
+    void showPhoneHint();
     void saveEpub();
     void savePageOnly();
     void saveSeries();
@@ -169,6 +172,7 @@ private:
     QElapsedTimer m_lastPageTap;
     QPoint m_tapPress, m_tapRelease;   // last press/release in the page (view coordinates)
     EpubSaver *m_saver;
+    PhoneShare *m_phone;
     QList<EpubSaver::ChapterLink> m_seriesLinks;
     QString m_seriesTitle;
     qreal m_textZoom;         // A+/A-: text-only zoom on top of the page zoom (1.0 = normal)

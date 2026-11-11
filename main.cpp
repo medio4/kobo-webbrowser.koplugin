@@ -9,6 +9,7 @@
 #include "webpage.h"
 #include "pagescroll.h"
 #include "epub.h"
+#include "phoneshare.h"
 #include "toc.h"
 #include "memtune.h"
 #include "power.h"
@@ -407,7 +408,7 @@ private:
 };
 
 Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
-    : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_restoreY(-1), m_relaunch(false), m_offline(false), m_offlineShown(false), m_onlineTimer(0)
+    : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_phone(0), m_restoreY(-1), m_relaunch(false), m_offline(false), m_offlineShown(false), m_onlineTimer(0)
 {
     setWindowTitle("Browser");
 
@@ -506,6 +507,20 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     m_view->setZoomFactor(2.0);
     // A+/A- scale the text only (saved in bin/text-size.txt), so the page keeps its layout
     // width; pinch still zooms the whole page.
+    // "Send to Kobo" page for a phone on the same Wi-Fi (KB_PHONE_PORT, 0 = off).
+    {
+        bool okp = false;
+        int port = QString::fromLocal8Bit(qgetenv("KB_PHONE_PORT")).toInt(&okp);
+        if (!okp) port = 8080;
+        if (port > 0) {
+            m_phone = new PhoneShare(this);
+            if (m_phone->listen(port)) {
+                connect(m_phone, SIGNAL(urlReceived(QString)), this, SLOT(phoneUrl(QString)));
+                QTimer::singleShot(4000, this, SLOT(showPhoneHint()));
+            } else { delete m_phone; m_phone = 0; }
+        }
+    }
+
     m_textZoom = 1.0;
     {
         QFile tf(QDir(QCoreApplication::applicationDirPath()).filePath("text-size.txt"));
@@ -1028,6 +1043,7 @@ void Browser::loadFinished(bool ok)
     } else {
         m_status->setText(ok ? m_view->title() : "Failed to load page");
     }
+    if (m_phone) m_phone->setCurrentPage(m_view->title(), m_view->url().toString());
     if (ok && m_restoreY > 0) {
         m_view->page()->mainFrame()->setScrollPosition(QPoint(0, m_restoreY));
         qDebug() << "restore: scrolled to" << m_restoreY;
@@ -1238,6 +1254,22 @@ void Browser::saveSeries()
     connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
     connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(saveFinished(bool,QString)));
     m_saver->startSeries(m_seriesLinks, m_seriesTitle);
+}
+
+void Browser::phoneUrl(const QString &url)
+{
+    qDebug() << "phone: open" << url;
+    m_url->setText(url);
+    loadUrlText(url);
+}
+
+// Where the phone page lives, shown once in the status line after start-up.
+void Browser::showPhoneHint()
+{
+    if (!m_phone) return;
+    QString a = m_phone->address();
+    if (a.isEmpty()) return;
+    m_status->setText("From your phone: " + a);
 }
 
 void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }
