@@ -131,14 +131,14 @@ QByteArray PhoneShare::page(const QString &notice) const
         "<title>Send to Kobo</title>"
         "<style>body{font:18px/1.4 -apple-system,Helvetica,Arial,sans-serif;margin:0;padding:20px;background:#f4f4f4;color:#111}"
         "h1{font-size:22px;margin:0 0 14px}form{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.15)}"
-        "input[type=url]{width:100%;box-sizing:border-box;font-size:18px;padding:12px;border:1px solid #bbb;border-radius:8px}"
+        "input[name=url]{width:100%;box-sizing:border-box;font-size:18px;padding:12px;border:1px solid #bbb;border-radius:8px}"
         "button{width:100%;margin-top:12px;font-size:19px;padding:14px;border:0;border-radius:8px;background:#222;color:#fff}"
         ".n{background:#dff0d8;border-radius:8px;padding:12px;margin-bottom:14px;word-break:break-all}"
         ".c{color:#555;font-size:15px;margin-top:18px;word-break:break-all}ul{padding-left:18px}li{margin:6px 0;word-break:break-all}"
         "a{color:#124}</style></head><body><h1>Send to Kobo</h1>";
     if (!notice.isEmpty()) h += "<div class=\"n\">" + esc(notice) + "</div>";
     h += "<form method=\"post\" action=\"/open\">"
-         "<input type=\"url\" name=\"url\" placeholder=\"Paste a link\" autofocus autocomplete=\"off\" autocapitalize=\"off\">"
+         "<input type=\"text\" inputmode=\"url\" name=\"url\" placeholder=\"Paste a link or type an address\" autofocus autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\">"
          "<button type=\"submit\">Open on the Kobo</button></form>";
     if (!m_pageUrl.isEmpty())
         h += "<div class=\"c\">Kobo is showing: <a href=\"" + esc(m_pageUrl) + "\">" + esc(m_pageTitle.isEmpty() ? m_pageUrl : m_pageTitle) + "</a></div>";
