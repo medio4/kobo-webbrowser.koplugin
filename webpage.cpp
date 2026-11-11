@@ -1,5 +1,6 @@
 #include "webpage.h"
 #include "memtune.h"
+#include "adblock.h"
 #include <QtWebKit/QWebSettings>
 #include <QtWebKitWidgets/QWebFrame>
 #include <QtNetwork/QNetworkRequest>
@@ -69,6 +70,8 @@ static bool isGoogle(const QString &host)
 KoboWebPage::KoboWebPage(QObject *parent) : QWebPage(parent)
 {
     connect(mainFrame(), SIGNAL(loadFinished(bool)), this, SLOT(fixupSite()));
+    connect(mainFrame(), SIGNAL(loadStarted()), this, SLOT(adblockReset()));
+    connect(mainFrame(), SIGNAL(loadFinished(bool)), this, SLOT(adblockReport()));
     setNetworkAccessManager(new KoboNetworkAccessManager(this));
     if (!getenv("KB_NO_EINK_CSS")) {
         QByteArray css(kEinkCss);
@@ -131,7 +134,23 @@ bool KoboWebPage::acceptNavigationRequest(QWebFrame *frame, const QNetworkReques
         mainFrame()->load(alt);
         return false;
     }
-    return QWebPage::acceptNavigationRequest(frame, request, type);
+    bool ok = QWebPage::acceptNavigationRequest(frame, request, type);
+    // A page the user asked for loads even if its host is on the blocklist;
+    // only subresources and subframes are filtered.
+    if (ok && (!frame || frame == mainFrame())) AdBlock::instance()->allowNavigation(request.url());
+    return ok;
+}
+
+void KoboWebPage::adblockReset()
+{
+    AdBlock::instance()->resetCount();
+}
+
+void KoboWebPage::adblockReport()
+{
+    AdBlock *a = AdBlock::instance();
+    if (a->isEnabled())
+        qDebug() << "adblock:" << a->blockedSinceReset() << "requests blocked on" << mainFrame()->url().host();
 }
 
 void KoboWebPage::fixupSite()

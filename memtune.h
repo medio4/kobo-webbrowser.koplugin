@@ -33,7 +33,7 @@ private:
 // Wraps image requests (Accept: image/... or *.gif) and rewrites the body when it
 // is an animated GIF (-> PNG of the first frame) or larger than KB_IMG_MAX_PX
 // (default 1600) on its longest side (-> scaled down, same format if writable).
-// KB_NO_IMG_FILTER=1 disables.
+// KB_NO_IMG_FILTER=1 disables. Requests to blocklisted hosts are dropped first (adblock.h).
 class KoboNetworkAccessManager : public QNetworkAccessManager {
     Q_OBJECT
 public:

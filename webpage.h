@@ -15,5 +15,7 @@ protected:
 private slots:
     void fixupSite();
     void runBingFixup();
+    void adblockReset();
+    void adblockReport();
 };
 #endif
