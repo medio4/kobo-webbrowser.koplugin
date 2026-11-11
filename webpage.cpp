@@ -165,3 +165,56 @@ void KoboWebPage::runBingFixup()
 {
     if (isBing(mainFrame()->url())) mainFrame()->evaluateJavaScript(QString::fromLatin1(kBingImagesJs));
 }
+
+
+// ------------------------------------------------------------- error page
+
+bool KoboWebPage::supportsExtension(Extension extension) const
+{
+    return extension == ErrorPageExtension || QWebPage::supportsExtension(extension);
+}
+
+static QString htmlEscape(const QString &s)
+{
+    QString t = s;
+    t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    return t;
+}
+
+bool KoboWebPage::extension(Extension extension, const ExtensionOption *option, ExtensionReturn *output)
+{
+    if (extension != ErrorPageExtension || !option || !output)
+        return QWebPage::extension(extension, option, output);
+    const ErrorPageExtensionOption *opt = static_cast<const ErrorPageExtensionOption *>(option);
+    ErrorPageExtensionReturn *ret = static_cast<ErrorPageExtensionReturn *>(output);
+    // Only for the page itself; a missing image or a blocked ad stays silent.
+    if (opt->frame != mainFrame()) return false;
+    // Cancelled loads (Stop, a new link tapped meanwhile) are not errors.
+    if (opt->domain == QtNetwork && opt->error == 5 /* OperationCanceledError */) return false;
+    QString host = opt->url.host().isEmpty() ? opt->url.toString() : opt->url.host();
+    QString why = opt->errorString;
+    if (opt->domain == QtNetwork) {
+        switch (opt->error) {
+        case 3: why = "That site could not be found. Check the address, or the Wi-Fi connection."; break;   // HostNotFound
+        case 1: why = "The site refused the connection."; break;
+        case 4: why = "The site took too long to answer."; break;
+        case 99: case 2: why = "The connection was lost. Check the Wi-Fi and try again."; break;
+        default: break;
+        }
+    } else if (opt->domain == Http) {
+        why = QString("The site answered with an error (HTTP %1).").arg(opt->error);
+    }
+    QString u = htmlEscape(opt->url.toString());
+    QString html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Could not open " + htmlEscape(host) +
+        "</title><style>body{font-family:sans-serif;font-size:22px;margin:40px 30px;line-height:1.5}"
+        "h1{font-size:30px}a.b{display:inline-block;border:2px solid #000;border-radius:8px;padding:12px 28px;"
+        "color:#000;text-decoration:none;margin-top:20px}</style></head><body>"
+        "<h1>Could not open " + htmlEscape(host) + "</h1><p>" + htmlEscape(why) + "</p>"
+        "<p style=\"word-break:break-all;color:#444\">" + u + "</p>"
+        "<a class=\"b\" href=\"" + u + "\">Try again</a></body></html>";
+    ret->content = html.toUtf8();
+    ret->contentType = "text/html";
+    ret->encoding = "utf-8";
+    ret->baseUrl = opt->url;
+    return true;
+}

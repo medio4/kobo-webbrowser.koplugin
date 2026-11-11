@@ -12,6 +12,12 @@ public:
 protected:
     QString userAgentForUrl(const QUrl &url) const;
     bool acceptNavigationRequest(QWebFrame *frame, const QNetworkRequest &request, NavigationType type);
+public:
+    // A page that fails to load (no such site, no connection, timeout) shows a short
+    // error page instead of silently keeping the previous one.
+    bool supportsExtension(Extension extension) const;
+    bool extension(Extension extension, const ExtensionOption *option = 0, ExtensionReturn *output = 0);
+protected:
 private slots:
     void fixupSite();
     void runBingFixup();

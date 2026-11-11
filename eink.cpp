@@ -517,7 +517,9 @@ void KoboEink::clearScreenForExit()
 void KoboEink::audit()
 {
     static QRect last;
-    if (!m_grab || !m_fb || !m_fb->isOpen() || m_suspended || !m_pending.isEmpty() || m_timer.isActive()) { last = QRect(); return; }
+    // Skip while a page load holds its repaints on purpose (they are pushed later).
+    if (!m_grab || !m_fb || !m_fb->isOpen() || m_suspended || !m_pending.isEmpty() || m_timer.isActive()
+            || m_holdWidget || m_holdTimer.isActive()) { last = QRect(); return; }
     QImage *src = 0;
     foreach (QWidget *tw, QApplication::topLevelWidgets()) {
         if (!tw->isVisible()) continue;

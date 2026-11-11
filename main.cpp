@@ -1392,8 +1392,8 @@ void Browser::setAsHome()
 void Browser::showPhoneDialog()
 {
     if (!m_phone) return;
-    PhoneDialog *d = new PhoneDialog(m_phone->address(), centralWidget());
-    connect(d, SIGNAL(dismissed()), this, SLOT(fullRefresh()));
+    // Closing it repaints the page under it with a normal partial update (no flash).
+    new PhoneDialog(m_phone->address(), centralWidget());
 }
 
 void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }
