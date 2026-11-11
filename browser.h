@@ -136,6 +136,10 @@ private slots:
     void showPhoneHint();
     void showPhoneDialog();
     void showMenu();
+    void goHome();
+    void showBookmarks();
+    void addBookmark();
+    void setAsHome();
     void menuClosed();
     void cleanMenuArea();
     void saveEpub();
@@ -172,7 +176,8 @@ private:
     QLabel *m_status;
     QLabel *m_sysInfo;     // time / battery / free memory, right side of the status line
     QTimer *m_sysTimer;
-    QString m_home;
+    QString m_home;       // page this run starts on (also the restore base)
+    QString m_homePage;   // Menu > Home
     KoboEink *m_eink;
     QElapsedTimer m_lastPageTap;
     QPoint m_tapPress, m_tapRelease;   // last press/release in the page (view coordinates)

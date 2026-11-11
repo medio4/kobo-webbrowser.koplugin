@@ -9,7 +9,7 @@ INCLUDEPATH += $$PWD/../downloads/qtwebkit-headers/qtwebkit-opensource-src-5.2.1
 # Link against the firmware's own WebKit libraries (symlinked in ./lib with their Qt5 names)
 LIBS += -L$$PWD/lib -lQt5WebKitWidgets -lQt5WebKit -ldl
 QMAKE_RPATHDIR += /usr/local/Kobo /usr/local/Qt-5.2.1-arm/lib
-SOURCES += main.cpp touchinput.cpp eink.cpp fbwriter.cpp webpage.cpp pagescroll.cpp hwtcon.cpp epub.cpp toc.cpp memtune.cpp power.cpp textentry.cpp phoneshare.cpp menupanel.cpp third_party/qrcodegen.c
-HEADERS += browser.h crashhandler.h touchinput.h eink.h fbwriter.h webpage.h pagescroll.h hwtcon.h epub.h toc.h memtune.h power.h textentry.h phoneshare.h menupanel.h
+SOURCES += main.cpp touchinput.cpp eink.cpp fbwriter.cpp webpage.cpp pagescroll.cpp hwtcon.cpp epub.cpp toc.cpp memtune.cpp power.cpp textentry.cpp phoneshare.cpp menupanel.cpp bookmarks.cpp third_party/qrcodegen.c
+HEADERS += browser.h crashhandler.h touchinput.h eink.h fbwriter.h webpage.h pagescroll.h hwtcon.h epub.h toc.h memtune.h power.h textentry.h phoneshare.h menupanel.h bookmarks.h
 RESOURCES += epub.qrc
 QMAKE_CFLAGS += -std=gnu99

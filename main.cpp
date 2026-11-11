@@ -11,6 +11,7 @@
 #include "epub.h"
 #include "phoneshare.h"
 #include "menupanel.h"
+#include "bookmarks.h"
 #include "toc.h"
 #include "memtune.h"
 #include "power.h"
@@ -412,6 +413,20 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_phone(0), m_restoreY(-1), m_relaunch(false), m_offline(false), m_offlineShown(false), m_onlineTimer(0)
 {
     setWindowTitle("Browser");
+    // Home page: one chosen in the browser (Menu > Set as home) wins over the launcher's.
+    // m_home is the page this run starts on; a URL given on the command line (the page
+    // being restored after sleep, a link opened from KOReader) keeps priority for that.
+    m_homePage = m_home;
+    {
+        QFile hf(QDir(QCoreApplication::applicationDirPath()).filePath("home.txt"));
+        if (hf.open(QIODevice::ReadOnly)) {
+            QString h = QString::fromUtf8(hf.readAll()).trimmed();
+            if (!h.isEmpty()) {
+                m_homePage = h;
+                if (!getenv("KB_START_FROM_ARG")) m_home = h;
+            }
+        }
+    }
 
     m_central = new QWidget;
     QVBoxLayout *vbox = new QVBoxLayout(m_central);
@@ -1247,6 +1262,10 @@ void Browser::showMenu()
     hideKeyboard();
     int top = m_bar->mapTo(centralWidget(), QPoint(0, m_bar->height())).y() + 4;
     MenuPanel *m = new MenuPanel(centralWidget(), top);
+    m->addAction("Home", this, SLOT(goHome()));
+    m->addAction("Bookmarks", this, SLOT(showBookmarks()));
+    m->addAction("Add bookmark", this, SLOT(addBookmark()));
+    m->addAction("Set as home", this, SLOT(setAsHome()));
     m->addAction("Reload", this, SLOT(reloadClicked()));
     m->addAction("Contents", this, SLOT(showToc()));
     m->addAction("Text bigger", this, SLOT(zoomIn()));
@@ -1279,6 +1298,44 @@ void Browser::cleanMenuArea()
 {
     if (m_eink && !m_menuRect.isEmpty()) m_eink->cleanRect(m_menuRect);
     m_menuRect = QRect();
+}
+
+void Browser::goHome()
+{
+    m_url->setText(m_homePage);
+    loadUrlText(m_homePage);
+}
+
+void Browser::showBookmarks()
+{
+    BookmarksOverlay *b = new BookmarksOverlay(centralWidget());
+    connect(b, SIGNAL(openUrl(QString)), this, SLOT(phoneUrl(QString)));
+}
+
+static QString currentPageUrl(QWebView *v)
+{
+    QString u = v->url().toString();
+    return (u.isEmpty() || u == "about:blank" || u.startsWith("data:")) ? QString() : u;
+}
+
+void Browser::addBookmark()
+{
+    QString u = currentPageUrl(m_view);
+    if (u.isEmpty()) { m_status->setText("Nothing to bookmark on this page"); return; }
+    if (BookmarkStore::add(u, m_view->title())) m_status->setText("Bookmarked: " + (m_view->title().isEmpty() ? u : m_view->title()));
+    else m_status->setText("Already in your bookmarks");
+}
+
+void Browser::setAsHome()
+{
+    QString u = currentPageUrl(m_view);
+    if (u.isEmpty()) { m_status->setText("This page can't be the home page"); return; }
+    QFile hf(QDir(QCoreApplication::applicationDirPath()).filePath("home.txt"));
+    if (!hf.open(QIODevice::WriteOnly | QIODevice::Truncate)) { m_status->setText("Could not save the home page"); return; }
+    hf.write(u.toUtf8());
+    hf.close();
+    m_homePage = u;
+    m_status->setText("Home page set: " + (m_view->title().isEmpty() ? u : m_view->title()));
 }
 
 void Browser::showPhoneDialog()
@@ -1502,7 +1559,7 @@ int main(int argc, char **argv)
     QString home = QString::fromLocal8Bit(getenv("KB_HOME"));
     for (int i = 1; i < argc; ++i) {
         QString a = QString::fromLocal8Bit(argv[i]);
-        if (a.startsWith("http://") || a.startsWith("https://")) home = a;
+        if (a.startsWith("http://") || a.startsWith("https://")) { home = a; setenv("KB_START_FROM_ARG", "1", 1); }
     }
     if (home.isEmpty()) home = "https://lite.duckduckgo.com/lite/";
 
