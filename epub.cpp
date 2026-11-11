@@ -133,7 +133,7 @@ QString tagAttr(const QString &tag, const QString &name)
 // ------------------------------------------------------------- EpubSaver
 
 EpubSaver::EpubSaver(QWebPage *page, const QString &outDir, QObject *parent)
-    : QObject(parent), m_page(page), m_outDir(outDir), m_running(false), m_fallback(false),
+    : QObject(parent), m_page(page), m_outDir(outDir), m_running(false), m_library(true), m_fallback(false),
       m_current(-1), m_reply(0), m_series(false), m_chapterIndex(-1), m_hidden(0)
 {
     m_timer.setSingleShot(true);
@@ -244,6 +244,21 @@ QString EpubSaver::defaultOutDir()
     if (QDir("/mnt/onboard/Books").exists()) return "/mnt/onboard/Books/Web";
     if (QDir("/mnt/onboard").exists()) return "/mnt/onboard/Web";
     return QDir::homePath() + "/kobo-browser-saved";
+}
+
+QString EpubSaver::readerDir()
+{
+    const char *env = getenv("KB_READER_DIR");
+    if (env && *env) return QString::fromLocal8Bit(env);
+    return QDir(QCoreApplication::applicationDirPath()).filePath("reader-tmp");
+}
+
+void EpubSaver::clearReaderDir()
+{
+    QDir dir(readerDir());
+    if (!dir.exists()) return;
+    foreach (const QString &name, dir.entryList(QStringList() << "*.epub", QDir::Files))
+        dir.remove(name);
 }
 
 QString EpubSaver::safeFileName(const QString &title)
@@ -624,7 +639,7 @@ void EpubSaver::writeEpub()
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { fail("Cannot write " + path + ": " + f.errorString()); return; }
     if (f.write(zip) != zip.size()) { f.close(); QFile::remove(path); fail("Write failed (disk full?)"); return; }
     f.close();
-    appendHandoff("saved", path);
+    if (m_library) appendHandoff("saved", path);
     ::sync();
     qDebug() << "epub: wrote" << path << zip.size() << "bytes," << m_images.size() << "images," << chapterNames.size() << "documents";
     m_running = false;

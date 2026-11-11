@@ -1241,6 +1241,42 @@ void Browser::saveSeries()
     m_saver->startSeries(m_seriesLinks, m_seriesTitle);
 }
 
+// Reader mode: the article (Readability, as Save does) goes into a temporary EPUB in
+// EpubSaver::readerDir(), not the library. The "read" handoff line names it together with
+// this page, scroll position and zoom; kobo-webbrowser.koplugin opens it in KOReader and,
+// once that book is closed, deletes it and starts the browser again on the same spot.
+void Browser::readInKoreader()
+{
+    if (m_saver && m_saver->isRunning()) return;
+    hideKeyboard();
+    EpubSaver::clearReaderDir();
+    delete m_saver;
+    m_saver = new EpubSaver(m_view->page(), EpubSaver::readerDir(), this);
+    m_saver->setLibrary(false);
+    connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
+    connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(readerFinished(bool,QString)));
+    m_saver->start();
+}
+
+void Browser::readerFinished(bool ok, const QString &msg)
+{
+    if (!ok) {
+        m_status->setText("Reader mode failed: " + msg);
+        return;
+    }
+    QString url = m_view->url().toString();
+    if (m_offline || url.isEmpty() || url == "about:blank") url = m_home;
+    int y = m_view->page()->mainFrame()->scrollPosition().y();
+    QString line = msg + '\t' + url + '\t' + QString::number(y) + '\t' + QString::number(m_view->zoomFactor(), 'f', 2);
+    if (!EpubSaver::appendHandoff("read", line)) {
+        m_status->setText("Reader mode failed: can't reach KOReader");
+        return;
+    }
+    qDebug() << "reader: handoff" << line;
+    m_status->setText("Opening in KOReader…");
+    QTimer::singleShot(400, qApp, SLOT(quit()));
+}
+
 void Browser::phoneUrl(const QString &url)
 {
     qDebug() << "phone: open" << url;
@@ -1596,6 +1632,7 @@ int main(int argc, char **argv)
     QTimer::singleShot(1500, eink, SLOT(refreshAllFull()));
     // Test hook: KB_TEST_SAVE=<seconds> triggers Save-as-EPUB automatically.
     if (getenv("KB_TEST_SAVE")) QTimer::singleShot(atoi(getenv("KB_TEST_SAVE")) * 1000, &w, SLOT(saveEpub()));
+    if (getenv("KB_TEST_READ")) QTimer::singleShot(atoi(getenv("KB_TEST_READ")) * 1000, &w, SLOT(readInKoreader()));
     // Test hook: KB_TEST_RELOAD_SEC=<seconds> presses Reload automatically.
     if (getenv("KB_TEST_RELOAD_SEC")) QTimer::singleShot(atoi(getenv("KB_TEST_RELOAD_SEC")) * 1000, &w, SLOT(reloadClicked()));
     // Test hook: KB_TEST_NAV="url url back ..." loads one entry every KB_TEST_NAV_MS (12000) ms
