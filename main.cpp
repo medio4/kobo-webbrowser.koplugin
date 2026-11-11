@@ -15,6 +15,7 @@
 #include "textentry.h"
 
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QSizePolicy>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QVBoxLayout>
@@ -467,6 +468,10 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     QFont sf; sf.setPixelSize(30);
     m_status->setFont(sf);
     m_status->setContentsMargins(6, 0, 6, 0);
+    // A long page title must never widen the window past the screen (it pushed the
+    // right-hand toolbar buttons off-screen): the label clips instead of demanding width.
+    m_status->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    m_status->setMinimumWidth(1);
     statusBox->addWidget(m_status, 1);
     m_sysInfo = new QLabel;
     m_sysInfo->setFont(sf);
