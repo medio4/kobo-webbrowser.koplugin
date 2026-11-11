@@ -134,6 +134,8 @@ private slots:
     void phoneUrl(const QString &url);
     void showPhoneHint();
     void showPhoneDialog();
+    void showMenu();
+    void menuClosed();
     void saveEpub();
     void savePageOnly();
     void saveSeries();

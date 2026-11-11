@@ -98,6 +98,7 @@ private:
     RepaintFn m_repaint;
     void *m_dl;
     QTimer m_timer;
+    int m_fastDelayMs;
     QList<QPair<QRect, quint64> > m_pending;
     quint64 m_flagsPartial, m_flagsFull;
     bool m_useFbink;

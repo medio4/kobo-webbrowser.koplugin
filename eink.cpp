@@ -108,6 +108,7 @@ KoboEink::KoboEink(QObject *parent)
     }
     m_timer.setSingleShot(true);
     m_timer.setInterval(80);
+    m_fastDelayMs = (int)envFlags("KB_FAST_DELAY_MS", 25);
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(flush()));
 }
 
@@ -115,7 +116,11 @@ void KoboEink::markDirty(const QRect &r, quint64 flags)
 {
     if (!available() || r.isEmpty() || m_suspended) return;
     m_pending.append(qMakePair(r, flags));
-    if (!m_timer.isActive()) m_timer.start();
+    // Key presses and button taps (fast waveform) go out almost at once; everything else
+    // waits a little longer so a burst of repaints becomes one update.
+    const int wait = (flags == m_flagsFast || m_nextFlags == m_flagsFast) ? m_fastDelayMs : 80;
+    if (!m_timer.isActive()) m_timer.start(wait);
+    else if (wait < m_timer.remainingTime()) m_timer.start(wait);
 }
 
 void KoboEink::refreshAll(quint64 flags)

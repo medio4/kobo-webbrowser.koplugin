@@ -10,6 +10,7 @@
 #include "pagescroll.h"
 #include "epub.h"
 #include "phoneshare.h"
+#include "menupanel.h"
 #include "toc.h"
 #include "memtune.h"
 #include "power.h"
@@ -417,7 +418,8 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     vbox->setContentsMargins(0, 0, 0, 0);
     vbox->setSpacing(0);
 
-    // Toolbar: two rows (URL field on top, buttons below), sized in pixels for 300 dpi.
+    // Toolbar: one row (Back, Fwd, address field, Menu), sized in pixels for 300 dpi. The
+    // less frequent actions live in the Menu panel (menupanel.h).
     // Marked kb_fast so its repaints use the quick DU waveform while typing.
     m_bar = new QWidget;
     m_bar->setProperty("kb_fast", true);
@@ -427,36 +429,18 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     barBox->setContentsMargins(6, 6, 6, 6);
     barBox->setSpacing(6);
     const int bh = 84;
-    QFont bf; bf.setPixelSize(38);
+    QFont bf; bf.setPixelSize(36);
 
     m_url = new QLineEdit; m_url->setFixedHeight(bh); m_url->setFont(bf);
-    m_url->setPlaceholderText("Search or type a web address");
+    m_url->setPlaceholderText("Search or address");
     m_url->setStyleSheet("QLineEdit { border: 2px solid black; border-radius: 8px; background: white; color: black;"
                          " padding: 0 12px; selection-background-color: black; selection-color: white; }");
-    FlatButton *clear = toolButton("Clear", 130, bh);
-    FlatButton *go = toolButton("Go", 130, bh); go->setBold(true);
+    FlatButton *back = toolButton("Back", 110, bh);   // NB: "<" renders as a clock in the Kobo UI font
+    FlatButton *fwd  = toolButton("Fwd", 96, bh);
+    FlatButton *menu = toolButton("Menu", 130, bh); menu->setBold(true);
     QHBoxLayout *row1 = new QHBoxLayout; row1->setSpacing(6);
-    row1->addWidget(m_url, 1); row1->addWidget(clear); row1->addWidget(go);
+    row1->addWidget(back); row1->addWidget(fwd); row1->addWidget(m_url, 1); row1->addWidget(menu);
     barBox->addLayout(row1);
-
-    // Nine buttons + 8 gaps of 6 px must fit in 1064 px: widths add up to 900 (164 spare).
-    FlatButton *back = toolButton("Back", 100, bh);   // NB: "<" renders as a clock in the Kobo UI font
-    FlatButton *fwd  = toolButton("Fwd", 90, bh);
-    FlatButton *rel  = toolButton("Reload", 140, bh);
-    FlatButton *toc  = toolButton("TOC", 100, bh);
-    toc->setToolTip("Jump to a heading on this page");
-    FlatButton *kbd  = toolButton("Keys", 110, bh);
-    FlatButton *zi   = toolButton("A+", 90, bh);
-    FlatButton *zo   = toolButton("A-", 90, bh);
-    FlatButton *save = toolButton("Save", 110, bh);
-    save->setToolTip("Save this page as an EPUB in the library, or an image to Pictures");
-    FlatButton *shot = toolButton("Shot", 100, bh);
-    FlatButton *quit = toolButton("Exit", 80, bh);
-    QHBoxLayout *row2 = new QHBoxLayout; row2->setSpacing(6);
-    row2->addWidget(back); row2->addWidget(fwd); row2->addWidget(rel); row2->addWidget(toc);
-    row2->addStretch(1);
-    row2->addWidget(kbd); row2->addWidget(zi); row2->addWidget(zo); row2->addWidget(save); row2->addWidget(shot); row2->addWidget(quit);
-    barBox->addLayout(row2);
     vbox->addWidget(m_bar);
 
     // Status line: page title / load progress on the left, clock + battery + free
@@ -545,18 +529,9 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     cache->setMaximumCacheSize(MemTune::diskCacheBytes());
     m_view->page()->networkAccessManager()->setCache(cache);
 
-    connect(go, SIGNAL(clicked()), this, SLOT(go()));
-    connect(clear, SIGNAL(clicked()), this, SLOT(clearUrl()));
     connect(back, SIGNAL(clicked()), m_view, SLOT(back()));
     connect(fwd, SIGNAL(clicked()), m_view, SLOT(forward()));
-    connect(rel, SIGNAL(clicked()), this, SLOT(reloadClicked()));
-    connect(kbd, SIGNAL(clicked()), this, SLOT(toggleKeyboard()));
-    connect(zi, SIGNAL(clicked()), this, SLOT(zoomIn()));
-    connect(zo, SIGNAL(clicked()), this, SLOT(zoomOut()));
-    connect(save, SIGNAL(clicked()), this, SLOT(saveEpub()));
-    connect(toc, SIGNAL(clicked()), this, SLOT(showToc()));
-    connect(quit, SIGNAL(clicked()), this, SLOT(quit()));
-    connect(shot, SIGNAL(clicked()), this, SLOT(screenshot()));
+    connect(menu, SIGNAL(clicked()), this, SLOT(showMenu()));
     connect(m_url, SIGNAL(returnPressed()), this, SLOT(go()));
     connect(m_kbd, SIGNAL(goPressed()), this, SLOT(keyboardGo()));
     connect(m_kbd, SIGNAL(hidePressed()), this, SLOT(hideKeyboard()));
@@ -666,8 +641,11 @@ bool Browser::eventFilter(QObject *obj, QEvent *e)
             QTimer::singleShot(0, this, SLOT(pageTapped()));
         }
     }
-    if (obj == m_url && e->type() == QEvent::MouseButtonRelease)
+    if (obj == m_url && e->type() == QEvent::MouseButtonRelease) {
+        // Typing replaces the whole address (there is no Clear button any more).
+        if (!m_kbd->isVisible()) QTimer::singleShot(0, m_url, SLOT(selectAll()));
         QTimer::singleShot(0, this, SLOT(showKeyboard()));
+    }
     // Status line: a plain tap forces a full refresh. A drag (a swipe down for KOReader's
     // menu that started here) doesn't.
     if (obj == m_status && e->type() == QEvent::MouseButtonPress)
@@ -1277,7 +1255,32 @@ void Browser::showPhoneHint()
     if (!m_phone) return;
     QString a = m_phone->address();
     if (a.isEmpty()) return;
-    m_status->setText("From your phone: " + a + "  (tap the clock for a QR code)");
+    m_status->setText("From your phone: " + a + "  (Menu > From phone for a QR code)");
+}
+
+void Browser::showMenu()
+{
+    hideKeyboard();
+    int top = m_bar->mapTo(centralWidget(), QPoint(0, m_bar->height())).y() + 4;
+    MenuPanel *m = new MenuPanel(centralWidget(), top);
+    m->addAction("Reload", this, SLOT(reloadClicked()));
+    m->addAction("Contents", this, SLOT(showToc()));
+    m->addAction("Text bigger", this, SLOT(zoomIn()));
+    m->addAction("Text smaller", this, SLOT(zoomOut()));
+    m->addAction("Save", this, SLOT(saveEpub()));
+    m->addAction("Screenshot", this, SLOT(screenshot()));
+    m->addAction("Keyboard", this, SLOT(toggleKeyboard()));
+    m->addAction("From phone", this, SLOT(showPhoneDialog()));
+    m->addAction("Exit browser", this, SLOT(quit()), true);
+    connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
+    m->popup();
+    if (m_eink) m_eink->hintFull();   // the panel comes up crisp, no ghost of the page under it
+}
+
+// The panel was drawn over the page: redraw that area cleanly once it is gone.
+void Browser::menuClosed()
+{
+    if (m_eink) m_eink->hintFull();
 }
 
 void Browser::showPhoneDialog()
