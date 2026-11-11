@@ -1237,9 +1237,7 @@ void Browser::saveSeries()
     m_saver = new EpubSaver(m_view->page(), EpubSaver::defaultOutDir(), this);
     connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
     connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(saveFinished(bool,QString)));
-    QList<QUrl> urls;
-    for (int i = 0; i < m_seriesLinks.size(); ++i) urls << m_seriesLinks[i].url;
-    m_saver->startSeries(urls, m_seriesTitle);
+    m_saver->startSeries(m_seriesLinks, m_seriesTitle);
 }
 
 void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }

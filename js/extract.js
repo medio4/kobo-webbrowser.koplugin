@@ -14,13 +14,24 @@ function kbCleanFallback() {
   for (var m = 0; m < imgs.length; m++) { try { imgs[m].setAttribute('src', new URL(imgs[m].getAttribute('src') || '', document.baseURI).href); } catch (ex) {} }
   return d;
 }
+// A copy of the document for Readability to chew on. Old WebKit's document.cloneNode(true)
+// comes back without a documentElement, so rebuild the copy as a fresh HTML document then.
+function kbCloneDoc() {
+  var c = null;
+  try { c = document.cloneNode(true); } catch (e) {}
+  if (c && c.documentElement) return c;
+  var d = document.implementation.createHTMLDocument(document.title || '');
+  var root = d.importNode(document.documentElement, true);
+  d.replaceChild(root, d.documentElement);
+  return d;
+}
 function kbSerialize(el) {
   return new XMLSerializer().serializeToString(el);
 }
 return (function () {
   var out = { url: document.URL, title: document.title || '', fallback: false };
   try {
-    var r = new Readability(document.cloneNode(true), { serializer: kbSerialize });
+    var r = new Readability(kbCloneDoc(), { serializer: kbSerialize });
     var art = r.parse();
     if (art && art.content && art.textContent && art.textContent.replace(/\s+/g, ' ').length > 200) {
       out.title = art.title || out.title;

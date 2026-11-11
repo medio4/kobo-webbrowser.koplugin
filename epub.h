@@ -27,12 +27,12 @@ public:
     void start();
     // Save several pages (a chapter list) as one EPUB with a chapter table of contents.
     // Each URL is loaded in a hidden page and extracted like start() does.
-    void startSeries(const QList<QUrl> &urls, const QString &seriesTitle);
+    struct ChapterLink { QUrl url; QString title; };
+    void startSeries(const QList<ChapterLink> &links, const QString &seriesTitle);
     bool isRunning() const { return m_running; }
 
     // Chapters of the work this page belongs to, found by js/series.js (same-site links
     // under the page's folder). Empty when the page doesn't look like part of a series.
-    struct ChapterLink { QUrl url; QString title; };
     static QList<ChapterLink> findChapters(QWebPage *page, QString *listTitle = 0);
 
     // Folder for saved pages: $KB_LIBRARY_DIR, else <KOReader home>/Web.
@@ -85,7 +85,7 @@ private:
     QTimer m_timer;
     // series mode
     bool m_series;
-    QList<QUrl> m_urls;
+    QList<ChapterLink> m_links;
     QString m_seriesTitle;
     QList<Chapter> m_chapters;
     int m_chapterIndex;

@@ -169,12 +169,12 @@ QList<EpubSaver::ChapterLink> EpubSaver::findChapters(QWebPage *page, QString *l
     return out;
 }
 
-void EpubSaver::startSeries(const QList<QUrl> &urls, const QString &seriesTitle)
+void EpubSaver::startSeries(const QList<ChapterLink> &links, const QString &seriesTitle)
 {
-    if (m_running || urls.isEmpty()) return;
+    if (m_running || links.isEmpty()) return;
     m_running = true;
     m_series = true;
-    m_urls = urls;
+    m_links = links;
     m_seriesTitle = seriesTitle.simplified();
     m_chapters.clear();
     m_chapterIndex = -1;
@@ -195,14 +195,14 @@ void EpubSaver::startSeries(const QList<QUrl> &urls, const QString &seriesTitle)
 void EpubSaver::loadNextChapter()
 {
     ++m_chapterIndex;
-    if (m_chapterIndex >= m_urls.size()) {
+    if (m_chapterIndex >= m_links.size()) {
         if (m_chapters.isEmpty()) { fail("None of the chapters could be read"); return; }
         writeEpub();
         return;
     }
-    emit progress(QString("Saving series: chapter %1 of %2...").arg(m_chapterIndex + 1).arg(m_urls.size()));
+    emit progress(QString("Saving series: chapter %1 of %2...").arg(m_chapterIndex + 1).arg(m_links.size()));
     m_chapterTimer.start(kChapterTimeoutMs);
-    m_hidden->mainFrame()->load(m_urls[m_chapterIndex]);
+    m_hidden->mainFrame()->load(m_links[m_chapterIndex].url);
 }
 
 void EpubSaver::chapterLoaded(bool ok)
@@ -210,7 +210,7 @@ void EpubSaver::chapterLoaded(bool ok)
     if (!m_running || !m_series) return;
     m_chapterTimer.stop();
     if (!ok) {
-        qWarning() << "epub: chapter failed to load" << m_urls[m_chapterIndex];
+        qWarning() << "epub: chapter failed to load" << m_links[m_chapterIndex].url;
         loadNextChapter();
         return;
     }
@@ -232,7 +232,7 @@ void EpubSaver::chapterLoaded(bool ok)
 void EpubSaver::chapterTimeout()
 {
     if (!m_running || !m_series) return;
-    qWarning() << "epub: chapter timed out" << m_urls[m_chapterIndex];
+    qWarning() << "epub: chapter timed out" << m_links[m_chapterIndex].url;
     m_hidden->triggerAction(QWebPage::Stop);
     loadNextChapter();
 }
@@ -387,7 +387,12 @@ void EpubSaver::imagesDone()
     }
     if (m_series) {
         Chapter ch;
-        ch.title = m_title.isEmpty() ? QString("Chapter %1").arg(m_chapters.size() + 1) : m_title;
+        // A page with no real title (plain-text chapters report the host name) is named
+        // after the link that led to it.
+        QString t = m_title;
+        if (t.isEmpty() || t.compare(m_pageUrl.host(), Qt::CaseInsensitive) == 0)
+            t = m_links[m_chapterIndex].title;
+        ch.title = t.isEmpty() ? QString("Chapter %1").arg(m_chapters.size() + 1) : t;
         ch.content = m_content;
         ch.url = m_pageUrl;
         ch.images = m_images;
