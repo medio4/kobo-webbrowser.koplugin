@@ -138,6 +138,7 @@ private slots:
     void showPhoneDialog();
     void showMenu();
     void goHome();
+    void toggleAdBlock();
     void showBookmarks();
     void addBookmark();
     void setAsHome();

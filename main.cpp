@@ -12,6 +12,7 @@
 #include "phoneshare.h"
 #include "menupanel.h"
 #include "bookmarks.h"
+#include "adblock.h"
 #include "toc.h"
 #include "memtune.h"
 #include "power.h"
@@ -1307,13 +1308,16 @@ void Browser::showMenu()
     m->addAction("Contents", this, SLOT(showToc()));
     m->addAction("Text bigger", this, SLOT(zoomIn()));
     m->addAction("Text smaller", this, SLOT(zoomOut()));
+    if (m_menu && m_menu->available())   // reader mode hands the article to KOReader
+        m->addAction("Read in KOReader", this, SLOT(readInKoreader()));
     m->addAction("Save", this, SLOT(saveEpub()));
     m->addAction("Screenshot", this, SLOT(screenshot()));
     m->addAction("Keyboard", this, SLOT(toggleKeyboard()));
     m->addAction("From phone", this, SLOT(showPhoneDialog()));
+    m->addAction(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off", this, SLOT(toggleAdBlock()));
     if (m_menu && m_menu->available())   // launched from the KOReader plugin
         m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()));
-    m->addAction("Clean screen", this, SLOT(fullRefresh()), !(m_menu && m_menu->available()));
+    m->addAction("Clean screen", this, SLOT(fullRefresh()), true);
     m->addAction("Exit browser", this, SLOT(quit()), true);
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
     m->popup();
@@ -1337,6 +1341,14 @@ void Browser::cleanMenuArea()
 {
     if (m_eink && !m_menuRect.isEmpty()) m_eink->cleanRect(m_menuRect);
     m_menuRect = QRect();
+}
+
+void Browser::toggleAdBlock()
+{
+    AdBlock::instance()->toggle();
+    bool on = AdBlock::instance()->isEnabled();
+    m_status->setText(on ? "Ad blocking on (reloading)" : "Ad blocking off (reloading)");
+    reloadClicked();
 }
 
 void Browser::goHome()
