@@ -1261,7 +1261,7 @@ void Browser::saveSeries()
 // Reader mode: the article (Readability, as Save does) goes into a temporary EPUB in
 // EpubSaver::readerDir(), not the library. The "read" handoff line names it together with
 // this page, scroll position and zoom; kobo-webbrowser.koplugin opens it in KOReader and,
-// once that book is closed, deletes it and starts the browser again on the same spot.
+// once that book is closed, deletes it and asks whether to go back to the browser on the same spot.
 void Browser::readInKoreader()
 {
     if (m_saver && m_saver->isRunning()) return;
