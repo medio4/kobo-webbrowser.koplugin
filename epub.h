@@ -46,7 +46,7 @@ public:
     static void clearReaderDir();
     static QString safeFileName(const QString &title);
 
-    // Handoff to KOReader (read by applauncher.koplugin after the browser exits):
+    // Handoff to KOReader (read by kobo-webbrowser.koplugin after the browser exits):
     // $KB_HANDOFF_FILE, lines "saved\t<path>" for every EPUB written, "open\t<path>" to open one,
     // "read\t<path>\t<url>\t<scrollY>\t<zoom>" to read a reader-mode copy and come back here.
     static QString handoffFile();

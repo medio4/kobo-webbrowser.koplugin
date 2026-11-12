@@ -1293,7 +1293,7 @@ void Browser::loadFinished(bool ok)
     }
 }
 // Hand sleep to KOReader: note the page (URL, scroll, zoom) in the handoff file and
-// exit. applauncher.koplugin puts KOReader to sleep with its own screensaver and
+// exit. The KOReader plugin puts KOReader to sleep with its own screensaver and
 // relaunches the browser on this page when the device wakes.
 void Browser::sleepToKoreader()
 {
@@ -1880,7 +1880,7 @@ void Browser::showToc()
     }
 }
 
-// "Open now": the handoff line is already written; exit so KOReader (applauncher.koplugin)
+// "Open now": the handoff line is already written; exit so KOReader (kobo-webbrowser.koplugin)
 // adds the file to its collection and opens it.
 void Browser::openSavedEpub(const QString &path)
 {

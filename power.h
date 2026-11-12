@@ -49,7 +49,7 @@ public:
     bool sleeping() const { return m_state != Awake; }
 signals:
     void message(const QString &text);   // for the status line
-    // KB_KO_SLEEP=1 (set by applauncher.koplugin): instead of suspending itself, the
+    // KB_KO_SLEEP=1 (set by the KOReader plugin): instead of suspending itself, the
     // browser hands sleep to KOReader (its screensaver/wallpaper and suspend code) and
     // exits; KOReader relaunches it on wake.
     void sleepRequested();

@@ -66,7 +66,7 @@ if [ -z "$KB_LIBRARY_DIR" ]; then
     KB_LIBRARY_DIR="$KO_HOME/Web"
 fi
 export KB_LIBRARY_DIR
-# Saved/open-now EPUBs are reported to KOReader (applauncher.koplugin) through this file
+# Saved/open-now EPUBs are reported to KOReader (kobo-webbrowser.koplugin) through this file
 export KB_HANDOFF_FILE="${KB_HANDOFF_FILE:-$DIR/epub-handoff.txt}"
 # glibc malloc: one arena (WebKit's helper threads would each keep their own heap),
 # and give freed memory back to the kernel instead of keeping it cached in the heap.
