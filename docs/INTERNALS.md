@@ -19,6 +19,14 @@ Files
 - power.cpp / power.h   — power button, sleep cover, auto-sleep and frontlight (see below)
 - wifi-sleep.sh         — turns Wi-Fi off before a suspend and reconnects after, with
                           KOReader's enable/disable-wifi.sh and its saved networks
+- csscompat.cpp/h       — rewrites modern CSS for the firmware's WebKit (-webkit- copies of
+                          transform/transition/flexbox/sticky, calc() -> -webkit-calc(),
+                          var() resolved from :root, min()/max()/clamp() picked, logical
+                          properties, @layer unwrapped). memtune.cpp's CssCompatReply runs it on
+                          text/css replies and on <style>/style="" in HTML as it streams in.
+                          Off: KB_NO_CSS_COMPAT=1 or bin/css-compat-off.txt (KOReader menu
+                          "Fix modern page styles"); KB_CSS_COMPAT_LOG=1 logs bytes/changes/time
+                          per reply. Desktop tests: tests/csscompat/run.sh, run-pageload.sh.
 - epub.cpp / epub.h     — "Save" button: runs Mozilla's Readability.js inside the page
                           (js/Readability.js, transpiled to ES5 for the old JavaScriptCore,
                           plus js/prelude.js polyfills), fetches the article's images

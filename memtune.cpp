@@ -9,6 +9,10 @@
 #include <QtCore/QStringList>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QDebug>
+#include <QtCore/QDir>
+#include <QtCore/QFile>
+#include <QtCore/QCoreApplication>
+#include <QtWebKitWidgets/QWebFrame>
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
@@ -105,9 +109,16 @@ void MemTune::trimNow()
 
 // ---------------------------------------------------------------------------
 
-KoboNetworkAccessManager::KoboNetworkAccessManager(QObject *parent)
-    : QNetworkAccessManager(parent), m_filter(!getenv("KB_NO_IMG_FILTER"))
+static QString cssOffPath()
 {
+    return QDir(QCoreApplication::applicationDirPath()).filePath("css-compat-off.txt");
+}
+
+KoboNetworkAccessManager::KoboNetworkAccessManager(QObject *parent)
+    : QNetworkAccessManager(parent), m_filter(!getenv("KB_NO_IMG_FILTER")),
+      m_cssEnvOff(getenv("KB_NO_CSS_COMPAT") != 0), m_cssOff(true)
+{
+    m_cssOff = m_cssEnvOff || QFile::exists(cssOffPath());
 }
 
 static bool isImageRequest(const QNetworkRequest &req)
@@ -123,6 +134,19 @@ QNetworkReply *KoboNetworkAccessManager::createRequest(Operation op, const QNetw
         return new BlockedReply(req, op, this);
     QNetworkReply *r = QNetworkAccessManager::createRequest(op, req, outgoingData);
     QString scheme = req.url().scheme();
+    if (op == GetOperation && (scheme == "http" || scheme == "https")) {
+        QByteArray accept = req.rawHeader("Accept");
+        bool page = accept.startsWith("text/html");
+        if (page) {
+            QWebFrame *frame = qobject_cast<QWebFrame *>(req.originatingObject());
+            if (frame && !frame->parentFrame()) {   // a new page: forget the last one's variables
+                m_pageVars.clear();
+                m_cssOff = m_cssEnvOff || QFile::exists(cssOffPath());
+            }
+        }
+        if (!m_cssOff && (page || accept.startsWith("text/css") || req.url().path().endsWith(".css")))
+            return new CssCompatReply(r, &m_pageVars, this);
+    }
     if (!m_filter || op != GetOperation || (scheme != "http" && scheme != "https") || !isImageRequest(req))
         return r;
     return new ImageFilterReply(r, envInt("KB_IMG_MAX_PX", 1600), this);
@@ -131,7 +155,6 @@ QNetworkReply *KoboNetworkAccessManager::createRequest(Operation op, const QNetw
 ImageFilterReply::ImageFilterReply(QNetworkReply *inner, int maxPx, QObject *parent)
     : QNetworkReply(parent), m_inner(inner), m_pos(0), m_maxPx(maxPx), m_done(false)
 {
-    m_inner->setParent(this);
     setRequest(inner->request());
     setUrl(inner->url());
     setOperation(inner->operation());
@@ -141,11 +164,13 @@ ImageFilterReply::ImageFilterReply(QNetworkReply *inner, int maxPx, QObject *par
     if (m_inner->isFinished()) QMetaObject::invokeMethod(this, "innerFinished", Qt::QueuedConnection);
 }
 
-ImageFilterReply::~ImageFilterReply() {}
+// The inner reply stays a child of the manager: ~QNetworkAccessManager deletes every
+// QNetworkReply among its descendants, so one parented to us would be deleted twice.
+ImageFilterReply::~ImageFilterReply() { if (m_inner) m_inner->deleteLater(); }
 
 void ImageFilterReply::ignoreSslErrors()
 {
-    m_inner->ignoreSslErrors();
+    if (m_inner) m_inner->ignoreSslErrors();
     QNetworkReply::ignoreSslErrors();
 }
 
@@ -229,8 +254,10 @@ void ImageFilterReply::abort()
 {
     if (m_done) return;
     m_done = true;
-    disconnect(m_inner, 0, this, 0);
-    m_inner->abort();
+    if (m_inner) {
+        disconnect(m_inner, 0, this, 0);
+        m_inner->abort();
+    }
     setError(OperationCanceledError, "Operation canceled");
     emit error(OperationCanceledError);
     setFinished(true);
@@ -243,6 +270,147 @@ qint64 ImageFilterReply::bytesAvailable() const
 }
 
 qint64 ImageFilterReply::readData(char *data, qint64 maxSize)
+{
+    qint64 n = qMin(maxSize, qint64(m_data.size()) - m_pos);
+    if (n <= 0) return m_done ? -1 : 0;
+    memcpy(data, m_data.constData() + m_pos, n);
+    m_pos += n;
+    return n;
+}
+
+// ---------------------------------------------------------------------------
+
+CssCompatReply::CssCompatReply(QNetworkReply *inner, CssCompat::Vars *pageVars, QObject *parent)
+    : QNetworkReply(parent), m_inner(inner), m_vars(pageVars), m_html(0), m_mode(Undecided), m_pos(0),
+      m_nsecs(0), m_done(false), m_log(getenv("KB_CSS_COMPAT_LOG") != 0)
+{
+    setRequest(inner->request());
+    setUrl(inner->url());
+    setOperation(inner->operation());
+    QIODevice::open(QIODevice::ReadOnly);
+    connect(m_inner, SIGNAL(metaDataChanged()), this, SLOT(innerMetaData()));
+    connect(m_inner, SIGNAL(readyRead()), this, SLOT(innerReadyRead()));
+    connect(m_inner, SIGNAL(finished()), this, SLOT(innerFinished()));
+    connect(m_inner, SIGNAL(downloadProgress(qint64,qint64)), this, SIGNAL(downloadProgress(qint64,qint64)));
+    connect(m_inner, SIGNAL(sslErrors(QList<QSslError>)), this, SIGNAL(sslErrors(QList<QSslError>)));
+    if (m_inner->isFinished()) QMetaObject::invokeMethod(this, "innerFinished", Qt::QueuedConnection);
+}
+
+CssCompatReply::~CssCompatReply()
+{
+    delete m_html;
+    if (m_inner) m_inner->deleteLater();   // see ~ImageFilterReply
+}
+
+void CssCompatReply::ignoreSslErrors()
+{
+    if (m_inner) m_inner->ignoreSslErrors();
+    QNetworkReply::ignoreSslErrors();
+}
+
+void CssCompatReply::decide()
+{
+    QByteArray ct = m_inner->header(QNetworkRequest::ContentTypeHeader).toByteArray().toLower();
+    if (m_inner->attribute(QNetworkRequest::RedirectionTargetAttribute).isValid()) m_mode = Pass;
+    else if (ct.startsWith("text/css") || (ct.isEmpty() && url().path().endsWith(".css"))) m_mode = Css;
+    else if (ct.startsWith("text/html") || ct.startsWith("application/xhtml+xml")) {
+        m_mode = Html;
+        m_html = new CssCompat::HtmlRewriter(m_vars);
+    } else m_mode = Pass;
+}
+
+void CssCompatReply::innerMetaData()
+{
+    if (m_mode == Undecided) decide();
+    foreach (const QByteArray &h, m_inner->rawHeaderList())   // the length changes when rewritten
+        if (m_mode == Pass || qstricmp(h.constData(), "content-length"))
+            setRawHeader(h, m_inner->rawHeader(h));
+    static const QNetworkRequest::Attribute attrs[] = {
+        QNetworkRequest::HttpStatusCodeAttribute, QNetworkRequest::HttpReasonPhraseAttribute,
+        QNetworkRequest::RedirectionTargetAttribute, QNetworkRequest::ConnectionEncryptedAttribute,
+        QNetworkRequest::SourceIsFromCacheAttribute, QNetworkRequest::HttpPipeliningWasUsedAttribute };
+    for (unsigned i = 0; i < sizeof attrs / sizeof attrs[0]; ++i) {
+        QVariant v = m_inner->attribute(attrs[i]);
+        if (v.isValid()) setAttribute(attrs[i], v);
+    }
+    if (m_mode != Css) emit metaDataChanged();   // a style sheet's goes out with its body
+}
+
+void CssCompatReply::append(const QByteArray &d)
+{
+    if (d.isEmpty()) return;
+    if (m_pos > 65536 && m_pos * 2 > m_data.size()) { m_data.remove(0, m_pos); m_pos = 0; }
+    m_data += d;
+    emit readyRead();
+}
+
+void CssCompatReply::innerReadyRead()
+{
+    if (m_mode == Undecided) innerMetaData();
+    QByteArray d = m_inner->readAll();
+    if (d.isEmpty()) return;
+    if (m_mode == Css) { m_raw += d; return; }
+    if (m_mode == Html) {
+        QElapsedTimer t; t.start();
+        d = m_html->feed(d);
+        m_nsecs += t.nsecsElapsed();
+    }
+    append(d);
+}
+
+void CssCompatReply::innerFinished()
+{
+    if (m_done) return;
+    if (m_mode == Undecided) innerMetaData();
+    innerReadyRead();
+    m_done = true;
+    QElapsedTimer t; t.start();
+    CssCompat::Stats st;
+    int in = m_raw.size();
+    if (m_mode == Css) {
+        QByteArray out = m_inner->error() == NoError ? CssCompat::rewriteSheet(m_raw, m_vars, &st) : m_raw;
+        m_raw.clear();
+        m_nsecs += t.nsecsElapsed();
+        emit metaDataChanged();
+        append(out);
+    } else if (m_mode == Html) {
+        QByteArray out = m_html->finish();
+        m_nsecs += t.nsecsElapsed();
+        st = m_html->stats;
+        append(out);
+    }
+    if (m_log && (m_mode == Css || m_mode == Html))
+        qDebug() << "csscompat:" << (m_mode == Css ? "css" : "html") << (m_mode == Css ? in : m_pos + m_data.size())
+                 << "bytes," << st.decls << "decls" << st.vars << "vars," << m_nsecs / 1000 << "us"
+                 << url().toString().left(100);
+    if (m_inner->error() != NoError) {
+        setError(m_inner->error(), m_inner->errorString());
+        emit error(m_inner->error());
+    }
+    setFinished(true);
+    emit finished();
+}
+
+void CssCompatReply::abort()
+{
+    if (m_done) return;
+    m_done = true;
+    if (m_inner) {
+        disconnect(m_inner, 0, this, 0);
+        m_inner->abort();
+    }
+    setError(OperationCanceledError, "Operation canceled");
+    emit error(OperationCanceledError);
+    setFinished(true);
+    emit finished();
+}
+
+qint64 CssCompatReply::bytesAvailable() const
+{
+    return m_data.size() - m_pos + QNetworkReply::bytesAvailable();
+}
+
+qint64 CssCompatReply::readData(char *data, qint64 maxSize)
 {
     qint64 n = qMin(maxSize, qint64(m_data.size()) - m_pos);
     if (n <= 0) return m_done ? -1 : 0;

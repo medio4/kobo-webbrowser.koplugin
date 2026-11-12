@@ -37,6 +37,9 @@ pauses while the browser is open and comes back when you exit.
   lists are also in KOReader's menu, to open the browser straight onto a page.
 - Ad blocking with a built-in list of ad and tracker hosts, plus your own allowed and
   blocked sites.
+- Modern page styles: style sheets written for current browsers (CSS variables, flexbox,
+  transforms, `calc()`, `clamp()`) are rewritten into the older forms the Kobo's 2013
+  WebKit understands, so slide-in menus stay hidden and layouts hold together.
 - **Send to Kobo**: scan the QR code (Menu → From phone) with your phone, paste a link on
   the page that opens, and it loads on the Kobo.
 - **Save**: turns the current article into an EPUB (Mozilla Readability plus the article's
@@ -112,6 +115,7 @@ Under **Tools → Web browser**:
 - **Open address…** starts the browser on a URL you type.
 - **History** and **Bookmarks** open the browser on a page you visited or saved.
 - **Ad blocking**: on/off, sites where ads are allowed, extra sites to block.
+- **Fix modern page styles** (on by default): turn off if a page looks worse with it.
 - **Home page** (default `https://lite.duckduckgo.com/lite/`).
 - **Collection for saved articles** (default `Web`; leave empty to skip collections).
 - **Use KOReader keyboard (experimental)**.

@@ -400,6 +400,16 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                 sub_item_table = self:adblockMenu(),
             },
             {
+                text = _("Fix modern page styles"),
+                help_text = _("Rewrites style sheets that use newer CSS (variables, flexbox, transforms, calc) into the older forms this browser understands, so menus and layouts look as intended. Turn it off if a page looks worse with it. Applies from the next page you open."),
+                checked_func = function() return self.settings.css_compat_off ~= true end,
+                callback = function()
+                    self.settings.css_compat_off = (self.settings.css_compat_off ~= true) or nil
+                    self:saveSettings()
+                    self:writeAdblockFiles()
+                end,
+            },
+            {
                 text = _("Use KOReader keyboard (experimental)"),
                 help_text = _("Type addresses and form fields in a KOReader input dialog instead of the browser's own keyboard. Off by default: the browser's keyboard types straight into the field. Takes effect the next time the browser starts."),
                 checked_func = function() return self.settings.native_keyboard == true end,
@@ -563,6 +573,8 @@ function KoboWebBrowser:writeAdblockFiles()
     put("adblock-off.txt", self.settings.adblock_off == true and "ad blocking turned off in KOReader's menu" or nil)
     put("adblock-allow.txt", self.settings.adblock_allow)
     put("adblock-extra.txt", self.settings.adblock_block)
+    -- Not ad blocking, but read the same way (at each page the browser opens).
+    put("css-compat-off.txt", self.settings.css_compat_off == true and "modern page style fixes turned off in KOReader's menu" or nil)
 end
 
 -- Menu entries for a page list the browser keeps in bin/ (history.txt, bookmarks.txt:

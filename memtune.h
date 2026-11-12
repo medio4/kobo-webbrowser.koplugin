@@ -6,8 +6,10 @@
 #include <QtCore/QObject>
 #include <QtCore/QByteArray>
 #include <QtCore/QTimer>
+#include <QtCore/QPointer>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
+#include "csscompat.h"
 class QWebSettings;
 
 class MemTune : public QObject {
@@ -34,6 +36,9 @@ private:
 // is an animated GIF (-> PNG of the first frame) or larger than KB_IMG_MAX_PX
 // (default 1600) on its longest side (-> scaled down, same format if writable).
 // KB_NO_IMG_FILTER=1 disables. Requests to blocklisted hosts are dropped first (adblock.h).
+// Style sheets and HTML pages go through CssCompatReply (csscompat.h): off with
+// KB_NO_CSS_COMPAT=1 or a css-compat-off.txt beside the binary (KOReader menu, re-checked
+// at each page navigation); KB_CSS_COMPAT_LOG=1 logs what each reply changed and how long it took.
 class KoboNetworkAccessManager : public QNetworkAccessManager {
     Q_OBJECT
 public:
@@ -42,6 +47,41 @@ protected:
     QNetworkReply *createRequest(Operation op, const QNetworkRequest &req, QIODevice *outgoingData);
 private:
     bool m_filter;
+    bool m_cssEnvOff, m_cssOff;
+    CssCompat::Vars m_pageVars;   // custom properties of the page being loaded
+};
+
+// Passes a reply through, rewriting it with CssCompat when it turns out to be a style sheet
+// (buffered: WebKit parses a sheet only once it is complete anyway) or an HTML page
+// (streamed; only an unfinished tag or <style> element is held back).
+class CssCompatReply : public QNetworkReply {
+    Q_OBJECT
+public:
+    CssCompatReply(QNetworkReply *inner, CssCompat::Vars *pageVars, QObject *parent);
+    ~CssCompatReply();
+    void abort();
+    qint64 bytesAvailable() const;
+    bool isSequential() const { return true; }
+public slots:
+    void ignoreSslErrors();
+protected:
+    qint64 readData(char *data, qint64 maxSize);
+private slots:
+    void innerMetaData();
+    void innerReadyRead();
+    void innerFinished();
+private:
+    enum Mode { Undecided, Pass, Css, Html };
+    void decide();
+    void append(const QByteArray &d);
+    QPointer<QNetworkReply> m_inner;
+    CssCompat::Vars *m_vars;
+    CssCompat::HtmlRewriter *m_html;
+    Mode m_mode;
+    QByteArray m_data, m_raw;
+    qint64 m_pos;
+    qint64 m_nsecs;
+    bool m_done, m_log;
 };
 
 class ImageFilterReply : public QNetworkReply {
@@ -60,7 +100,7 @@ private slots:
     void innerFinished();
 private:
     void copyMeta();
-    QNetworkReply *m_inner;
+    QPointer<QNetworkReply> m_inner;
     QByteArray m_data;
     qint64 m_pos;
     int m_maxPx;
