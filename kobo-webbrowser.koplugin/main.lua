@@ -2039,15 +2039,23 @@ function KoboWebBrowser:onResume()
             UIManager:setDirty("all", "full")
         end,
         on_cancel = function()
-            logger.info("KoboWebBrowser: wake screen: Cancel, opening the saved copy")
-            finish()
+            logger.info("KoboWebBrowser: wake screen: Offline copy, opening the saved page")
             if lfs.attributes(self.sleep_page, "mode") == "file" then
                 extra.env.KB_RESTORE_FILE = self.sleep_page
             else
                 logger.warn("KoboWebBrowser: no saved page at", self.sleep_page, "- reloading online")
             end
+            -- Keep this screen up (no white flash) until the browser has the page drawn:
+            -- it skips its start-up clear and draws nothing before the page has loaded.
+            extra.env.KB_NO_CLEAR_AT_START = "1"
+            extra.env.KB_HOLD_UNTIL_LOADED = "1"
+            UIManager:unschedule(tick)
+            wake:setStatus(_("Loading the offline copy…"), 100)
+            UIManager:forceRePaint()
             -- The page file is read at start-up; it's deleted when this session ends.
             self:run(extra)
+            -- The draw guard is up now: closing this screen paints nothing over the browser.
+            finish()
         end,
     }
     self.wake = wake

@@ -659,6 +659,8 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     if (m_native) connect(m_native, SIGNAL(replied(QString,QString)), this, SLOT(nativeReplied(QString,QString)));
     if (m_native) connect(m_native, SIGNAL(unavailable()), this, SLOT(nativeUnavailable()));
     if (m_native) connect(m_native, SIGNAL(keyLine(QString)), this, SLOT(nativeKey(QString)));
+    m_holdFirst = getenv("KB_HOLD_UNTIL_LOADED") != 0;
+    if (m_holdFirst && m_eink) m_eink->setSuspended(true);
     m_live = false;
     // KOReader's top menu over the browser: swipe down from the toolbar (see eventFilter).
     m_menu = new NativeTextEntry("KB_MENU_FILE", "KB_MENU_REPLY", this);
@@ -1325,6 +1327,11 @@ void Browser::loadStarted()
 }
 void Browser::loadFinished(bool ok)
 {
+    // KB_HOLD_UNTIL_LOADED: the wake screen stays on the panel until the page is ready.
+    if (m_holdFirst) {
+        m_holdFirst = false;
+        if (m_eink) m_eink->setSuspended(false);   // first picture, one full refresh
+    }
     if (m_offline) {
         m_status->setText("Offline copy (no connection)");
         m_offline = false;

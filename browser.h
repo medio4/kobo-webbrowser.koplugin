@@ -232,6 +232,7 @@ private:
     PhoneShare *m_phone;
     int m_rotTarget;
     QTimer *m_holdTimer;
+    bool m_holdFirst;       // draw nothing until the first page has loaded
     bool m_live;            // typing with KOReader's keyboard, live into our field
     QString m_liveOrig;     // the field's text before, for Cancel
     void sendLiveKey(int key, const QString &text, Qt::KeyboardModifiers mods = Qt::NoModifier);
