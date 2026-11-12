@@ -665,7 +665,20 @@ void Browser::nativeKey(const QString &line)
         else sendLiveKey(0, t);
     } else if (cmd == "del") sendLiveKey(Qt::Key_Backspace, QString());
     else if (cmd == "delword") sendLiveKey(Qt::Key_Backspace, QString(), Qt::ControlModifier);
-    else if (cmd == "dellinestart") { sendLiveKey(Qt::Key_Home, QString(), Qt::ShiftModifier); sendLiveKey(Qt::Key_Backspace, QString()); }
+    else if (cmd == "dellinestart") {
+        // Everything before the cursor (Shift+Home then Backspace doesn't select in Qt 5.2's
+        // line edit, so do it directly).
+        if (m_nativeKind == "url") {
+            int c = m_url->cursorPosition();
+            m_url->setText(m_url->text().mid(c));
+            m_url->setCursorPosition(0);
+        } else {
+            m_view->page()->mainFrame()->evaluateJavaScript(
+                "(function(){var e=document.activeElement;if(!e||!('value' in e))return;"
+                "var c=e.selectionStart||0;e.value=e.value.substring(c);e.selectionStart=e.selectionEnd=0;"
+                "try{var ev=document.createEvent('Event');ev.initEvent('input',true,true);e.dispatchEvent(ev);}catch(x){}})()");
+        }
+    }
     else if (cmd == "left") sendLiveKey(Qt::Key_Left, QString());
     else if (cmd == "right") sendLiveKey(Qt::Key_Right, QString());
     else if (cmd == "up") sendLiveKey(Qt::Key_Up, QString());
@@ -1525,6 +1538,14 @@ void Browser::stopPhone()
 {
     if (m_phone) m_phone->stop();
     m_status->setText("Phone link off");
+    // Back to the page title after a moment (it stayed until the next page load).
+    QTimer::singleShot(3000, this, SLOT(showPageTitle()));
+}
+
+void Browser::showPageTitle()
+{
+    QString t = m_view->title().simplified();
+    m_status->setText(t.isEmpty() ? m_view->url().host() : t);
 }
 
 void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }

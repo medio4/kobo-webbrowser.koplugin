@@ -63,6 +63,7 @@ private slots:
     void showPhoneHint();
     void showPhoneDialog();
     void stopPhone();
+    void showPageTitle();
     void sharePage();
     void nativeKey(const QString &line);
     void showMenu();
