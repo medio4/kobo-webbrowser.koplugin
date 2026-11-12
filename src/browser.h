@@ -107,6 +107,8 @@ private slots:
     void pinchZoom(double ratio);   // two-finger pinch: ratio > 1 zooms in
     void openSavedEpub(const QString &path);
     void showToc();
+    void showNavigator();        // page overview (experimental, navigator.h)
+    void toggleNavigator();
     void flashUrlBar();          // Clear / Del: redraw the address bar with a flashing refresh
     void nativeStarted();        // KOReader keyboard: hand over screen + touch
     void nativeReplied(const QString &action, const QString &text);
