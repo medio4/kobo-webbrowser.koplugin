@@ -118,31 +118,9 @@ the browser needs to be open.
 
 ## How to use it
 
-### Scrolling and page turns
-
-Scrolling is built for e-ink, so the screen redraws as rarely as possible:
-
-- **Flick up or down** (a quick swipe, let go within about a third of a second): turns one
-  full screen. A thin strip of the previous screen stays visible at the edge, so you don't
-  lose your place.
-- **Flick left or right** in the middle of the page: also turns a screen, like a book.
-  Left goes forward, right goes back.
-- **Hold, then drag**: touch, wait a moment, then move your finger. The page follows you in
-  steps, for small adjustments.
-- **Wide tables and boxes**: hold and drag sideways on them to slide just that table
-  (or the whole page, if nothing under your finger scrolls sideways).
-- **Swipe in from the very left or right edge**: back and forward through pages you
-  visited, the same as Back and Fwd.
-- **Drag up or down along the left or right edge**: frontlight brightness or warmth,
-  not scrolling.
-- **Contents** (in the Menu) jumps straight to any heading on a long page.
-- The slim bar on the right shows where you are on the page. A second one appears along
-  the bottom when the page is wider than the screen.
-
 | To | Do this |
 | --- | --- |
-| Turn a page | Flick up or down (or left or right) |
-| Scroll a little | Hold, then drag |
+| Turn a page | Swipe up or down (hold and drag to scroll freely) |
 | Go back / forward | **Back** / **Fwd**, or swipe in from the left / right edge |
 | Type an address or search | Tap the address, type, press **Go** on the keyboard |
 | Zoom | Pinch; or **Menu → Text bigger / smaller** for the text only |
