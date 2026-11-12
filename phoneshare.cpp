@@ -190,6 +190,7 @@ static QImage qrImage(const QString &text, int pixels)
 PhoneDialog::PhoneDialog(const QString &url, QWidget *parent) : QWidget(parent)
 {
     setAttribute(Qt::WA_DeleteOnClose);
+    setProperty("kb_overlay", true);   // e-ink: flash its area clean when it closes
     setAutoFillBackground(false);
     QFrame *box = new QFrame(this);
     m_box = box;

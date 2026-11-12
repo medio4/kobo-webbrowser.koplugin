@@ -64,7 +64,8 @@ public slots:
     void hintPageTurn();
     void hintFast();   // next flush uses the fast waveform (DU), for small UI changes
     void hintFull();
-    void audit();      // KB_AUDIT=1: log screen areas Qt painted that never reached the panel   // next flush is a flashing full refresh (e.g. after the keyboard hides)
+    void audit();
+    void flashOverlays();   // pop-ups (kb_overlay) that just closed: one flash of their area      // KB_AUDIT=1: log screen areas Qt painted that never reached the panel   // next flush is a flashing full refresh (e.g. after the keyboard hides)
 private slots:
     void flush();
     void holdTick();
@@ -86,6 +87,7 @@ private:
     QRect m_held;               // bounding rect of repaints swallowed during a hold
     QTimer m_holdTimer;
     QTimer m_settleTimer;
+    QRect m_overlayRect;
     QTimer m_loadSettleTimer;      // quiet-period timer after a load
     QWidget *m_loadSettleWidget;   // the web view to flash when it settles (0 = inactive)
     QElapsedTimer m_loadSettleSince;

@@ -147,6 +147,22 @@ void KoboEink::refreshAll(quint64 flags)
 
 bool KoboEink::eventFilter(QObject *obj, QEvent *e)
 {
+    // A pop-up (menu, dialog, list) closing: the toolbar and status line under it repaint
+    // with the fast 1-bit waveform, which left pieces of the pop-up's frame and buttons on
+    // the panel. Once everything has repainted, flash just the area it covered.
+    if (e->type() == QEvent::Hide && obj->isWidgetType() && obj->property("kb_overlay").toBool()) {
+        QWidget *w = static_cast<QWidget *>(obj);
+        QWidget *top = w->window();
+        QRect area;
+        foreach (QObject *o, w->children())
+            if (o->isWidgetType()) {
+                QWidget *c = static_cast<QWidget *>(o);
+                area |= QRect(c->mapTo(top, QPoint(0, 0)), c->size());
+            }
+        if (area.isEmpty()) area = QRect(w->mapTo(top, QPoint(0, 0)), w->size());
+        m_overlayRect |= area.adjusted(-4, -4, 4, 4);
+        QTimer::singleShot(250, this, SLOT(flashOverlays()));
+    }
     if (e->type() == QEvent::Paint && obj->isWidgetType()) {
         QWidget *w = static_cast<QWidget *>(obj);
         QWidget *top = w->window();
@@ -539,4 +555,12 @@ void KoboEink::audit()
             src->copy(r).save(QString("/tmp/kb-test/stale%1.png").arg(dumps++));
     }
     last = r;
+}
+
+void KoboEink::flashOverlays()
+{
+    if (m_overlayRect.isEmpty()) return;
+    QRect r = m_overlayRect;
+    m_overlayRect = QRect();
+    markDirty(r, m_flagsFull);
 }

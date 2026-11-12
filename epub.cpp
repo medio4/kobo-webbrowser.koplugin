@@ -676,6 +676,7 @@ SavedDialog::SavedDialog(const QString &epubPath, QWidget *parent)
     : QWidget(parent), m_path(epubPath)
 {
     setAttribute(Qt::WA_DeleteOnClose);
+    setProperty("kb_overlay", true);   // e-ink: flash its area clean when it closes
     setAutoFillBackground(false);
 
     m_box = new QFrame(this);
@@ -772,6 +773,7 @@ SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle,
     : QWidget(parent)
 {
     setAttribute(Qt::WA_DeleteOnClose);
+    setProperty("kb_overlay", true);   // e-ink: flash its area clean when it closes
     setAutoFillBackground(false);
     m_box = new QFrame(this);
     static_cast<QFrame *>(m_box)->setFrameStyle(QFrame::Box | QFrame::Plain);

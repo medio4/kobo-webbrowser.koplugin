@@ -11,6 +11,7 @@ MenuPanel::MenuPanel(QWidget *parent, int top)
     : QWidget(parent), m_top(top), m_row(0), m_col(0)
 {
     setAttribute(Qt::WA_DeleteOnClose);
+    setProperty("kb_overlay", true);   // e-ink: flash its area clean when it closes
     setAutoFillBackground(false);
     setProperty("kb_fast", true);
     QFrame *box = new QFrame(this);

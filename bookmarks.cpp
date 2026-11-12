@@ -67,6 +67,7 @@ BookmarksOverlay::BookmarksOverlay(QWidget *parent)
     : QWidget(parent), m_page(0), m_perPage(8)
 {
     setAttribute(Qt::WA_DeleteOnClose);
+    setProperty("kb_overlay", true);   // e-ink: flash its area clean when it closes
     m_items = BookmarkStore::load();
     QFrame *box = new QFrame(this);
     m_box = box;

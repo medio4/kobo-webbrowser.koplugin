@@ -44,6 +44,7 @@ TocOverlay::TocOverlay(QWebView *view, QWidget *parent)
     : QWidget(parent), m_view(view), m_page(0), m_perPage(10)
 {
     setAttribute(Qt::WA_DeleteOnClose);
+    setProperty("kb_overlay", true);   // e-ink: flash its area clean when it closes
     setProperty("kb_fast", true);           // list pages flip with the fast waveform
     collect();
 

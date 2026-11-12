@@ -1332,11 +1332,8 @@ void Browser::showMenu()
 // a non-flashing grayscale pass so no outline of the buttons lingers.
 void Browser::menuClosed()
 {
-    // The plain partial update left faint button outlines on white pages, so once the page
-    // has repainted there, flash just the area the panel covered (not the whole screen).
-    // KB_MENU_NOFLASH=1 skips it.
-    if (getenv("KB_MENU_NOFLASH")) m_menuRect = QRect();
-    else QTimer::singleShot(250, this, SLOT(cleanMenuArea()));
+    // KoboEink flashes the area the panel covered once it is gone (kb_overlay).
+    m_menuRect = QRect();
 }
 
 void Browser::cleanMenuArea()
