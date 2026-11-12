@@ -73,6 +73,10 @@ older NXP and Allwinner models are untested.
   deleted, and KOReader asks whether to go back to the page.
 - **Whole series:** on a page that lists the parts of a story or a guide, both Save and
   Reader mode can fetch every part into one book with a chapter list.
+- **Comics and manga:** on a page that is mostly pictures, Save and Reader mode make a CBZ
+  comic instead, one picture per page: grayscale, sized for the screen, with tall strips
+  (webtoons) cut into screen-sized pages and logos or ads left out. For a list of chapters
+  or episodes, Save offers each one as its own comic, all of them as one, or just this page.
 
 <p align="center">
   <img src="docs/screenshots/read-series.png" width="30%" alt="Reader mode: whole series or just this page">
