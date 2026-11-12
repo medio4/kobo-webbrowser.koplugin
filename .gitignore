@@ -1,5 +1,6 @@
 build/
-qtest/*.o
-qtest/Makefile
-qtest/moc_*
+tests/qtest/*.o
+tests/qtest/qtest
+tests/qtest/Makefile
+tests/qtest/moc_*
 dist/

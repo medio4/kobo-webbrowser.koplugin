@@ -20,7 +20,7 @@ mkdir -p "$OUT/bin"
 cp "$SRC/_meta.lua" "$SRC/main.lua" "$OUT/"
 cp "$HERE/LICENSE" "$HERE/THIRD_PARTY.md" "$OUT/"
 cp "$HERE/build/kobo-browser" "$HERE/build/kb-escape" "$OUT/bin/"
-cp "$HERE/run.sh" "$HERE/wifi-sleep.sh" "$HERE/ca-bundle.crt" "$HERE/adblock-hosts.txt" "$OUT/bin/"
+cp "$HERE/device/run.sh" "$HERE/device/wifi-sleep.sh" "$HERE/device/ca-bundle.crt" "$HERE/device/adblock-hosts.txt" "$OUT/bin/"
 chmod 755 "$OUT/bin/kobo-browser" "$OUT/bin/kb-escape" "$OUT/bin/run.sh" "$OUT/bin/wifi-sleep.sh"
 
 ZIP="$DIST/$NAME-$VERSION.zip"

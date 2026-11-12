@@ -20,5 +20,5 @@ def covered(h):
     p = h.split(".")
     return any(".".join(p[i:]) in hosts for i in range(1, len(p) - 1))
 print("\n".join(sorted(h for h in hosts if not covered(h))))'
-} > "$HERE/adblock-hosts.txt"
-echo "$(grep -vc '^#' "$HERE/adblock-hosts.txt") hosts -> $HERE/adblock-hosts.txt"
+} > "$HERE/../device/adblock-hosts.txt"
+echo "$(grep -vc '^#' "$HERE/../device/adblock-hosts.txt") hosts -> $HERE/../device/adblock-hosts.txt"
