@@ -39,7 +39,13 @@
     if (!title) { try { title = decodeURIComponent(rest); } catch (e) { title = rest; } }
     out.push({ url: key, title: title, key: natKey(path) });
   }
-  out.sort(function (x, y) { return x.key < y.key ? -1 : x.key > y.key ? 1 : 0; });
+  // Numbered parts (part-1, part-2, ...) are put in number order. Named pages (a
+  // tutorial's "appetite", "interpreter", ...) keep the order the page lists them in,
+  // which is the author's order; sorting their names alphabetically would scramble it.
+  var allNumbered = out.length > 0;
+  for (var n = 0; n < out.length; n++)
+    if (!/\d/.test(out[n].url.substring(out[n].url.lastIndexOf('/', out[n].url.length - 2)))) { allNumbered = false; break; }
+  if (allNumbered) out.sort(function (x, y) { return x.key < y.key ? -1 : x.key > y.key ? 1 : 0; });
   for (var j = 0; j < out.length; j++) delete out[j].key;
   return JSON.stringify({ chapters: out, title: document.title || '' });
 })();
