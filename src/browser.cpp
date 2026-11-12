@@ -440,21 +440,6 @@ void Browser::placeKeyboard()
     m_kbd->setGeometry(0, m_central->height() - h, m_central->width(), h);
 }
 
-void Browser::focusUrl()
-{
-    m_url->setFocus();
-    m_url->selectAll();
-    showKeyboard();
-}
-
-void Browser::clearUrl()
-{
-    m_url->clear();
-    m_url->setFocus();
-    flashUrlBar();
-    showKeyboard();
-}
-
 // The address bar is normally refreshed with the fast 1-bit waveform; after Clear or a
 // backspace redraw it at once with a flashing GC16 so nothing of the old text lingers.
 void Browser::flashUrlBar()
@@ -789,8 +774,6 @@ void Browser::fullRefresh()    { if (m_eink) m_eink->refreshAllFull(); }
 // turns the pixels and touchinput.cpp the taps. Saved for the next start.
 // Tapped in the Menu: rotate once the Menu's closing refresh is over (a pop-up's close is
 // drawn as one batched update, which would otherwise swallow the turned window's repaint).
-void Browser::rotateLeft()  { m_rotTarget = KbRotation::angle() + 270; QTimer::singleShot(500, this, SLOT(rotateNow())); }
-void Browser::rotateRight() { m_rotTarget = KbRotation::angle() + 90;  QTimer::singleShot(500, this, SLOT(rotateNow())); }
 void Browser::rotateNow()   { applyRotation(m_rotTarget, true); }
 
 // Menu > Rotate screen: the four orientations, as KOReader offers them. The current one
@@ -1455,12 +1438,6 @@ void Browser::showMenu()
 void Browser::menuClosed()
 {
     // KoboEink flashes the area the panel covered once it is gone (kb_overlay).
-    m_menuRect = QRect();
-}
-
-void Browser::cleanMenuArea()
-{
-    if (m_eink && !m_menuRect.isEmpty()) m_eink->markDirty(m_menuRect, m_eink->flagsFull());
     m_menuRect = QRect();
 }
 

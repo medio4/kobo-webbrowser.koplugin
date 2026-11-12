@@ -38,7 +38,6 @@ public slots:
     void showKeyboard();
     void hideKeyboard();
     void toggleKeyboard();
-    void clearUrl();
     void zoomIn();
     void zoomOut();
     void urlChanged(const QUrl &url);
@@ -50,7 +49,6 @@ public slots:
     void loadProgress(int p);
     void loadFinished(bool ok);
     void quit();
-    void focusUrl();
     void screenshot();
     void releaseLoadHold();
     void sleepToKoreader();   // power button with KB_KO_SLEEP=1: hand off and exit
@@ -92,7 +90,6 @@ private slots:
     void addBookmark();
     void setAsHome();
     void menuClosed();
-    void cleanMenuArea();
     void saveEpub();
     void savePageOnly();
     void saveSeriesSplit();
@@ -105,8 +102,6 @@ private slots:
     void imageDownloaded();
     void updateSysInfo();
     void fullRefresh();
-    void rotateLeft();             // Menu > Rotate left / right (rotation.h)
-    void rotateRight();
     void rotationSettled();
     void pinchZoom(double ratio);   // two-finger pinch: ratio > 1 zooms in
     void openSavedEpub(const QString &path);

@@ -4,15 +4,32 @@ Minimal touch web browser for Kobo e-readers that reuses the Qt 5.2.1 + QtWebKit
 libraries already inside Kobo's firmware (Nickel). No Nickel process needed; it is
 meant to be launched from KOReader via kobo-webbrowser.koplugin.
 
-Files
-- main.cpp / browser.h  — the app (QWebView with swipe scrolling, flat KOReader-style
-                          buttons, on-screen keyboard that floats over the page)
+Layout
+- src/                  — the browser (C++), one file per part:
+    main.cpp              start-up: Qt setup, display/touch/power wiring, signals
+    browser.cpp/h         the main window: toolbar, page, Menu and everything it opens
+    touchwebview.cpp/h    the page view: taps, flicks, live drags, edge gestures
+    flatbutton.cpp/h      the flat KOReader-style button
+    keyboard.cpp/h        the built-in keys (fallback; KOReader's keyboard is the default)
+    eink.cpp, fbwriter.cpp, hwtcon.cpp   drawing to the e-ink panel (grab mode, refreshes)
+    touchinput.cpp, rotation.cpp, power.cpp   touchscreen, software rotation, sleep/frontlight
+    webpage.cpp, memtune.cpp, csscompat.cpp, adblock.cpp   page loading and fix-ups
+    epub.cpp (+ js/)      Save / Reader mode: EPUBs and CBZ comics
+    textentry.cpp         hand-offs to the KOReader plugin (keyboard, KOReader menu)
+    menupanel.cpp, toc.cpp, bookmarks.cpp, phoneshare.cpp, scrollmark.cpp, icons.cpp   UI pieces
+    kb-escape.c           power-button escape for a frozen browser
+- device/               — files that ship in the plugin's bin/: run.sh (launcher), wifi-sleep.sh,
+                          ca-bundle.crt, adblock-hosts.txt (+ qt/ for the optional linuxfb backend)
+- kobo-webbrowser.koplugin/ — the KOReader plugin (Lua)
+- tests/                — desktop tests (csscompat) and a minimal Qt-on-Kobo test (qtest)
+- tools/                — screenshots, ad-block list update
+- browser.pro, build.sh, package.sh — build with NickelTC, package the plugin zip
+
+Notes on parts
 - hwtcon.cpp/h          — e-ink refresh via the MTK hwtcon ioctl (no fbink spawn); falls
                           back to fbink if the ioctl fails. KB_NO_HWTCON=1 forces fbink.
 - fbwriter.cpp/h        — copies painted pixels to /dev/fb0; reports whether anything changed
                           so unchanged repaints (button press/release) skip the refresh
-- browser.pro           — qmake project (links the firmware's libQt5WebKit*, see lib/)
-- build.sh              — cross-compile with NickelTC (../downloads/nickeltc)
 - run.sh                — device launcher: sets LD_LIBRARY_PATH / Qt plugin paths,
                           runs `kobo-browser -platform kobo`
 - ca-bundle.crt         — CA certificates for HTTPS
@@ -34,7 +51,7 @@ Files
                           $KB_LIBRARY_DIR (run.sh: KOReader home folder + /Web, i.e.
                           /mnt/onboard/Books/Web). Status line shows progress and the result.
 
-Install: build with ../build.sh and ../package.sh (see ../BUILDING.md); the plugin puts
+Install: build with build.sh and package.sh (see BUILDING.md); the plugin puts
 kobo-browser, kb-escape, run.sh, wifi-sleep.sh and ca-bundle.crt in kobo-webbrowser.koplugin/bin/.
 Log: kobo-webbrowser.koplugin/bin/browser.log
 
