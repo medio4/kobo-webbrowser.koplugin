@@ -145,7 +145,7 @@ In KOReader, under **Tools → Web browser**:
   - **Fix modern page styles** (on by default): turn off if a site looks worse with it.
   - **Use KOReader keyboard (experimental)**: type with KOReader's keyboard instead.
   - **Hold Menu button**: what holding the browser's Menu button does (default: Reader mode).
-- **Close web browser**: closes a browser left open behind KOReader's menu.
+- **Close web browser**: closes a browser left open behind KOReader's menu, or ends a minimized one.
 - **Show log**: shows the end of the launcher log.
 
 In the browser's **Menu**: History on/off and Ad blocking on/off.
