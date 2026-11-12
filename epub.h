@@ -17,6 +17,7 @@ class QWebPage;
 class QResizeEvent;
 class QMouseEvent;
 class QNetworkReply;
+class QFile;
 
 class EpubSaver : public QObject {
     Q_OBJECT
@@ -33,6 +34,18 @@ public:
     // false: a temporary copy (reader mode), no "saved" handoff line, so it never joins
     // the KOReader collection.
     void setLibrary(bool library) { m_library = library; }
+    // Comic mode: the page's images in order, written as a CBZ (one image per page)
+    // instead of an EPUB. For a series, also switched on by itself when the first chapter
+    // turns out to be just images.
+    void setComic(bool comic) { m_comic = comic; }
+    // A page that is mostly big images (manga, comics) rather than text.
+    static bool looksLikeComic(QWebPage *page);
+    // A chapter page loaded without pictures (series mode, hidden page): many pictures
+    // and little text.
+    static bool isComicChapter(QWebPage *page);
+    // Series of comics: one CBZ per part instead of one for all of them.
+    void setComicSplit(bool split) { m_comicSplit = split; if (split) m_comic = true; }
+    QStringList savedFiles() const { return m_savedFiles; }
 
     // Chapters of the work this page belongs to, found by js/series.js (same-site links
     // under the page's folder). Empty when the page doesn't look like part of a series.
@@ -78,6 +91,11 @@ private:
     void imagesDone();
     void storeImage(Image &img, const QByteArray &raw);
     void writeEpub();
+    bool extractComic(QWebPage *page, bool hiddenPage);
+    void addComicPage(const QByteArray &raw);
+    bool writeComicImage(const QByteArray &jpeg);
+    void finishComic();
+    bool closeComicFile();
     void fail(const QString &why);
     void loadNextChapter();
 
@@ -100,6 +118,15 @@ private:
     int m_chapterIndex;
     QWebPage *m_hidden;
     QTimer m_chapterTimer;
+    // comic mode: pages are streamed into the .cbz as they arrive (low memory)
+    bool m_comic;
+    bool m_comicDecided;
+    struct CbzEntry { QByteArray name; quint32 crc; quint32 size; quint32 offset; };
+    QFile *m_cbz;
+    QString m_cbzPath;
+    QList<CbzEntry> m_cbzEntries;
+    bool m_comicSplit;
+    QStringList m_savedFiles;
 };
 
 // Overlay asking whether to save just this page or the whole series it belongs to.
@@ -107,10 +134,13 @@ class SaveChoiceDialog : public QWidget {
     Q_OBJECT
 public:
     // reading: worded for "Read in KOReader" (a temporary book) instead of saving.
-    SaveChoiceDialog(int chapterCount, const QString &seriesTitle, QWidget *parent, bool reading = false);
+    // comic: the parts are comics; also offers each part as its own file.
+    SaveChoiceDialog(int chapterCount, const QString &seriesTitle, QWidget *parent, bool reading = false,
+                     bool comic = false);
 signals:
     void pageChosen();
     void seriesChosen();
+    void seriesSplitChosen();
     void cancelled();
 protected:
     void resizeEvent(QResizeEvent *e);
@@ -126,7 +156,8 @@ private:
 class SavedDialog : public QWidget {
     Q_OBJECT
 public:
-    SavedDialog(const QString &epubPath, QWidget *parent);
+    // count > 1: several files were saved (epubPath is the first).
+    SavedDialog(const QString &epubPath, QWidget *parent, int count = 1);
 signals:
     void openRequested(const QString &path);
     void dismissed();

@@ -22,15 +22,14 @@
   // Name pattern of this page with its numbers masked ("part-#"), or null on an index page.
   var stem = p.charAt(p.length - 1) === '/' ? null
            : p.substring(base.length).replace(/\.[a-z0-9]+$/i, '').replace(/\d+/g, '#');
-  if (stem !== null && (stem.indexOf('#') < 0 || /\d{4,}/.test(p.substring(base.length))))
-    return JSON.stringify({ chapters: [], title: '' });
+  var pathOk = !(stem !== null && (stem.indexOf('#') < 0 || /\d{4,}/.test(p.substring(base.length))));
   var seen = {}, out = [];
-  if (stem !== null) {   // this part itself, in case the page doesn't link to itself
+  if (pathOk && stem !== null) {   // this part itself, in case the page doesn't link to itself
     seen[here.origin + p] = true;
     out.push({ url: here.origin + p, title: document.title || p.substring(base.length), key: natKey(p) });
   }
   var links = document.getElementsByTagName('a');
-  for (var i = 0; i < links.length; i++) {
+  for (var i = 0; pathOk && i < links.length; i++) {
     var a = links[i], href = a.getAttribute('href');
     if (!href || href.charAt(0) === '#' || /^(javascript|mailto):/i.test(href)) continue;
     var u = parse(a.href);
@@ -64,5 +63,49 @@
     if (!/\d/.test(out[n].url.substring(out[n].url.lastIndexOf('/', out[n].url.length - 2)))) { allNumbered = false; break; }
   if (allNumbered) out.sort(function (x, y) { return x.key < y.key ? -1 : x.key > y.key ? 1 : 0; });
   for (var j = 0; j < out.length; j++) delete out[j].key;
-  return JSON.stringify({ chapters: out, title: document.title || '' });
+  if (out.length >= 2) return JSON.stringify({ chapters: out, title: document.title || '' });
+
+  // No numbered addresses: numbered link titles instead ("... Daze 1", "... Daze 2" on an
+  // artist's or a series' page; posts on such sites live in one flat folder). Only on a
+  // list page (address ends in "/") or when this page's own title is one of them, so an
+  // article that links "Apollo 11", "Apollo 12" is not taken for a series.
+  // Link text without post dates ("November 6, 2026", "2026-11-06", "11/06/2026").
+  function textOf(el) {
+    return (el.textContent || '').replace(/\s+/g, ' ')
+      .replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? \d{1,2},? \d{4}\b/gi, '')
+      .replace(/\b\d{1,2} (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d{4}\b/gi, '')
+      .replace(/\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, '')
+      .replace(/^\s+|\s+$/g, '');
+  }
+  function mask(t) { return t.toLowerCase().replace(/\d+/g, '#'); }
+  var listPage = p.charAt(p.length - 1) === '/';
+  var hereKey = mask((document.title || '').replace(/\s+/g, ' '));
+  var groups = {}, order = [];
+  for (var g = 0; g < links.length; g++) {
+    var la = links[g], lu = parse(la.href);
+    if (!lu || lu.host !== here.host || lu.path === here.path) continue;
+    var t = textOf(la);
+    if (t.length < 15 || !/\d/.test(t) || /\d{4,}/.test(t)) continue;
+    var k = mask(t);
+    if (!groups[k]) { groups[k] = { items: [], nums: {}, urls: {} }; order.push(k); }
+    var gr = groups[k], lurl = lu.origin + lu.path;
+    if (gr.urls[lurl]) continue;
+    gr.urls[lurl] = true;
+    gr.nums[(t.match(/\d+/g) || []).join('.')] = true;
+    gr.items.push({ url: lurl, title: t, key: natKey(t) });
+  }
+  var bestK = null;
+  for (var b = 0; b < order.length; b++) {
+    var cand = groups[order[b]], distinct = 0;
+    for (var nk in cand.nums) if (cand.nums.hasOwnProperty(nk)) distinct++;
+    if (distinct < 2 || (!listPage && hereKey.indexOf(order[b].replace(/^\[[^\]]*\]\s*/, '')) < 0)) continue;
+    if (!bestK || cand.items.length > groups[bestK].items.length) bestK = order[b];
+  }
+  if (!bestK) return JSON.stringify({ chapters: [], title: '' });
+  var items = groups[bestK].items;
+  if (!listPage) items.push({ url: here.origin + here.path, title: document.title || '', key: natKey(document.title || '') });
+  items.sort(function (x, y) { return x.key < y.key ? -1 : x.key > y.key ? 1 : 0; });
+  for (var r = 0; r < items.length; r++) delete items[r].key;
+  var name = items[0].title.replace(/\s*\d+\s*/g, ' ').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+  return JSON.stringify({ chapters: items, title: name });
 })();

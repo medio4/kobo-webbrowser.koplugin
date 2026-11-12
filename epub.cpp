@@ -3,6 +3,7 @@
 
 #include <QtCore/QFile>
 #include <QtCore/QDir>
+#include <QtCore/QFileInfo>
 #include <QtCore/QBuffer>
 #include <QtCore/QDateTime>
 #include <QtCore/QDebug>
@@ -42,6 +43,9 @@ const int kMaxImageBytes = 8 * 1024 * 1024;
 const int kMaxImageWidth = 1200;      // Kobo Clara BW screen is 1072 px wide
 const int kImageTimeoutMs = 25000;
 const int kMaxChapters = 300;
+const int kMaxComicImages = 400;      // per page / chapter
+const int kMaxComicPages = 4000;      // per file
+const int kComicMinSide = 300;        // smaller images are page furniture, not comic pages
 const int kChapterTimeoutMs = 60000;
 
 // ------------------------------------------------------------- stored zip
@@ -135,7 +139,8 @@ QString tagAttr(const QString &tag, const QString &name)
 
 EpubSaver::EpubSaver(QWebPage *page, const QString &outDir, QObject *parent)
     : QObject(parent), m_page(page), m_outDir(outDir), m_running(false), m_library(true), m_fallback(false),
-      m_current(-1), m_reply(0), m_series(false), m_chapterIndex(-1), m_hidden(0)
+      m_current(-1), m_reply(0), m_series(false), m_chapterIndex(-1), m_hidden(0),
+      m_comic(false), m_comicDecided(false), m_cbz(0), m_comicSplit(false)
 {
     m_timer.setSingleShot(true);
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(imageTimeout()));
@@ -147,6 +152,7 @@ EpubSaver::~EpubSaver()
 {
     if (m_reply) { m_reply->abort(); m_reply->deleteLater(); }
     if (m_hidden) { m_hidden->triggerAction(QWebPage::Stop); m_hidden->deleteLater(); }
+    if (m_cbz) { m_cbz->close(); QFile::remove(m_cbz->fileName()); delete m_cbz; }   // unfinished
 }
 
 // ------------------------------------------------------------- series
@@ -197,6 +203,7 @@ void EpubSaver::loadNextChapter()
 {
     ++m_chapterIndex;
     if (m_chapterIndex >= m_links.size()) {
+        if (m_comic) { finishComic(); return; }
         if (m_chapters.isEmpty()) { fail("None of the chapters could be read"); return; }
         writeEpub();
         return;
@@ -217,15 +224,20 @@ void EpubSaver::chapterLoaded(bool ok)
     }
     m_images.clear();
     m_title.clear(); m_content.clear(); m_byline.clear();
+    // The first chapter decides: a chapter that is just images makes the series a comic.
+    if (!m_comicDecided) {
+        m_comicDecided = true;
+        if (!m_comic && isComicChapter(m_hidden)) m_comic = true;
+    }
     blockSignals(true);               // extract() reports failure via fail(); a bad chapter is skipped
-    bool got = extract(m_hidden);
+    bool got = m_comic ? extractComic(m_hidden, true) : extract(m_hidden);
     blockSignals(false);
     if (!got) {
         m_running = true;
         loadNextChapter();
         return;
     }
-    collectImages();
+    if (!m_comic) collectImages();
     m_current = -1;
     fetchNext();
 }
@@ -258,7 +270,7 @@ void EpubSaver::clearReaderDir()
 {
     QDir dir(readerDir());
     if (!dir.exists()) return;
-    foreach (const QString &name, dir.entryList(QStringList() << "*.epub", QDir::Files))
+    foreach (const QString &name, dir.entryList(QStringList() << "*.epub" << "*.cbz" << "*.part", QDir::Files))
         dir.remove(name);
 }
 
@@ -276,8 +288,15 @@ void EpubSaver::start()
 {
     if (m_running) return;
     m_running = true;
-    emit progress("Saving: extracting article...");
     m_series = false;
+    if (m_comic) {
+        emit progress("Saving comic: finding the pages...");
+        if (!extractComic(m_page, false)) return;
+        m_current = -1;
+        fetchNext();
+        return;
+    }
+    emit progress("Saving: extracting article...");
     if (!extract(m_page)) return;
     collectImages();
     m_current = -1;
@@ -377,7 +396,7 @@ void EpubSaver::fetchNext()
             QString head = s.mid(5, comma - 5);
             QByteArray body = s.mid(comma + 1).toLatin1();
             QByteArray raw = head.contains(";base64") ? QByteArray::fromBase64(body) : QByteArray::fromPercentEncoding(body);
-            storeImage(img, raw);
+            if (m_comic) addComicPage(raw); else storeImage(img, raw);
         }
         fetchNext();
         return;
@@ -392,6 +411,11 @@ void EpubSaver::fetchNext()
 
 void EpubSaver::imagesDone()
 {
+    if (m_comic) {
+        if (m_series && m_comicSplit) closeComicFile();   // this part is done: its own file
+        if (m_series) loadNextChapter(); else finishComic();
+        return;
+    }
     // Substitute image placeholders in the content just extracted.
     for (int i = 0; i < m_images.size(); ++i) {
         QString ph = QString("@@IMG%1@@").arg(i);
@@ -442,6 +466,7 @@ void EpubSaver::imageFinished()
     } else {
         QByteArray raw = r->readAll();
         if (raw.size() > kMaxImageBytes) qWarning() << "epub: image too large, skipped" << img.url;
+        else if (m_comic) addComicPage(raw);
         else storeImage(img, raw);
     }
     fetchNext();
@@ -673,7 +698,7 @@ bool EpubSaver::appendHandoff(const QString &kind, const QString &path)
 
 // ------------------------------------------------------------- SavedDialog
 
-SavedDialog::SavedDialog(const QString &epubPath, QWidget *parent)
+SavedDialog::SavedDialog(const QString &epubPath, QWidget *parent, int count)
     : QWidget(parent), m_path(epubPath)
 {
     setAttribute(Qt::WA_DeleteOnClose);
@@ -695,12 +720,12 @@ SavedDialog::SavedDialog(const QString &epubPath, QWidget *parent)
     QFont f; f.setPixelSize(38);
     QFont fs; fs.setPixelSize(30);
 
-    QLabel *head = new QLabel("Saved to the library");
+    QLabel *head = new QLabel(count > 1 ? QString("Saved %1 files to the library").arg(count) : QString("Saved to the library"));
     head->setFont(f);
     head->setAlignment(Qt::AlignCenter);
     v->addWidget(head);
 
-    QString shown = epubPath;
+    QString shown = count > 1 ? QFileInfo(epubPath).absolutePath() : epubPath;
     if (shown.startsWith("/mnt/onboard/")) shown = shown.mid(13);
     QLabel *name = new QLabel(shown);
     name->setFont(fs);
@@ -708,7 +733,8 @@ SavedDialog::SavedDialog(const QString &epubPath, QWidget *parent)
     name->setAlignment(Qt::AlignCenter);
     v->addWidget(name);
 
-    QLabel *q = new QLabel("Open it in KOReader now? The browser will close.");
+    QLabel *q = new QLabel(count > 1 ? QString("Open the first one in KOReader now? The browser will close.")
+                                     : QString("Open it in KOReader now? The browser will close."));
     q->setFont(fs);
     q->setWordWrap(true);
     q->setAlignment(Qt::AlignCenter);
@@ -772,7 +798,8 @@ void SavedDialog::laterClicked()
 
 // ------------------------------------------------------------- SaveChoiceDialog
 
-SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle, QWidget *parent, bool reading)
+SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle, QWidget *parent, bool reading,
+                                   bool comic)
     : QWidget(parent)
 {
     setAttribute(Qt::WA_DeleteOnClose);
@@ -800,15 +827,29 @@ SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle,
     QLabel *q = new QLabel(reading
         ? QString("This page links to %1 parts of a series%2. Read just this page, or all of them as one book "
                   "with a chapter list? Either way it is removed when you close it.").arg(chapterCount).arg(named)
+        : comic
+        ? QString("This page links to %1 parts of a series%2. Save each part as its own comic, all of them "
+                  "as one comic, or just this page?").arg(chapterCount).arg(named)
         : QString("This page links to %1 parts of a series%2. Save just this page, or all of them as one book "
                   "with a chapter list?").arg(chapterCount).arg(named));
     q->setFont(fs); q->setWordWrap(true); q->setAlignment(Qt::AlignCenter);
     v->addWidget(q);
 
-    QPushButton *series = new QPushButton(QString("Whole series (%1 parts)").arg(chapterCount));
+    QPushButton *split = 0;
+    if (comic && !reading) {
+        split = new QPushButton(QString("Each part separately (%1 comics)").arg(chapterCount));
+        KbIcons::setOn(split, "column.two");
+        connect(split, SIGNAL(clicked()), this, SIGNAL(seriesSplitChosen()));
+        connect(split, SIGNAL(clicked()), this, SLOT(close()));
+    }
+    QPushButton *series = new QPushButton(comic ? QString("All as one comic (%1 parts)").arg(chapterCount)
+                                                : QString("Whole series (%1 parts)").arg(chapterCount));
     QPushButton *page = new QPushButton("Just this page");
     QPushButton *cancel = new QPushButton("Cancel");
-    foreach (QPushButton *b, QList<QPushButton *>() << series << page << cancel) {
+    QList<QPushButton *> buttons;
+    if (split) buttons << split;
+    buttons << series << page << cancel;
+    foreach (QPushButton *b, buttons) {
         b->setFont(f);
         b->setMinimumSize(300, 100);
         b->setFocusPolicy(Qt::NoFocus);
@@ -841,3 +882,193 @@ void SaveChoiceDialog::place()
 
 void SaveChoiceDialog::resizeEvent(QResizeEvent *e) { QWidget::resizeEvent(e); place(); }
 void SaveChoiceDialog::mousePressEvent(QMouseEvent *e) { e->accept(); }
+
+// ------------------------------------------------------------- comics (CBZ)
+
+bool EpubSaver::looksLikeComic(QWebPage *page)
+{
+    QJsonObject o = QJsonDocument::fromJson(
+        page->mainFrame()->evaluateJavaScript(readResource(":/js/js/comic.js")).toString().toUtf8()).object();
+    int big = o.value("big").toInt(), bigH = o.value("bigHeight").toInt(), docH = o.value("docHeight").toInt();
+    int n = o.value("images").toArray().size(), text = o.value("text").toInt();
+    // Mostly big pictures on screen, or (pictures that load as you scroll have no size
+    // yet) many page-sized pictures and little text around them.
+    bool comic = !o.value("listing").toBool() &&
+                 ((big >= 3 && docH > 0 && bigH >= docH / 2) || (n >= 4 && text < 1500 + 150 * n));
+    qDebug() << "comic: page has" << big << "big images," << bigH << "of" << docH << "px," << n << "pictures,"
+             << text << "characters:" << (comic ? "comic" : "not a comic");
+    return comic;
+}
+
+bool EpubSaver::isComicChapter(QWebPage *page)
+{
+    QJsonObject o = QJsonDocument::fromJson(
+        page->mainFrame()->evaluateJavaScript(readResource(":/js/js/comic.js")).toString().toUtf8()).object();
+    int n = o.value("images").toArray().size(), text = o.value("text").toInt();
+    bool comic = !o.value("listing").toBool() && n >= 5 && text < 2500 + 100 * n;
+    qDebug() << "comic: chapter has" << n << "pictures and" << text << "characters:" << (comic ? "comic" : "not a comic");
+    return comic;
+}
+
+bool EpubSaver::extractComic(QWebPage *page, bool hiddenPage)
+{
+    QWebFrame *frame = page->mainFrame();
+    m_pageUrl = frame->url();
+    QJsonObject o = QJsonDocument::fromJson(frame->evaluateJavaScript(readResource(":/js/js/comic.js")).toString().toUtf8()).object();
+    m_title = o.value("title").toString().simplified();
+    if (m_title.isEmpty()) m_title = frame->title().simplified();
+    if (m_title.isEmpty()) m_title = m_pageUrl.host();
+    m_images.clear();
+    QJsonArray arr = o.value("images").toArray();
+    for (int i = 0; i < arr.size() && m_images.size() < kMaxComicImages; ++i) {
+        QUrl u(arr.at(i).toString());
+        if (!u.isValid() || !(u.scheme() == "http" || u.scheme() == "https" || u.scheme() == "data")) continue;
+        Image img;
+        img.url = u;
+        m_images << img;
+    }
+    qDebug() << "comic:" << m_pageUrl << m_images.size() << "images" << (hiddenPage ? "(chapter)" : "");
+    if (m_images.isEmpty()) { fail("No pictures found on this page"); return false; }
+    return true;
+}
+
+// One downloaded picture: skip page furniture, turn it to grayscale, fit the width to the
+// screen, cut very tall strips (webtoons) into screen-sized pages, and stream it into the CBZ.
+void EpubSaver::addComicPage(const QByteArray &raw)
+{
+    if (raw.isEmpty()) return;
+    QBuffer buf;
+    buf.setData(raw);
+    buf.open(QIODevice::ReadOnly);
+    QImageReader reader(&buf);
+    QSize size = reader.size();
+    if (size.isValid() && (size.width() < kComicMinSide || size.height() < kComicMinSide)) return;
+    if (size.isValid() && size.width() > kMaxImageWidth)
+        reader.setScaledSize(QSize(kMaxImageWidth, qMax(1, size.height() * kMaxImageWidth / size.width())));
+    QImage image;
+    if (!reader.read(&image) || image.isNull()) { qWarning() << "comic: picture could not be decoded"; return; }
+    if (image.width() < kComicMinSide || image.height() < kComicMinSide) return;
+    if (image.width() > kMaxImageWidth) image = image.scaledToWidth(kMaxImageWidth, Qt::SmoothTransformation);
+    // Grayscale (8-bit, gray palette): a third of the size of colour on an e-ink screen.
+    QImage rgb = image.convertToFormat(QImage::Format_RGB32);
+    QImage gray(rgb.size(), QImage::Format_Indexed8);
+    QVector<QRgb> table(256);
+    for (int i = 0; i < 256; ++i) table[i] = qRgb(i, i, i);
+    gray.setColorTable(table);
+    for (int y = 0; y < rgb.height(); ++y) {
+        const QRgb *in = reinterpret_cast<const QRgb *>(rgb.constScanLine(y));
+        uchar *out = gray.scanLine(y);
+        for (int x = 0; x < rgb.width(); ++x) out[x] = qGray(in[x]);
+    }
+    rgb = QImage();
+    // A long vertical strip: pages the shape of the screen (1072 x 1448).
+    int w = gray.width(), h = gray.height();
+    int pageH = h > w * 2 ? w * 1448 / 1072 : h;
+    for (int y0 = 0; y0 < h; y0 += pageH) {
+        int ph = qMin(pageH, h - y0);
+        if (ph < 120 && y0 > 0) break;            // a sliver at the end
+        QImage piece = (ph == h) ? gray : gray.copy(0, y0, w, ph);
+        QByteArray jpeg;
+        QBuffer ob(&jpeg);
+        ob.open(QIODevice::WriteOnly);
+        if (!piece.save(&ob, "JPEG", 80)) { qWarning() << "comic: JPEG encode failed"; return; }
+        if (!writeComicImage(jpeg)) return;
+    }
+}
+
+bool EpubSaver::writeComicImage(const QByteArray &jpeg)
+{
+    if (m_cbzEntries.size() >= kMaxComicPages) return false;
+    if (!m_cbz) {
+        QDir dir(m_outDir);
+        if (!dir.exists() && !dir.mkpath(".")) { qWarning() << "comic: cannot create" << m_outDir; return false; }
+        QString t = m_series && !m_seriesTitle.isEmpty() ? m_seriesTitle : m_title;
+        if (m_series && m_comicSplit) {   // one file per part, named after its link or page
+            t = m_links[m_chapterIndex].title;
+            if (t.isEmpty() || t.size() < 3) t = m_title;
+        }
+        QString base = safeFileName(t);
+        m_cbzPath = dir.filePath(base + ".cbz");
+        for (int n = 2; QFile::exists(m_cbzPath) && n < 100; ++n) m_cbzPath = dir.filePath(base + QString(" (%1).cbz").arg(n));
+        m_cbz = new QFile(m_cbzPath + ".part");
+        if (!m_cbz->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            qWarning() << "comic: cannot write" << m_cbz->fileName() << m_cbz->errorString();
+            delete m_cbz; m_cbz = 0;
+            return false;
+        }
+        m_cbzEntries.clear();
+    }
+    CbzEntry e;
+    e.name = QString("%1.jpg").arg(m_cbzEntries.size() + 1, 4, 10, QChar('0')).toLatin1();
+    e.crc = crc32(jpeg);
+    e.size = jpeg.size();
+    e.offset = m_cbz->pos();
+    QByteArray head;
+    const quint16 dosTime = 0, dosDate = (1 << 5) | 1;
+    put32(head, 0x04034b50); put16(head, 20); put16(head, 0); put16(head, 0);   // stored
+    put16(head, dosTime); put16(head, dosDate);
+    put32(head, e.crc); put32(head, e.size); put32(head, e.size);
+    put16(head, e.name.size()); put16(head, 0);
+    head.append(e.name);
+    if (m_cbz->write(head) != head.size() || m_cbz->write(jpeg) != jpeg.size()) {
+        qWarning() << "comic: write failed (disk full?)";
+        return false;
+    }
+    m_cbzEntries << e;
+    return true;
+}
+
+// Ends the CBZ being written (central directory, rename from .part). false if there was
+// nothing to write or the write failed; the file is then removed.
+bool EpubSaver::closeComicFile()
+{
+    if (!m_cbz) return false;
+    if (m_cbzEntries.isEmpty()) {
+        m_cbz->close(); QFile::remove(m_cbz->fileName()); delete m_cbz; m_cbz = 0;
+        return false;
+    }
+    QByteArray cd;
+    const quint16 dosTime = 0, dosDate = (1 << 5) | 1;
+    quint32 cdStart = m_cbz->pos();
+    for (int i = 0; i < m_cbzEntries.size(); ++i) {
+        const CbzEntry &e = m_cbzEntries[i];
+        put32(cd, 0x02014b50); put16(cd, 20); put16(cd, 20); put16(cd, 0); put16(cd, 0);
+        put16(cd, dosTime); put16(cd, dosDate);
+        put32(cd, e.crc); put32(cd, e.size); put32(cd, e.size);
+        put16(cd, e.name.size()); put16(cd, 0); put16(cd, 0); put16(cd, 0); put16(cd, 0);
+        put32(cd, 0); put32(cd, e.offset);
+        cd.append(e.name);
+    }
+    quint32 cdSize = cd.size();
+    put32(cd, 0x06054b50); put16(cd, 0); put16(cd, 0);
+    put16(cd, m_cbzEntries.size()); put16(cd, m_cbzEntries.size());
+    put32(cd, cdSize); put32(cd, cdStart); put16(cd, 0);
+    bool ok = m_cbz->write(cd) == cd.size();
+    QString part = m_cbz->fileName();
+    m_cbz->close();
+    delete m_cbz; m_cbz = 0;
+    int pages = m_cbzEntries.size();
+    m_cbzEntries.clear();
+    if (!ok || !QFile::rename(part, m_cbzPath)) {
+        QFile::remove(part);
+        qWarning() << "comic: write failed" << m_cbzPath;
+        return false;
+    }
+    if (m_library) appendHandoff("saved", m_cbzPath);
+    qDebug() << "comic: wrote" << m_cbzPath << pages << "pages";
+    m_savedFiles << m_cbzPath;
+    return true;
+}
+
+void EpubSaver::finishComic()
+{
+    emit progress("Saving comic: finishing...");
+    closeComicFile();
+    if (m_savedFiles.isEmpty()) {
+        fail("No comic pages found (the pictures were too small or could not be loaded)");
+        return;
+    }
+    ::sync();
+    m_running = false;
+    emit finished(true, m_savedFiles.first());
+}
