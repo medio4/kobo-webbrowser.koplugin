@@ -17,6 +17,8 @@ class PhoneShare : public QObject {
 public:
     explicit PhoneShare(QObject *parent = 0);
     bool listen(quint16 port);
+    void stop();                        // close the server (and any open connections)
+    bool isListening() const { return m_server.isListening(); }
     QString address() const;            // "http://192.168.1.5:8080/" or empty when no LAN address
     quint16 port() const { return m_port; }
     void setCurrentPage(const QString &title, const QString &url) { m_pageTitle = title; m_pageUrl = url; }
@@ -50,12 +52,17 @@ class PhoneDialog : public QWidget {
     Q_OBJECT
 public:
     PhoneDialog(const QString &url, QWidget *parent);
+    // Menu > Share: this page's address as a QR code, to open it on a phone.
+    static PhoneDialog *share(const QString &title, const QString &pageUrl, QWidget *parent);
 signals:
     void dismissed();
+    void minimized();    // close the window, keep the phone link running
+    void stopped();      // close the window and stop the phone link
 protected:
     void resizeEvent(QResizeEvent *e);
     void mousePressEvent(QMouseEvent *e);
 private:
+    PhoneDialog(QWidget *parent);   // empty box, filled by share()
     void place();
     QWidget *m_box;
 };

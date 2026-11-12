@@ -22,6 +22,15 @@ bool PhoneShare::listen(quint16 port)
     return true;
 }
 
+void PhoneShare::stop()
+{
+    m_server.close();
+    foreach (QTcpSocket *s, m_buf.keys()) { s->abort(); s->deleteLater(); }
+    m_buf.clear();
+    m_port = 0;
+    qDebug() << "phone: stopped";
+}
+
 QString PhoneShare::address() const
 {
     if (!m_port) return QString();
@@ -142,15 +151,14 @@ QByteArray PhoneShare::page(const QString &notice) const
          "<input type=\"text\" inputmode=\"url\" name=\"url\" placeholder=\"Paste a link or type an address\" autofocus autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\">"
          "<button type=\"submit\">Open on the Kobo</button></form>";
     if (!m_pageUrl.isEmpty())
-        h += "<div class=\"c\">Kobo is showing: <a href=\"" + esc(m_pageUrl) + "\">" + esc(m_pageTitle.isEmpty() ? m_pageUrl : m_pageTitle) + "</a></div>";
+        h += "<div class=\"c\">On the Kobo: <a href=\"" + esc(m_pageUrl) + "\">" + esc(m_pageTitle.isEmpty() ? m_pageUrl : m_pageTitle) + "</a></div>";
     if (!m_recent.isEmpty()) {
-        h += "<div class=\"c\">Sent recently:<ul>";
+        h += "<div class=\"c\">Recent:<ul>";
         foreach (const QString &r, m_recent)
             h += "<li><a href=\"/open?url=" + QUrl::toPercentEncoding(r) + "\">" + esc(r) + "</a></li>";
         h += "</ul></div>";
     }
-    h += "<div class=\"c\">Tip: bookmark this page on your phone. Sharing a link from another app to this page "
-         "works by pasting it here.</div></body></html>";
+    h += "<div class=\"c\">Tip: bookmark this page.</div></body></html>";
     return h;
 }
 
@@ -159,6 +167,7 @@ QByteArray PhoneShare::page(const QString &notice) const
 #include "third_party/qrcodegen.h"
 #include <QtGui/QImage>
 #include <QtGui/QPixmap>
+#include <QtWidgets/QHBoxLayout>
 #include <QtGui/QResizeEvent>
 #include <QtGui/QMouseEvent>
 #include <QtWidgets/QFrame>
@@ -221,19 +230,32 @@ PhoneDialog::PhoneDialog(const QString &url, QWidget *parent) : QWidget(parent)
     v->addWidget(pic);
 
     QLabel *txt = new QLabel(url.isEmpty()
-        ? QString("Connect the Kobo to Wi-Fi, then come back here.")
-        : "Scan with the phone's camera, or type " + url + " into its browser. Paste a link there and it opens here. "
-          "Works while this browser is open.");
-    txt->setFont(fs); txt->setWordWrap(true); txt->setAlignment(Qt::AlignCenter);
+        ? QString("No Wi-Fi.  Connect, then open this again.")
+        : "1.  Scan with the phone camera\n"
+          "2.  Paste a link, tap Open on the Kobo\n\n"
+          "Address:  " + url + "\n"
+          "Phone and Kobo on the same Wi-Fi");
+    txt->setFont(fs); txt->setWordWrap(true); txt->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     v->addWidget(txt);
 
-    QPushButton *close = new QPushButton("Close");
-    close->setFont(f); close->setMinimumSize(300, 100); close->setFocusPolicy(Qt::NoFocus);
-    close->setProperty("kb_fast", true);
-    KbIcons::setOn(close, "close");
-    v->addWidget(close);
-    connect(close, SIGNAL(clicked()), this, SIGNAL(dismissed()));
-    connect(close, SIGNAL(clicked()), this, SLOT(close()));
+    QHBoxLayout *row = new QHBoxLayout;
+    row->setSpacing(20);
+    QPushButton *mini = new QPushButton("Minimize");
+    QPushButton *stop = new QPushButton("Stop");
+    foreach (QPushButton *b, QList<QPushButton *>() << mini << stop) {
+        b->setFont(f); b->setMinimumSize(300, 100); b->setFocusPolicy(Qt::NoFocus);
+        b->setProperty("kb_fast", true);
+        row->addWidget(b);
+    }
+    KbIcons::setOn(mini, "zoom.page");
+    KbIcons::setOn(stop, "close");
+    v->addLayout(row);
+    connect(mini, SIGNAL(clicked()), this, SIGNAL(minimized()));
+    connect(stop, SIGNAL(clicked()), this, SIGNAL(stopped()));
+    connect(mini, SIGNAL(clicked()), this, SIGNAL(dismissed()));
+    connect(stop, SIGNAL(clicked()), this, SIGNAL(dismissed()));
+    connect(mini, SIGNAL(clicked()), this, SLOT(close()));
+    connect(stop, SIGNAL(clicked()), this, SLOT(close()));
 
     if (parent) resize(parent->size());
     place();
@@ -251,3 +273,51 @@ void PhoneDialog::place()
 
 void PhoneDialog::resizeEvent(QResizeEvent *e) { QWidget::resizeEvent(e); place(); }
 void PhoneDialog::mousePressEvent(QMouseEvent *e) { e->accept(); }
+
+PhoneDialog::PhoneDialog(QWidget *parent) : QWidget(parent), m_box(0) {}
+
+PhoneDialog *PhoneDialog::share(const QString &title, const QString &pageUrl, QWidget *parent)
+{
+    PhoneDialog *d = new PhoneDialog(parent);
+    d->setAttribute(Qt::WA_DeleteOnClose);
+    d->setProperty("kb_overlay", true);
+    d->setAutoFillBackground(false);
+    QFrame *box = new QFrame(d);
+    d->m_box = box;
+    box->setFrameStyle(QFrame::Box | QFrame::Plain);
+    box->setLineWidth(3);
+    box->setAutoFillBackground(true);
+    QPalette pal = box->palette();
+    pal.setColor(QPalette::Window, Qt::white);
+    pal.setColor(QPalette::WindowText, Qt::black);
+    box->setPalette(pal);
+    QVBoxLayout *v = new QVBoxLayout(box);
+    v->setContentsMargins(30, 30, 30, 30);
+    v->setSpacing(20);
+    QFont f; f.setPixelSize(38);
+    QFont fs; fs.setPixelSize(28);
+    QLabel *head = new QLabel(title.isEmpty() ? QString("Share this page") : title);
+    head->setFont(f); head->setAlignment(Qt::AlignCenter); head->setWordWrap(true);
+    v->addWidget(head);
+    QLabel *pic = new QLabel;
+    pic->setAlignment(Qt::AlignCenter);
+    QImage img = pageUrl.isEmpty() ? QImage() : qrImage(pageUrl, 620);
+    if (!img.isNull()) pic->setPixmap(QPixmap::fromImage(img));
+    else { pic->setText("This address is too long for a QR code"); pic->setFont(fs); }
+    v->addWidget(pic);
+    QLabel *txt = new QLabel("Scan with the phone camera to open this page.\n\n" + pageUrl);
+    txt->setFont(fs); txt->setWordWrap(true); txt->setAlignment(Qt::AlignCenter);
+    v->addWidget(txt);
+    QPushButton *close = new QPushButton("Close");
+    close->setFont(f); close->setMinimumSize(300, 100); close->setFocusPolicy(Qt::NoFocus);
+    close->setProperty("kb_fast", true);
+    KbIcons::setOn(close, "close");
+    v->addWidget(close);
+    connect(close, SIGNAL(clicked()), d, SIGNAL(dismissed()));
+    connect(close, SIGNAL(clicked()), d, SLOT(close()));
+    if (parent) d->resize(parent->size());
+    d->place();
+    d->raise();
+    d->show();
+    return d;
+}
