@@ -43,8 +43,10 @@ older NXP and Allwinner models are untested.
 
 - A one-row toolbar (Back, Fwd, address, Menu). Everything else is in the **Menu**,
   grouped into Go to, This page and Settings.
-- Swipe up and down to turn pages, pinch to zoom, and **Text bigger / smaller** for a
-  size that is remembered. Text never shrinks below a readable minimum.
+- Flick up or down to turn a full screen (a small strip of overlap keeps your place; left
+  and right flicks work too), or touch, wait a moment and drag to scroll just a little.
+  Hold and drag sideways on a wide table to slide it. Pinch to zoom, and use **Text bigger
+  / smaller** for a size that is remembered. Text never shrinks below a readable minimum.
 - **Contents** jumps to any heading on a long page.
 - A built-in keyboard that appears when you tap a text box.
 - Screen updates are kept small and clean: only what changed is refreshed, and menus
@@ -120,7 +122,7 @@ the browser needs to be open.
 
 | To | Do this |
 | --- | --- |
-| Turn a page | Flick up or down for a full screen (a small strip of overlap keeps your place); left/right flicks in the middle work too. To scroll just a little, touch, wait a moment, then drag. Hold and drag sideways on a wide table to slide it |
+| Turn a page | Swipe up or down (hold and drag to scroll freely) |
 | Go back / forward | **Back** / **Fwd**, or swipe in from the left / right edge |
 | Type an address or search | Tap the address, type, press **Go** on the keyboard |
 | Zoom | Pinch; or **Menu → Text bigger / smaller** for the text only |
