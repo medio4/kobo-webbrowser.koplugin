@@ -35,7 +35,7 @@ const char *kCollectJs =
     "  if(skip) continue;"
     "  var t=(h.innerText||h.textContent||'').replace(/\\s+/g,' ').replace(/\\[\\s*edit\\s*\\]/gi,'').trim();"
     "  if(!t) continue;"
-    "  out.push({l:parseInt(h.tagName.charAt(1)),t:t.substr(0,120),y:Math.round(r.top+window.pageYOffset),x:Math.round(r.left+window.pageXOffset)});"
+    "  out.push({i:i,l:parseInt(h.tagName.charAt(1)),t:t.substr(0,120),y:Math.round(r.top+window.pageYOffset),x:Math.round(r.left+window.pageXOffset)});"
     " }"
     " return JSON.stringify(out);"
     "})()";
@@ -122,6 +122,7 @@ void TocOverlay::collect()
         it.text = o.value("t").toString();
         it.y = o.value("y").toInt();
         it.x = o.value("x").toInt();
+        it.index = o.value("i").toInt(-1);
         m_items << it;
     }
     // Drop the single page-level h1 when everything else is deeper (it is just the title).
@@ -184,12 +185,20 @@ void TocOverlay::entryClicked()
     if (i < 0 || i >= m_items.size()) return;
     QWebFrame *f = m_view->page() ? m_view->page()->mainFrame() : 0;
     if (f) {
-        // Positions were measured in page pixels at the current zoom; QWebFrame scrolls in the same units.
-        QSize content = f->contentsSize();
-        int y = qBound(0, m_items[i].y - 8, qMax(0, content.height() - m_view->height()));
-        int x = f->scrollPosition().x();
+        // Measure the heading again now and scroll from inside the page: the page is shown
+        // zoomed (CSS pixels != frame pixels), and images may have moved it since the list
+        // was made. window.scrollTo works in the same CSS pixels the heading is measured in.
         emit beforeJump();
-        f->setScrollPosition(QPoint(x, y));
+        QVariant ok = f->evaluateJavaScript(QString::fromLatin1(
+            "(function(){var h=document.querySelectorAll('h1,h2,h3,h4')[%1]; if(!h) return false;"
+            " var y=h.getBoundingClientRect().top+window.pageYOffset-8;"
+            " window.scrollTo(window.pageXOffset, Math.max(0,y)); return true;})()").arg(m_items[i].index));
+        if (!ok.toBool()) {
+            qreal z = m_view->zoomFactor();
+            QSize content = f->contentsSize();
+            int y = qBound(0, int((m_items[i].y - 8) * z), qMax(0, content.height() - m_view->height()));
+            f->setScrollPosition(QPoint(f->scrollPosition().x(), y));
+        }
     }
     closeClicked();
 }

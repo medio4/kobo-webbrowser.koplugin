@@ -36,7 +36,7 @@ protected:
     void mousePressEvent(QMouseEvent *e);
 
 private:
-    struct Item { int level; QString text; int y; int x; };
+    struct Item { int level; QString text; int y; int x; int index; };
     void collect();
     void showPage(int page);
     void place();
