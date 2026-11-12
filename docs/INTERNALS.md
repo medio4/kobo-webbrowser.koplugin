@@ -110,3 +110,17 @@ settings work normally over the page. Once nothing is left open above the page, 
 instead (the file-browser/home icon, a book opened from History, "Close web browser" in
 Tools > Web browser), the reply "quit" makes the browser exit without drawing, and KOReader
 stays on its new screen. KOReader exiting or restarting from the menu kills the browser.
+
+Screen rotation (rotation.cpp/h). The Clara BW has no rotation sensor, so Menu > Settings has
+"Rotate left" and "Rotate right" (each turns the screen 90 degrees). It is all done in software
+and only offered in grab mode (KB_EINK=grab, the default), where eink.cpp copies every pixel to
+/dev/fb0 itself:
+- The window is laid out at the turned size (1448x1072 in landscape); Qt paints as usual.
+- eink.cpp turns each painted rect (QImage::transformed by 90/180/270, exact pixels) and its
+  rect to the panel's portrait orientation before writing it; refreshes, the DU cleanup and
+  the audit work in panel coordinates.
+- touchinput.cpp turns each touch point back into window coordinates.
+- Saved in bin/rotation.txt (0/90/180/270, clockwise) and applied at the next start;
+  KB_ROTATE=N overrides it. If the platform refuses the new window size, the browser goes
+  back to the previous angle and says so on the status line ("rotate:" log lines).
+- On a rotated screen text entry always uses the built-in keyboard (KOReader's is portrait).

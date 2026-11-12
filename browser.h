@@ -159,6 +159,9 @@ private slots:
     void imageDownloaded();
     void updateSysInfo();
     void fullRefresh();
+    void rotateLeft();             // Menu > Rotate left / right (rotation.h)
+    void rotateRight();
+    void rotationSettled();
     void pinchZoom(double ratio);   // two-finger pinch: ratio > 1 zooms in
     void openSavedEpub(const QString &path);
     void showToc();
@@ -174,6 +177,8 @@ protected:
     void resizeEvent(QResizeEvent *e);
 private:
     void placeKeyboard();
+    void applyRotation(int angle, bool save);
+    int m_rotPrev;
     bool nativeTextEntry();      // ask KOReader for text; false = use the built-in keyboard
     void showBuiltinKeyboard();
     bool saveImageIfImagePage();   // Save on a page that is just an image: keep the image file

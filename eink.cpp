@@ -5,6 +5,7 @@
 #include <QtGui/QScreen>
 #include <QtGui/QPixmap>
 #include <QtGui/QBackingStore>
+#include "rotation.h"
 #include <QtGui/QPaintDevice>
 #include <QtWidgets/QApplication>
 #include <QtCore/QDebug>
@@ -122,6 +123,8 @@ KoboEink::KoboEink(QObject *parent)
     }
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(flush()));
 }
+
+bool KoboEink::canRotate() const { return m_grab && m_fb && m_fb->isOpen(); }
 
 void KoboEink::markDirty(const QRect &r, quint64 flags)
 {
@@ -249,6 +252,10 @@ void KoboEink::flush()
                 static int dbg = 0;
                 if (src && !src->isNull()) {
                     QImage img = src->copy(r);
+                    // Rotated screen: Qt painted the window at its turned (logical) size;
+                    // turn the piece and its rect to the panel's portrait orientation.
+                    // From here on r is in panel coordinates (shrink, refresh, cleanup).
+                    if (KbRotation::angle()) { img = KbRotation::toPhysical(img); r = KbRotation::toPhysical(r); }
                     if (dbg < 3) {
                         ++dbg;
                         qDebug() << "grab:" << r << "backingstore image fmt" << src->format() << src->size()
@@ -392,6 +399,15 @@ void KoboEink::cleanRect(const QRect &rIn)
     QWindowList wl = QGuiApplication::topLevelWindows();
     if (!wl.isEmpty()) r &= QRect(QPoint(0, 0), wl.first()->geometry().size());
     if (r.isEmpty()) return;
+    cleanPanelRect(m_grab ? KbRotation::toPhysical(r) : r);
+}
+
+// Same, for a rect already in panel coordinates (m_fastDirty is collected after rotation).
+void KoboEink::cleanPanelRect(const QRect &rIn)
+{
+    QRect r = rIn;
+    if (m_fb && m_fb->isOpen()) r &= QRect(0, 0, m_fb->width(), m_fb->height());
+    if (r.isEmpty() || !m_useFbink || m_suspended) return;
     if (m_logRefresh) qDebug() << "eink: clean" << r << m_wfClean;
     if (m_hw && m_hw->refresh(r, hwWaveform(m_wfClean), false)) return;
     QStringList args;
@@ -407,7 +423,7 @@ void KoboEink::settleFast()
     foreach (const QRect &r, m_fastDirty.rects()) parts.append(qMakePair(r, (quint64)0));
     m_fastDirty = QRegion();
     QList<QPair<QRect, quint64> > merged = mergeRects(parts);
-    for (int i = 0; i < merged.size(); ++i) cleanRect(merged[i].first);
+    for (int i = 0; i < merged.size(); ++i) cleanPanelRect(merged[i].first);
 }
 
 // Groups rects by flag; rects of one flag are unioned only when they overlap or come
@@ -583,6 +599,14 @@ void KoboEink::audit()
     }
     if (!src || src->isNull()) return;
     int fy = -1, ly = -1;
+    if (KbRotation::angle()) {   // compare in panel orientation (logged rows are panel rows)
+        QImage turned = KbRotation::toPhysical(*src);
+        bool d = m_fb->write(turned, QPoint(0, 0), &fy, &ly, true);
+        QRect r = d ? QRect(0, fy, turned.width(), ly - fy + 1) : QRect();
+        if (d && r == last) qWarning() << "audit: STALE panel rows" << fy << "-" << ly << "(rotated)";
+        last = r;
+        return;
+    }
     bool differs = m_fb->write(*src, QPoint(0, 0), &fy, &ly, true);
     QRect r = differs ? QRect(0, fy, src->width(), ly - fy + 1) : QRect();
     if (differs && r == last) {
