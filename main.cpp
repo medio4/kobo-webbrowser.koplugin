@@ -23,6 +23,7 @@
 #include "power.h"
 #include "textentry.h"
 #include "rotation.h"
+#include <QtGui/QBackingStore>
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QSizePolicy>
@@ -420,6 +421,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_phone(0), m_restoreY(-1), m_relaunch(false), m_offline(false), m_offlineShown(false), m_onlineTimer(0)
 {
     m_rotPrev = 0;
+    m_rotTarget = 0;
     setWindowTitle("Browser");
     // Home page: one chosen in the browser (Menu > Set as home) wins over the launcher's.
     // m_home is the page this run starts on; a URL given on the command line (the page
@@ -970,8 +972,11 @@ void Browser::fullRefresh()    { if (m_eink) m_eink->refreshAllFull(); }
 
 // ---- Screen rotation (rotation.h). The window is laid out at the turned size; eink.cpp
 // turns the pixels and touchinput.cpp the taps. Saved for the next start.
-void Browser::rotateLeft()  { applyRotation(KbRotation::angle() + 270, true); }
-void Browser::rotateRight() { applyRotation(KbRotation::angle() + 90, true); }
+// Tapped in the Menu: rotate once the Menu's closing refresh is over (a pop-up's close is
+// drawn as one batched update, which would otherwise swallow the turned window's repaint).
+void Browser::rotateLeft()  { m_rotTarget = KbRotation::angle() + 270; QTimer::singleShot(500, this, SLOT(rotateNow())); }
+void Browser::rotateRight() { m_rotTarget = KbRotation::angle() + 90;  QTimer::singleShot(500, this, SLOT(rotateNow())); }
+void Browser::rotateNow()   { applyRotation(m_rotTarget, true); }
 
 void Browser::applyRotation(int angle, bool save)
 {
@@ -993,6 +998,14 @@ void Browser::rotationSettled()
 {
     QSize want = KbRotation::logicalSize();
     QSize got = windowHandle() ? windowHandle()->geometry().size() : size();
+    {
+        QBackingStore *bs = backingStore();
+        QSize bss = bs && bs->paintDevice() ? QSize(bs->paintDevice()->width(), bs->paintDevice()->height()) : QSize();
+        qDebug() << "rotate: settled; widget" << size() << "central" << (centralWidget() ? centralWidget()->size() : QSize())
+                 << "handle" << got << "backing store" << bss << "want" << want;
+    }
+    // Make sure every widget paints at the new size (the platform may not repaint on resize).
+    repaint();
     if (got != want) {
         // The platform kept the old size: go back, or the picture and taps won't line up.
         qWarning() << "rotate: window stayed" << got << "wanted" << want << "- undoing";

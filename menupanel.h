@@ -34,7 +34,7 @@ private:
     void place();
     QWidget *m_box;
     QGridLayout *m_grid;
-    int m_top, m_row, m_col;
+    int m_top, m_row, m_col, m_cols;
     struct Target { QObject *receiver; QByteArray slot; };
     QList<QPair<QAbstractButton *, Target> > m_targets;
 };

@@ -140,6 +140,7 @@ private slots:
     void showPhoneDialog();
     void showMenu();
     void goHome();
+    void rotateNow();
     void saveSessionHistory();
     bool restoreSessionHistory(const QString &startUrl);
     void showHistory();
@@ -197,6 +198,7 @@ private:
     QPoint m_tapPress, m_tapRelease;   // last press/release in the page (view coordinates)
     EpubSaver *m_saver;
     PhoneShare *m_phone;
+    int m_rotTarget;
     QRect m_menuRect;
     QList<EpubSaver::ChapterLink> m_seriesLinks;
     QString m_seriesTitle;

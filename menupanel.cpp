@@ -9,8 +9,10 @@
 #include <QtWidgets/QLabel>
 
 MenuPanel::MenuPanel(QWidget *parent, int top)
-    : QWidget(parent), m_top(top), m_row(0), m_col(0)
+    : QWidget(parent), m_top(top), m_row(0), m_col(0), m_cols(2)
 {
+    // A landscape screen is too short for two columns of buttons: use four.
+    if (parent && parent->width() > parent->height()) m_cols = 4;
     setAttribute(Qt::WA_DeleteOnClose);
     setProperty("kb_overlay", true);   // e-ink: flash its area clean when it closes
     setAutoFillBackground(false);
@@ -38,8 +40,8 @@ void MenuPanel::addAction(const QString &label, QObject *receiver, const char *s
     b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     b->setFixedHeight(88);
     if (wide && m_col != 0) { m_row++; m_col = 0; }
-    m_grid->addWidget(b, m_row, m_col, 1, wide ? 2 : 1);
-    if (wide || m_col == 1) { m_row++; m_col = 0; } else m_col = 1;
+    m_grid->addWidget(b, m_row, m_col, 1, wide ? m_cols : 1);
+    if (wide || m_col == m_cols - 1) { m_row++; m_col = 0; } else m_col++;
     Target t; t.receiver = receiver; t.slot = slot;
     // SLOT() strings carry a leading code digit; strip it and the "()" for invokeMethod.
     QByteArray name = t.slot;
@@ -58,7 +60,7 @@ void MenuPanel::addSection(const QString &title)
     QFont f; f.setPixelSize(28); f.setBold(true);
     l->setFont(f);
     l->setContentsMargins(6, m_row ? 10 : 0, 0, 0);
-    m_grid->addWidget(l, m_row, 0, 1, 2);
+    m_grid->addWidget(l, m_row, 0, 1, m_cols);
     m_row++;
 }
 
@@ -94,7 +96,7 @@ void MenuPanel::picked()
 
 void MenuPanel::place()
 {
-    int w = qMin(width() - 24, 820);
+    int w = qMin(width() - 24, m_cols > 2 ? 1400 : 820);
     m_box->setFixedWidth(w);
     m_box->adjustSize();
     // Hang it from the right end of the toolbar, under the Menu button.

@@ -255,7 +255,12 @@ void KoboEink::flush()
                     // Rotated screen: Qt painted the window at its turned (logical) size;
                     // turn the piece and its rect to the panel's portrait orientation.
                     // From here on r is in panel coordinates (shrink, refresh, cleanup).
-                    if (KbRotation::angle()) { img = KbRotation::toPhysical(img); r = KbRotation::toPhysical(r); }
+                    if (KbRotation::angle()) {
+                        r &= QRect(QPoint(0, 0), src->size());   // never past the turned window
+                        if (r.isEmpty()) continue;
+                        img = src->copy(r);
+                        img = KbRotation::toPhysical(img); r = KbRotation::toPhysical(r);
+                    }
                     if (dbg < 3) {
                         ++dbg;
                         qDebug() << "grab:" << r << "backingstore image fmt" << src->format() << src->size()
