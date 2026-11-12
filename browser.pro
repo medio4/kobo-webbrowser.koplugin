@@ -9,7 +9,8 @@ INCLUDEPATH += $$PWD/../downloads/qtwebkit-headers/qtwebkit-opensource-src-5.2.1
 # Link against the firmware's own WebKit libraries (symlinked in ./lib with their Qt5 names)
 LIBS += -L$$PWD/lib -lQt5WebKitWidgets -lQt5WebKit -ldl
 QMAKE_RPATHDIR += /usr/local/Kobo /usr/local/Qt-5.2.1-arm/lib
-SOURCES += main.cpp touchinput.cpp eink.cpp fbwriter.cpp webpage.cpp pagescroll.cpp hwtcon.cpp epub.cpp toc.cpp memtune.cpp power.cpp textentry.cpp phoneshare.cpp menupanel.cpp bookmarks.cpp scrollmark.cpp icons.cpp adblock.cpp csscompat.cpp rotation.cpp third_party/qrcodegen.c
-HEADERS += browser.h crashhandler.h touchinput.h eink.h fbwriter.h webpage.h pagescroll.h hwtcon.h epub.h toc.h memtune.h power.h textentry.h phoneshare.h menupanel.h bookmarks.h scrollmark.h icons.h adblock.h csscompat.h rotation.h
-RESOURCES += epub.qrc
+SOURCES += src/main.cpp src/touchinput.cpp src/eink.cpp src/fbwriter.cpp src/webpage.cpp src/pagescroll.cpp src/hwtcon.cpp src/epub.cpp src/toc.cpp src/memtune.cpp src/power.cpp src/textentry.cpp src/phoneshare.cpp src/menupanel.cpp src/bookmarks.cpp src/scrollmark.cpp src/icons.cpp src/adblock.cpp src/csscompat.cpp src/rotation.cpp src/third_party/qrcodegen.c
+HEADERS += src/browser.h src/crashhandler.h src/touchinput.h src/eink.h src/fbwriter.h src/webpage.h src/pagescroll.h src/hwtcon.h src/epub.h src/toc.h src/memtune.h src/power.h src/textentry.h src/phoneshare.h src/menupanel.h src/bookmarks.h src/scrollmark.h src/icons.h src/adblock.h src/csscompat.h src/rotation.h
+INCLUDEPATH += $$PWD/src
+RESOURCES += src/epub.qrc
 QMAKE_CFLAGS += -std=gnu99

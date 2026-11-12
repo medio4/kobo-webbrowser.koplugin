@@ -1,6 +1,6 @@
 // Desktop tests for csscompat.cpp (no WebKit needed): ./run.sh [file.css ...]
 // Each extra file is rewritten 20 times to time it; the output goes to <file>.out.css.
-#include "../../csscompat.h"
+#include "../../src/csscompat.h"
 #include <QtCore/QFile>
 #include <QtCore/QElapsedTimer>
 #include <cstdio>

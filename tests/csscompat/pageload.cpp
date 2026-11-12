@@ -2,7 +2,7 @@
 // (newer than the Kobo's, so it shows breakage and cost, not the Kobo's rendering).
 // For each URL: load with the layer on and off (alternating, 3 times each), compare the
 // number of CSS rules WebKit parsed and the page's text length, and sum the rewrite time.
-#include "../../memtune.h"
+#include "../../src/memtune.h"
 #include <QtWidgets/QApplication>
 #include <QtWebKitWidgets/QWebPage>
 #include <QtWebKitWidgets/QWebFrame>

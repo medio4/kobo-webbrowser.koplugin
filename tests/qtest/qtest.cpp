@@ -7,7 +7,7 @@
 #include <QtCore/QTimer>
 #include <QtCore/QDebug>
 #include <cstdlib>
-#include "../crashhandler.h"
+#include "../../src/crashhandler.h"
 int main(int argc, char **argv) {
     installCrashHandler();
     QApplication app(argc, argv);
