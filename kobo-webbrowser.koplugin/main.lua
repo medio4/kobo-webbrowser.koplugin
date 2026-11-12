@@ -633,7 +633,7 @@ function KoboWebBrowser:launch(extra)
     end
     if lfs.attributes(self.bin .. "/kobo-browser", "mode") ~= "file" then
         UIManager:show(InfoMessage:new{
-            text = T(_("The browser program is missing.\n\nExpected: %1"), self.bin .. "/kobo-browser"),
+            text = T(_("The browser program is missing.\n\nExpected: %1\n\nInstall the plugin from the release zip (kobo-webbrowser.koplugin-<version>.zip), not from the repository's source code."), self.bin .. "/kobo-browser"),
         })
         return
     end

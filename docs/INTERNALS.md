@@ -2,7 +2,7 @@
 
 Minimal touch web browser for Kobo e-readers that reuses the Qt 5.2.1 + QtWebKit
 libraries already inside Kobo's firmware (Nickel). No Nickel process needed; it is
-meant to be launched from KOReader via kobo-webbrowser.koplugin while KOReader waits.
+meant to be launched from KOReader via kobo-webbrowser.koplugin.
 
 Files
 - main.cpp / browser.h  — the app (QWebView with swipe scrolling, flat KOReader-style
@@ -60,6 +60,15 @@ runs, so the browser answers the power button itself, the way KOReader's Kobo co
   the launcher calls UIManager:suspend() so KOReader sleeps with its own screensaver
   (wallpapers) and Wi-Fi handling, and on Resume relaunches the browser with the URL and
   KB_RESTORE_Y / KB_RESTORE_ZOOM (after waiting up to 15 s for Wi-Fi). History is not kept.
+- KB_KO_LIVE=1 (with KB_POWER_DEV=none and KB_NO_ESCAPE=1; set by the KOReader plugin):
+  KOReader keeps running in the background with its input devices open. The browser
+  grabs the touchscreen, so taps never reach KOReader, but KOReader keeps the power button
+  and sleep cover. On a power press or cover close the plugin sends the browser SIGTERM;
+  with KB_KO_LIVE=1 that writes the same `sleep` handoff line as above before quitting,
+  and KOReader then shows its screensaver and suspends. The Exit button and SIGINT quit
+  without a sleep line. Auto-sleep still comes from the browser's own idle timer
+  (KB_AUTOSLEEP_MIN with KB_KO_SLEEP=1); the plugin keeps KOReader's AutoSuspend quiet
+  while the browser runs.
 - Testing switches: KB_SLEEP_SUSPEND=0 (sleep screen only, no kernel suspend),
   KB_SLEEP_WIFI=0 (leave Wi-Fi alone), KB_SLEEP_COVER=0, KB_POWER_DEV=/dev/input/eventN|none.
   Log lines start with "power:" / "frontlight:".
@@ -75,3 +84,21 @@ reads the power button itself (without grabbing it), outside the Qt event loop:
   since a heavy page can block the UI thread for a while).
 - Hold time and heartbeat use CLOCK_MONOTONIC, so time asleep doesn't count.
   KB_NO_ESCAPE=1 turns it off. Log lines start with "kb-escape:".
+
+KOReader keyboard (textentry.cpp + plugin): when launched by kobo-webbrowser.koplugin with
+KB_KBD_FILE/KB_KBD_REPLY set, tapping the address bar, the Keys button or a text field in a
+page asks KOReader for the text: the browser writes the request file, stops refreshing and
+releases the touchscreen; the plugin lifts its draw guard, shows an InputDialog over the
+frozen page and writes the reply; the browser then takes the screen back (full flash) and
+fills the field (Go = load / Enter in the field). Falls back to the built-in keyboard when
+nobody picks the request up within 2.5 s. It is used only when the plugin sets KB_NATIVE_KBD=1 (its experimental "Use KOReader keyboard" option; KOReader must be restarted after a plugin update). KB_NO_NATIVE_KBD=1 forces the built-in keyboard.
+
+KOReader menus over the browser (same hand-off, KB_MENU_FILE/KB_MENU_REPLY, always set by
+the plugin): swipe down at least 120 px starting on the toolbar or the status line (anywhere above the page). The browser freezes and
+releases the touchscreen; the plugin copies the frozen page into its cover, lifts the draw
+guard and opens KOReader's top menu (file manager or reader menu). Menus, their dialogs and
+settings work normally over the page. Once nothing is left open above the page, the reply
+"back" hands the screen back: same page, no reload, one full flash. If KOReader moves on
+instead (the file-browser/home icon, a book opened from History, "Close web browser" in
+Tools > Web browser), the reply "quit" makes the browser exit without drawing, and KOReader
+stays on its new screen. KOReader exiting or restarting from the menu kills the browser.
