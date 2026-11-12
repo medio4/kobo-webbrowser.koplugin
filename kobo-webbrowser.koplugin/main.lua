@@ -597,6 +597,7 @@ function KoboWebBrowser:launch(extra)
     -- A fresh start: drop anything left over from an earlier sleep/wake.
     self.resume_launch = nil
     self:deleteSleepFiles()
+    if not reading then self:clearReaderDir() end
     -- Let the menu close and the screen settle before the browser takes over.
     UIManager:scheduleIn(0.3, function() self:run(extra) end)
 end
@@ -1435,21 +1436,37 @@ end
 -- history entry, cover cache), so it leaves no trace in History or "Open last".
 function KoboWebBrowser:deleteReaderCopy(file)
     file = ffiutil.realpath(file) or file   -- as History stores it; nil once deleted
+    -- Where its .sdr is (needs the file itself when book settings are kept by hash).
+    local sdr
+    pcall(function() sdr = require("docsettings"):getSidecarDir(file) end)
+    pcall(function() require("docsettings").updateLocation(file) end)
     os.remove(file)
     pcall(function() require("ui/widget/booklist").resetBookInfoCache(file) end)
-    pcall(function() require("docsettings").updateLocation(file) end)
     pcall(function()
         local ReadHistory = require("readhistory")
         ReadHistory:removeItemByPath(file)
         ReadHistory:ensureLastFile()
     end)
+    -- KOReader can still write the book settings after CloseDocument (the reader saves
+    -- them again as it closes), which brings the .sdr back: remove it now and once more
+    -- a moment later.
+    if sdr and sdr:match("%.sdr$") then
+        local function purge()
+            if lfs.attributes(sdr, "mode") == "directory" then ffiutil.purgeDir(sdr) end
+        end
+        purge()
+        UIManager:scheduleIn(3, purge)
+    end
 end
 
 function KoboWebBrowser:clearReaderDir()
     if lfs.attributes(self.reader_dir, "mode") ~= "directory" then return end
     for name in lfs.dir(self.reader_dir) do
+        local path = self.reader_dir .. "/" .. name
         if name:match("%.epub$") then
-            self:deleteReaderCopy(self.reader_dir .. "/" .. name)
+            self:deleteReaderCopy(path)
+        elseif name:match("%.sdr$") and lfs.attributes(path, "mode") == "directory" then
+            ffiutil.purgeDir(path)   -- book settings left from an earlier copy
         end
     end
 end
