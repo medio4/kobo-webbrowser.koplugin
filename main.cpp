@@ -1052,6 +1052,16 @@ void Browser::loadFinished(bool ok)
         qDebug() << "restore: scrolled to" << m_restoreY;
         m_restoreY = -1;
     }
+    // A page wider than the screen (a wide table) sometimes ends up scrolled sideways after
+    // loading, cutting off the start of every line. Unless the address points at an anchor,
+    // start at the left edge.
+    if (ok && !m_view->url().hasFragment()) {
+        QWebFrame *f = m_view->page()->mainFrame();
+        if (f->scrollPosition().x() != 0) {
+            qDebug() << "load: page was scrolled sideways by" << f->scrollPosition().x() << "- back to the left edge";
+            f->setScrollPosition(QPoint(0, f->scrollPosition().y()));
+        }
+    }
     // WebKit usually does a last layout/paint shortly after loadFinished; give it a moment.
     QTimer::singleShot(250, this, SLOT(releaseLoadHold()));
     // Back from a sleep (online or the offline copy): once the page and its scroll position
