@@ -109,6 +109,17 @@ if [ -z "$KB_NO_ESCAPE" ] && [ -x "$DIR/kb-escape" ]; then
     "$DIR/kb-escape" "$BPID" "$ESCAPE_MARK" >> "$LOG" 2>&1 &
     WPID=$!
 fi
+# KOReader restarted or crashed while we run (KB_KOREADER_PID from the plugin): nobody is
+# left to take the screen back or to answer us, so stop instead of lingering in the background.
+KPID=""
+if [ -n "$KB_KOREADER_PID" ]; then
+    ( while kill -0 "$KB_KOREADER_PID" 2>/dev/null && kill -0 $BPID 2>/dev/null; do sleep 5; done
+      if kill -0 $BPID 2>/dev/null; then
+          echo "=== KOReader ($KB_KOREADER_PID) is gone: stopping the browser" >> "$LOG"
+          kill -TERM $BPID 2>/dev/null; sleep 5; kill -KILL $BPID 2>/dev/null
+      fi ) &
+    KPID=$!
+fi
 trap 'kill -TERM $BPID 2>/dev/null' TERM INT
 wait $BPID
 RC=$?
@@ -116,6 +127,7 @@ RC=$?
 while kill -0 $BPID 2>/dev/null; do wait $BPID; RC=$?; done
 trap - TERM INT
 [ -n "$WPID" ] && kill -TERM $WPID 2>/dev/null
+[ -n "$KPID" ] && kill -TERM $KPID 2>/dev/null
 if [ -f "$ESCAPE_MARK" ]; then
     echo "=== escape: $(cat "$ESCAPE_MARK")" >> "$LOG"
     # The browser died without restoring the screen: wipe it with a full flashing refresh

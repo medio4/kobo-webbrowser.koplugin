@@ -831,6 +831,11 @@ function KoboWebBrowser:run(extra)
     env.KB_MENU_FILE = self.menu_request
     env.KB_MENU_REPLY = self.menu_reply
     if self.settings.phone_autostart then env.KB_PHONE_AUTOSTART = "1" end
+    -- Our own pid: the browser stops itself if KOReader goes away (restart, crash).
+    local stat = io.open("/proc/self/stat", "r")
+    local my_pid = stat and stat:read("*l"):match("^(%d+)")
+    if stat then stat:close() end
+    if my_pid then env.KB_KOREADER_PID = my_pid end
     -- Typing uses KOReader's keyboard (KB_NATIVE_KBD: older browsers ask for it), unless
     -- Settings > "Use the browser's own keyboard" (a fallback if a KOReader update breaks it).
     if self.settings.builtin_keyboard then
