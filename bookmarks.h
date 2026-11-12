@@ -23,10 +23,24 @@ public:
     static QString file();
 };
 
+// Browsing history (bin/history.txt, newest first, "url<TAB>title" lines). Off when
+// bin/history-off.txt exists.
+class HistoryStore {
+public:
+    static QString file();
+    static bool enabled();
+    static void setEnabled(bool on);
+    static void record(const QString &url, const QString &title);
+    static QList<Bookmark> load();
+    static bool save(const QList<Bookmark> &list);
+    static void clear();
+};
+
 class BookmarksOverlay : public QWidget {
     Q_OBJECT
 public:
-    explicit BookmarksOverlay(QWidget *parent);
+    // history: show the browsing history (with Clear all) instead of the bookmarks.
+    explicit BookmarksOverlay(QWidget *parent, bool history = false);
 signals:
     void openUrl(const QString &url);
     void closed();
@@ -36,6 +50,7 @@ private slots:
     void prevPage();
     void nextPage();
     void closeClicked();
+    void clearClicked();
 protected:
     void resizeEvent(QResizeEvent *e);
     void mousePressEvent(QMouseEvent *e);
@@ -48,6 +63,8 @@ private:
     QLabel *m_pageLabel;
     QPushButton *m_prev, *m_next;
     int m_page, m_perPage;
+    bool m_history;
+    void store();
 };
 
 #endif

@@ -140,6 +140,8 @@ private slots:
     void showPhoneDialog();
     void showMenu();
     void goHome();
+    void showHistory();
+    void toggleHistory();
     void toggleAdBlock();
     void showBookmarks();
     void addBookmark();

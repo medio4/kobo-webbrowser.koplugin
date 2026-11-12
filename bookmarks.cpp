@@ -61,14 +61,88 @@ bool BookmarkStore::add(const QString &url, const QString &title)
     return save(list);
 }
 
+// ------------------------------------------------------------- history
+
+static const int kHistoryMax = 300;
+
+QString HistoryStore::file()
+{
+    return QDir(QCoreApplication::applicationDirPath()).filePath("history.txt");
+}
+
+static QString historyOffFile()
+{
+    return QDir(QCoreApplication::applicationDirPath()).filePath("history-off.txt");
+}
+
+bool HistoryStore::enabled() { return !QFile::exists(historyOffFile()); }
+
+void HistoryStore::setEnabled(bool on)
+{
+    if (on) QFile::remove(historyOffFile());
+    else { QFile f(historyOffFile()); if (f.open(QIODevice::WriteOnly)) f.write("off\n"); }
+}
+
+static QList<Bookmark> loadList(const QString &path)
+{
+    QList<Bookmark> out;
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return out;
+    QTextStream in(&f);
+    in.setCodec("UTF-8");
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        if (line.trimmed().isEmpty()) continue;
+        Bookmark b;
+        b.url = line.section('\t', 0, 0).trimmed();
+        b.title = line.section('\t', 1).trimmed();
+        if (b.title.isEmpty()) b.title = b.url;
+        if (!b.url.isEmpty()) out << b;
+    }
+    return out;
+}
+
+static bool saveList(const QString &path, const QList<Bookmark> &list)
+{
+    QString tmp = path + ".tmp";
+    QFile f(tmp);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) return false;
+    QTextStream out(&f);
+    out.setCodec("UTF-8");
+    foreach (const Bookmark &b, list) {
+        QString t = b.title; t.replace('\t', ' ').replace('\n', ' ');
+        out << b.url << '\t' << t << '\n';
+    }
+    out.flush();
+    f.close();
+    QFile::remove(path);
+    return QFile::rename(tmp, path);
+}
+
+QList<Bookmark> HistoryStore::load() { return loadList(file()); }
+bool HistoryStore::save(const QList<Bookmark> &list) { return saveList(file(), list); }
+void HistoryStore::clear() { QFile::remove(file()); }
+
+void HistoryStore::record(const QString &url, const QString &title)
+{
+    if (!enabled() || url.isEmpty() || url == "about:blank" || url.startsWith("data:")) return;
+    QList<Bookmark> list = load();
+    // A page visited again moves to the top instead of appearing twice.
+    for (int i = list.size() - 1; i >= 0; --i) if (list[i].url == url) list.removeAt(i);
+    Bookmark b; b.url = url; b.title = title.simplified().isEmpty() ? url : title.simplified();
+    list.prepend(b);
+    while (list.size() > kHistoryMax) list.removeLast();
+    save(list);
+}
+
 // ------------------------------------------------------------- overlay
 
-BookmarksOverlay::BookmarksOverlay(QWidget *parent)
-    : QWidget(parent), m_page(0), m_perPage(8)
+BookmarksOverlay::BookmarksOverlay(QWidget *parent, bool history)
+    : QWidget(parent), m_page(0), m_perPage(8), m_history(history)
 {
     setAttribute(Qt::WA_DeleteOnClose);
     setProperty("kb_overlay", true);   // e-ink: flash its area clean when it closes
-    m_items = BookmarkStore::load();
+    m_items = history ? HistoryStore::load() : BookmarkStore::load();
     QFrame *box = new QFrame(this);
     m_box = box;
     box->setFrameStyle(QFrame::Box | QFrame::Plain);
@@ -83,7 +157,7 @@ BookmarksOverlay::BookmarksOverlay(QWidget *parent)
     v->setContentsMargins(20, 20, 20, 20);
     v->setSpacing(12);
     QFont f; f.setPixelSize(38);
-    QLabel *head = new QLabel("Bookmarks");
+    QLabel *head = new QLabel(history ? (HistoryStore::enabled() ? "History" : "History (paused)") : "Bookmarks");
     head->setFont(f); head->setAlignment(Qt::AlignCenter);
     v->addWidget(head);
     m_list = new QVBoxLayout;
@@ -102,7 +176,14 @@ BookmarksOverlay::BookmarksOverlay(QWidget *parent)
     foreach (QPushButton *b, QList<QPushButton *>() << m_prev << m_next << close) {
         b->setFont(f); b->setMinimumHeight(96); b->setFocusPolicy(Qt::NoFocus);
     }
-    nav->addWidget(m_prev); nav->addWidget(m_pageLabel, 1); nav->addWidget(m_next); nav->addWidget(close);
+    nav->addWidget(m_prev); nav->addWidget(m_pageLabel, 1); nav->addWidget(m_next);
+    if (history) {
+        QPushButton *clear = new QPushButton("Clear all");
+        clear->setFont(f); clear->setMinimumHeight(96); clear->setFocusPolicy(Qt::NoFocus);
+        connect(clear, SIGNAL(clicked()), this, SLOT(clearClicked()));
+        nav->addWidget(clear);
+    }
+    nav->addWidget(close);
     v->addLayout(nav);
     connect(m_prev, SIGNAL(clicked()), this, SLOT(prevPage()));
     connect(m_next, SIGNAL(clicked()), this, SLOT(nextPage()));
@@ -129,7 +210,9 @@ void BookmarksOverlay::showPage(int page)
     m_page = qBound(0, page, pages - 1);
     QFont f; f.setPixelSize(32);
     if (m_items.isEmpty()) {
-        QLabel *e = new QLabel("No bookmarks yet. Open a page, then Menu > Add bookmark.");
+        QLabel *e = new QLabel(m_history
+            ? (HistoryStore::enabled() ? "No history yet." : "History is off. Turn it on in the Menu.")
+            : "No bookmarks yet. Open a page, then Menu > Add bookmark.");
         e->setFont(f); e->setWordWrap(true); e->setAlignment(Qt::AlignCenter);
         m_list->addWidget(e);
     }
@@ -173,8 +256,20 @@ void BookmarksOverlay::removeClicked()
     int i = sender()->property("idx").toInt();
     if (i < 0 || i >= m_items.size()) return;
     m_items.removeAt(i);
-    BookmarkStore::save(m_items);
+    store();
     showPage(m_page);
+}
+
+void BookmarksOverlay::store()
+{
+    if (m_history) HistoryStore::save(m_items); else BookmarkStore::save(m_items);
+}
+
+void BookmarksOverlay::clearClicked()
+{
+    m_items.clear();
+    HistoryStore::clear();
+    showPage(0);
 }
 
 void BookmarksOverlay::prevPage() { showPage(m_page - 1); }

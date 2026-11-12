@@ -1046,6 +1046,7 @@ void Browser::loadFinished(bool ok)
         m_status->setText(ok ? m_view->title() : "Failed to load page");
     }
     if (m_phone) m_phone->setCurrentPage(m_view->title(), m_view->url().toString());
+    if (ok && !m_offlineShown) HistoryStore::record(m_view->url().toString(), m_view->title());
     if (ok && m_restoreY > 0) {
         m_view->page()->mainFrame()->setScrollPosition(QPoint(0, m_restoreY));
         qDebug() << "restore: scrolled to" << m_restoreY;
@@ -1349,6 +1350,8 @@ void Browser::showMenu()
     m->addAction("Bookmarks", this, SLOT(showBookmarks()));
     m->addAction("Add bookmark", this, SLOT(addBookmark()));
     m->addAction("Set as home", this, SLOT(setAsHome()));
+    m->addAction("History", this, SLOT(showHistory()));
+    m->addAction(HistoryStore::enabled() ? "History: on" : "History: off", this, SLOT(toggleHistory()));
     m->addAction("Reload", this, SLOT(reloadClicked()));
     m->addAction("Contents", this, SLOT(showToc()));
     m->addAction("Text bigger", this, SLOT(zoomIn()));
@@ -1393,6 +1396,20 @@ void Browser::toggleAdBlock()
     bool on = AdBlock::instance()->isEnabled();
     m_status->setText(on ? "Ad blocking on (reloading)" : "Ad blocking off (reloading)");
     reloadClicked();
+}
+
+void Browser::showHistory()
+{
+    BookmarksOverlay *b = new BookmarksOverlay(centralWidget(), true);
+    connect(b, SIGNAL(openUrl(QString)), this, SLOT(phoneUrl(QString)));
+}
+
+void Browser::toggleHistory()
+{
+    bool on = !HistoryStore::enabled();
+    HistoryStore::setEnabled(on);
+    m_status->setText(on ? "History on: pages you open are remembered"
+                         : "History off: pages you open are not remembered");
 }
 
 void Browser::goHome()
