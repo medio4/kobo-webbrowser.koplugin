@@ -19,7 +19,16 @@
   if (!here) return JSON.stringify({ chapters: [], title: '' });
   var p = here.path;
   var base = p.charAt(p.length - 1) === '/' ? p : p.slice(0, p.lastIndexOf('/') + 1);
+  // Name pattern of this page with its numbers masked ("part-#"), or null on an index page.
+  var stem = p.charAt(p.length - 1) === '/' ? null
+           : p.substring(base.length).replace(/\.[a-z0-9]+$/i, '').replace(/\d+/g, '#');
+  if (stem !== null && (stem.indexOf('#') < 0 || /\d{4,}/.test(p.substring(base.length))))
+    return JSON.stringify({ chapters: [], title: '' });
   var seen = {}, out = [];
+  if (stem !== null) {   // this part itself, in case the page doesn't link to itself
+    seen[here.origin + p] = true;
+    out.push({ url: here.origin + p, title: document.title || p.substring(base.length), key: natKey(p) });
+  }
   var links = document.getElementsByTagName('a');
   for (var i = 0; i < links.length; i++) {
     var a = links[i], href = a.getAttribute('href');
@@ -27,11 +36,19 @@
     var u = parse(a.href);
     if (!u || u.host !== here.host) continue;
     var path = u.path;
-    if (path.indexOf(base) !== 0 || path === here.path || path === base) continue;
+    // The page itself belongs in the book when it is one of the numbered parts.
+    if (path.indexOf(base) !== 0 || path === base || (path === here.path && stem === null)) continue;
     if (/\.(css|js|png|jpe?g|gif|svg|ico|xml|rss|pdf|zip|mp3|mp4)$/i.test(path)) continue;
     // Only "leaf" links (files or single folders), not deeper sub-trees.
     var rest = path.substring(base.length).replace(/\/$/, '');
     if (!rest || rest.indexOf('/') >= 0) continue;
+    // On a page that is itself one item in a big folder (an encyclopedia article, a
+    // blog post), every same-folder link is not a series. There, only links named like
+    // this page with a different number count (chapter-2, chapter-3, ...). A folder's
+    // own index page (the address ends in "/") lists its parts, so all of them count.
+    // Chapter numbers are small; long numbers are article IDs or dates, not parts.
+    if (stem !== null && (rest.replace(/\.[a-z0-9]+$/i, '').replace(/\d+/g, '#') !== stem || !/\d/.test(rest)
+                          || /\d{4,}/.test(rest))) continue;
     var key = u.origin + path;
     if (seen[key]) continue;
     seen[key] = true;
