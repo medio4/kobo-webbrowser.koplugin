@@ -33,15 +33,20 @@ const int kMaxScreens = 400;   // a pathological page: overview of the first 400
 // pages keep their shape. The image boxes are drawn back as gray blocks (kImagesJs).
 const char *kHideJs =
     "(function(){var s=document.createElement('style'); s.id='kb-nav-hide';"
-    " s.textContent='img,picture,video,canvas,svg,iframe,embed,object{visibility:hidden!important}"
-    " *{background-image:none!important}';"
-    " (document.head||document.documentElement).appendChild(s); return true;})()";
+    " s.textContent='img,picture,video,canvas,svg,image,iframe,frame,embed,object,applet,input[type=image]"
+    "{visibility:hidden!important} *,*:before,*:after{background-image:none!important;"
+    " list-style-image:none!important;border-image:none!important}';"
+    " (document.head||document.documentElement).appendChild(s);"
+    // Read a layout value so the new style is applied now, before the first render.
+    " return document.documentElement.offsetHeight>=0;})()";
 const char *kShowJs =
     "(function(){var s=document.getElementById('kb-nav-hide'); if(s) s.parentNode.removeChild(s); return true;})()";
 
-// Boxes of the visible pictures, page (CSS) pixels: x,y,w,h,x,y,w,h,...
+// Boxes of the visible pictures, page (CSS) pixels: x,y,w,h,x,y,w,h,... Includes lazy-image
+// placeholders (pictures that will load when scrolled to).
 const char *kImagesJs =
-    "(function(){var out=[]; var e=document.querySelectorAll('img,picture,video,canvas,svg,iframe,embed,object');"
+    "(function(){var out=[]; var e=document.querySelectorAll('img,picture,video,canvas,svg,iframe,embed,object,"
+    "input[type=image],.lazy-image-placeholder,[data-src]:not(img)');"
     " var sx=window.pageXOffset, sy=window.pageYOffset;"
     " for(var i=0;i<e.length && out.length<8000;i++){ var r=e[i].getBoundingClientRect();"
     "  if(!r||r.width<24||r.height<24) continue;"
