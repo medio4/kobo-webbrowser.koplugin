@@ -57,7 +57,9 @@ public:
     bool canRotate() const;   // grab mode only: we copy every pixel ourselves (rotation.h)
     // While suspended (KOReader is drawing its keyboard over our picture) nothing is
     // pushed to the framebuffer or refreshed; resuming repaints and flashes everything.
-    void setSuspended(bool on);
+    void setSuspended(bool on, bool refresh = true);
+    // While KOReader's keyboard covers the bottom: only refresh inside clip (window coords).
+    void setClip(const QRect &clip) { m_clip = clip; }
     bool suspended() const { return m_suspended; }
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
@@ -106,6 +108,7 @@ private:
     int m_loadSettleWindowMs;
     bool m_loadSettleDirty;        // something repainted since the release flash
     bool m_suspended;
+    QRect m_clip;
     QRegion m_fastDirty;        // areas refreshed with the fast waveform since the last cleanup
     QString m_wfClean;
     bool m_logRefresh;

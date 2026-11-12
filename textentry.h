@@ -29,10 +29,13 @@ signals:
     void started();                                    // hand off screen + touch
     void replied(const QString &action, const QString &text);   // take them back, apply
     void unavailable();                                // nobody picked the request up
+    void keyLine(const QString &line);                 // live typing: one key from KOReader
 private slots:
     void poll();
 private:
-    QString m_reqPath, m_replyPath;
+    QString m_reqPath, m_replyPath, m_keysPath;
+    qint64 m_keysPos;
+    void readKeys();
     QTimer m_timer;
     QElapsedTimer m_since;
     bool m_active;

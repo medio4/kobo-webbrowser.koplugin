@@ -126,9 +126,14 @@ KoboEink::KoboEink(QObject *parent)
 
 bool KoboEink::canRotate() const { return m_grab && m_fb && m_fb->isOpen(); }
 
-void KoboEink::markDirty(const QRect &r, quint64 flags)
+void KoboEink::markDirty(const QRect &rIn, quint64 flags)
 {
-    if (!available() || r.isEmpty() || m_suspended) return;
+    if (!available() || rIn.isEmpty() || m_suspended) return;
+    QRect r = rIn;
+    if (!m_clip.isEmpty()) {          // KOReader's keyboard owns the rest of the screen
+        r &= m_clip;
+        if (r.isEmpty()) return;
+    }
     if (m_batching) {
         m_overlayRect |= r;
         // Keep waiting while repaints keep coming, but never longer than 400 ms in all.
@@ -388,7 +393,7 @@ void KoboEink::chooseWaveform(quint64 flags, const QRect &r, QString *wfOut, boo
     *flashOut = flash;
 }
 
-void KoboEink::setSuspended(bool on)
+void KoboEink::setSuspended(bool on, bool refresh)
 {
     if (on == m_suspended) return;
     m_suspended = on;
@@ -397,7 +402,7 @@ void KoboEink::setSuspended(bool on)
         m_settleTimer.stop();
         m_pending.clear();
         m_fastDirty = QRegion();
-    } else {
+    } else if (refresh) {
         refreshAllFull();   // our backing store still has the page: put it all back, flashed
     }
 }
@@ -405,6 +410,7 @@ void KoboEink::setSuspended(bool on)
 void KoboEink::cleanRect(const QRect &rIn)
 {
     QRect r = rIn;
+    if (!m_clip.isEmpty()) r &= m_clip;
     if (r.isEmpty() || !m_useFbink || m_suspended) return;
     QWindowList wl = QGuiApplication::topLevelWindows();
     if (!wl.isEmpty()) r &= QRect(QPoint(0, 0), wl.first()->geometry().size());

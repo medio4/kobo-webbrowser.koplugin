@@ -7,20 +7,17 @@
 #include <stdlib.h>
 
 NativeTextEntry::NativeTextEntry(const char *reqEnv, const char *replyEnv, QObject *parent)
-    : QObject(parent), m_active(false), m_pickedUp(false)
+    : QObject(parent), m_keysPos(0), m_active(false), m_pickedUp(false)
 {
-    // The keyboard channel (KB_KBD_FILE) is used only when asked for explicitly
-    // (KB_NATIVE_KBD=1, the plugin's experimental "Use KOReader keyboard" option); a plugin
-    // version KOReader loaded before an update may still pass KB_KBD_FILE on its own.
-    // Other channels (the KOReader menu hand-off, KB_MENU_FILE) are always on.
+    // Typing uses KOReader's own keyboard whenever the plugin offers the hand-off
+    // (KB_KBD_FILE); the browser's built-in keys are the fallback (started on its own, or
+    // KB_NO_NATIVE_KBD=1 for testing). Other channels (KB_MENU_FILE) are always on.
     bool enabled = true;
-    if (!strcmp(reqEnv, "KB_KBD_FILE")) {
-        const char *on = getenv("KB_NATIVE_KBD");
-        enabled = on && atoi(on) != 0 && !getenv("KB_NO_NATIVE_KBD");
-    }
+    if (!strcmp(reqEnv, "KB_KBD_FILE")) enabled = !getenv("KB_NO_NATIVE_KBD");
     if (enabled) {
         m_reqPath = QString::fromLocal8Bit(getenv(reqEnv));
         m_replyPath = QString::fromLocal8Bit(getenv(replyEnv));
+        if (!m_replyPath.isEmpty()) m_keysPath = m_replyPath + ".keys";
     }
     m_timer.setInterval(100);
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(poll()));
@@ -44,6 +41,8 @@ bool NativeTextEntry::request(const QString &kind, const QString &label, const Q
 {
     if (!available() || m_active) return false;
     QFile::remove(m_replyPath);
+    if (!m_keysPath.isEmpty()) QFile::remove(m_keysPath);
+    m_keysPos = 0;
     QString lbl = label; lbl.replace('\n', ' ');
     QByteArray data = (kind + "\n" + lbl + "\n" + current).toUtf8();
     if (!writeAtomically(m_reqPath, data)) {
@@ -80,8 +79,10 @@ void NativeTextEntry::poll()
             return;
         }
     }
+    readKeys();
     QFile f(m_replyPath);
     if (!f.exists() || !f.open(QIODevice::ReadOnly)) return;
+    readKeys();   // keys written just before the reply
     QByteArray data = f.readAll();
     f.close();
     QFile::remove(m_replyPath);
@@ -94,4 +95,20 @@ void NativeTextEntry::poll()
     if (text.endsWith('\n')) text.chop(1);
     qDebug() << "textentry: reply" << action << text.left(60);
     emit replied(action, text);
+}
+
+// Live typing: new complete lines of the key stream since the last poll.
+void NativeTextEntry::readKeys()
+{
+    if (m_keysPath.isEmpty()) return;
+    QFile k(m_keysPath);
+    if (!k.exists() || !k.open(QIODevice::ReadOnly)) return;
+    if (k.size() <= m_keysPos) return;
+    k.seek(m_keysPos);
+    QByteArray data = k.readAll();
+    int last = data.lastIndexOf('\n');
+    if (last < 0) return;                     // a line still being written
+    m_keysPos += last + 1;
+    foreach (const QByteArray &line, data.left(last).split('\n'))
+        if (!line.isEmpty()) emit keyLine(QString::fromUtf8(line));
 }
