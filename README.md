@@ -59,6 +59,7 @@ older NXP and Allwinner models are untested.
 </p>
 <p align="center">
   <img src="docs/screenshots/contents.png" width="30%" alt="Contents: jump to a heading">
+  <img src="docs/screenshots/text-size.png" width="30%" alt="The Text size bar along the bottom of the page">
 </p>
 
 ### Save pages and read them in KOReader
