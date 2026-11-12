@@ -134,7 +134,7 @@ QString tagAttr(const QString &tag, const QString &name)
 
 EpubSaver::EpubSaver(QWebPage *page, const QString &outDir, QObject *parent)
     : QObject(parent), m_page(page), m_outDir(outDir), m_running(false), m_library(true), m_fallback(false),
-      m_current(-1), m_reply(0), m_series(false), m_chapterIndex(-1), m_hidden(0)
+      m_current(-1), m_reply(0), m_series(false), m_split(false), m_splitWritten(0), m_chapterIndex(-1), m_hidden(0)
 {
     m_timer.setSingleShot(true);
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(imageTimeout()));
@@ -175,6 +175,13 @@ void EpubSaver::startSeries(const QList<ChapterLink> &links, const QString &seri
     m_running = true;
     m_series = true;
     m_links = links;
+    m_splitWritten = 0;
+    m_firstSplitPath.clear();
+    if (m_split) {
+        // All the parts go together in one folder named after the series.
+        QString name = safeFileName(seriesTitle.simplified().isEmpty() ? QString("Series") : seriesTitle.simplified());
+        m_outDir = QDir(m_outDir).filePath(name);
+    }
     m_seriesTitle = seriesTitle.simplified();
     m_chapters.clear();
     m_chapterIndex = -1;
@@ -196,6 +203,13 @@ void EpubSaver::loadNextChapter()
 {
     ++m_chapterIndex;
     if (m_chapterIndex >= m_links.size()) {
+        if (m_split) {
+            if (!m_splitWritten) { fail("None of the chapters could be read"); return; }
+            qDebug() << "epub: series saved as" << m_splitWritten << "books in" << m_outDir;
+            m_running = false;
+            emit finished(true, m_firstSplitPath);
+            return;
+        }
         if (m_chapters.isEmpty()) { fail("None of the chapters could be read"); return; }
         writeEpub();
         return;
@@ -408,6 +422,21 @@ void EpubSaver::imagesDone()
         if (t.isEmpty() || t.compare(m_pageUrl.host(), Qt::CaseInsensitive) == 0)
             t = m_links[m_chapterIndex].title;
         ch.title = t.isEmpty() ? QString("Chapter %1").arg(m_chapters.size() + 1) : t;
+        if (m_split) {
+            // Write this part as a book of its own right away (nothing kept in memory).
+            m_series = false;
+            m_title = QString("%1 - %2").arg(m_chapterIndex + 1, 2, 10, QChar('0')).arg(ch.title);
+            QString path = writeEpubFile();
+            m_series = true;
+            if (!path.isEmpty()) {
+                ++m_splitWritten;
+                if (m_firstSplitPath.isEmpty()) m_firstSplitPath = path;
+            } else {
+                m_running = true;   // a part that fails to write is skipped
+            }
+            loadNextChapter();
+            return;
+        }
         ch.content = m_content;
         ch.url = m_pageUrl;
         ch.images = m_images;
@@ -508,7 +537,15 @@ void EpubSaver::storeImage(Image &img, const QByteArray &raw)
 
 void EpubSaver::writeEpub()
 {
-    emit progress("Saving: writing EPUB...");
+    QString path = writeEpubFile();
+    if (path.isEmpty()) return;
+    m_running = false;
+    emit finished(true, path);
+}
+
+QString EpubSaver::writeEpubFile()
+{
+    if (!m_split) emit progress("Saving: writing EPUB...");
     if (m_series) {
         // One EPUB from the collected chapters: gather their images, use the first chapter's
         // metadata for the book-level fields.
@@ -631,19 +668,18 @@ void EpubSaver::writeEpub()
     QByteArray zip = buildZip(entries);
 
     QDir dir(m_outDir);
-    if (!dir.exists() && !dir.mkpath(".")) { fail("Cannot create folder " + m_outDir); return; }
+    if (!dir.exists() && !dir.mkpath(".")) { fail("Cannot create folder " + m_outDir); return QString(); }
     QString base = safeFileName(t);
     QString path = dir.filePath(base + ".epub");
     for (int n = 2; QFile::exists(path) && n < 100; ++n) path = dir.filePath(base + QString(" (%1).epub").arg(n));
     QFile f(path);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { fail("Cannot write " + path + ": " + f.errorString()); return; }
-    if (f.write(zip) != zip.size()) { f.close(); QFile::remove(path); fail("Write failed (disk full?)"); return; }
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { fail("Cannot write " + path + ": " + f.errorString()); return QString(); }
+    if (f.write(zip) != zip.size()) { f.close(); QFile::remove(path); fail("Write failed (disk full?)"); return QString(); }
     f.close();
     if (m_library) appendHandoff("saved", path);
     ::sync();
     qDebug() << "epub: wrote" << path << zip.size() << "bytes," << m_images.size() << "images," << chapterNames.size() << "documents";
-    m_running = false;
-    emit finished(true, path);
+    return path;
 }
 
 // ------------------------------------------------------------- handoff
@@ -798,14 +834,23 @@ SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle,
         ? QString("This page links to %1 parts of a series%2. Read just this page, or all of them as one book "
                   "with a chapter list? Either way it is removed when you close it.").arg(chapterCount).arg(named)
         : QString("This page links to %1 parts of a series%2. Save just this page, or all of them as one book "
-                  "with a chapter list?").arg(chapterCount).arg(named));
+                  "with a chapter list, or each part as its own book in a folder?").arg(chapterCount).arg(named));
     q->setFont(fs); q->setWordWrap(true); q->setAlignment(Qt::AlignCenter);
     v->addWidget(q);
 
-    QPushButton *series = new QPushButton(QString("Whole series (%1 parts)").arg(chapterCount));
+    QPushButton *series = new QPushButton(reading ? QString("Whole series (%1 parts)").arg(chapterCount)
+                                                  : QString("Whole series as one book (%1 parts)").arg(chapterCount));
+    QPushButton *split = reading ? 0 : new QPushButton(QString("Each part as its own book"));
     QPushButton *page = new QPushButton("Just this page");
     QPushButton *cancel = new QPushButton("Cancel");
-    foreach (QPushButton *b, QList<QPushButton *>() << series << page << cancel) {
+    QList<QPushButton *> buttons; buttons << series;
+    if (split) buttons << split;
+    buttons << page << cancel;
+    if (split) {
+        connect(split, SIGNAL(clicked()), this, SIGNAL(seriesSplitChosen()));
+        connect(split, SIGNAL(clicked()), this, SLOT(close()));
+    }
+    foreach (QPushButton *b, buttons) {
         b->setFont(f);
         b->setMinimumSize(300, 100);
         b->setFocusPolicy(Qt::NoFocus);
