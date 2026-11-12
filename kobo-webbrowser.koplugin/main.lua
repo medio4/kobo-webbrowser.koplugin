@@ -467,6 +467,16 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                         end,
                     },
                     {
+                        text = _("Page overview (beta)"),
+                        help_text = _("Adds Page overview to the browser's Menu: every screen of the page as a small picture, tap one to jump there. Experimental."),
+                        checked_func = function() return self.settings.page_overview == true end,
+                        callback = function()
+                            self.settings.page_overview = (self.settings.page_overview ~= true) or nil
+                            self:saveSettings()
+                            self:writeAdblockFiles()
+                        end,
+                    },
+                    {
                         text = _("Use the browser's own keyboard"),
                         help_text = _("Type with the browser's built-in keys instead of KOReader's keyboard. Off by default; a fallback in case a KOReader update changes its keyboard. Takes effect the next time the browser opens."),
                         checked_func = function() return self.settings.builtin_keyboard == true end,
@@ -714,6 +724,7 @@ function KoboWebBrowser:writeAdblockFiles()
     put("adblock-extra.txt", self.settings.adblock_block)
     -- Not ad blocking, but read the same way (at each page the browser opens).
     put("hold-menu.txt", self.settings.hold_menu or "reader")
+    put("navigator-on.txt", self.settings.page_overview and "on (KOReader's Web browser settings)" or nil)
     put("css-compat-off.txt", self.settings.css_compat_off == true and "modern page style fixes turned off in KOReader's menu" or nil)
 end
 

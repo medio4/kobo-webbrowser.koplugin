@@ -1434,8 +1434,6 @@ void Browser::showMenu()
     m->addSection("Settings");
     m->addAction(HistoryStore::enabled() ? "History: on" : "History: off", this, SLOT(toggleHistory()), false, "back.top");
     m->addAction(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off", this, SLOT(toggleAdBlock()), false, "cancel");
-    m->addAction(PageNavigator::enabled() ? "Page overview (beta): on" : "Page overview (beta): off",
-                 this, SLOT(toggleNavigator()), true, "appbar.pageview");
     const bool rot = m_eink && m_eink->canRotate();
     if (rot) m->addAction("Rotate screen", this, SLOT(showRotateMenu()), !plugin, "appbar.rotation");
     if (plugin) m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()), !rot, "appbar.settings");
@@ -1642,13 +1640,6 @@ void Browser::showNavigator()
     hideKeyboard();
     PageNavigator *n = new PageNavigator(m_view, centralWidget());
     if (m_eink) connect(n, SIGNAL(beforeJump()), m_eink, SLOT(hintPageTurn()));
-}
-
-void Browser::toggleNavigator()
-{
-    bool on = !PageNavigator::enabled();
-    PageNavigator::setEnabled(on);
-    m_status->setText(on ? "Page overview on: Menu > Page overview" : "Page overview off");
 }
 
 // "Open now": the handoff line is already written; exit so KOReader (kobo-webbrowser.koplugin)

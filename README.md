@@ -49,7 +49,8 @@ older NXP and Allwinner models are untested.
   (a small bar along the bottom with smaller, bigger and Done) for a size that is remembered. Text never shrinks below a readable minimum.
 - **Contents** jumps to any heading on a long page.
 - **Page overview** (experimental, off by default): every screen of the page as a small
-  picture, images shown as gray boxes; tap one to jump there.
+  picture, images shown as gray boxes; tap one to jump there. Turn it on in Tools → Web
+  browser → Settings.
 - Typing uses KOReader's own keyboard, in any screen orientation.
 - Screen updates are kept small and clean: only what changed is refreshed, and menus
   open and close in a single flash.
@@ -155,6 +156,7 @@ In KOReader, under **Tools → Web browser**:
   - **Collection for saved articles** (default `Web`; leave empty to skip collections).
   - **Ad blocking**: on/off, sites where ads are allowed, extra sites to block.
   - **Fix modern page styles** (on by default): turn off if a site looks worse with it.
+  - **Page overview (beta)** (off by default): adds Page overview to the browser's Menu.
   - **Use the browser's own keyboard** (off by default): its built-in keys instead of KOReader's keyboard.
   - **Type in a bar above the keyboard** (off by default): the earlier one-line bar with shortcut buttons.
   - **Start phone link with the browser** (off by default): Send to Kobo is ready as soon as the browser opens.
@@ -163,7 +165,7 @@ In KOReader, under **Tools → Web browser**:
 - **Close web browser**: closes a browser left open behind KOReader's menu, or ends a minimized one.
 - **Show log**: shows the end of the launcher log.
 
-In the browser's **Menu**: History on/off, Ad blocking on/off and Page overview (beta) on/off.
+In the browser's **Menu**: History on/off and Ad blocking on/off.
 
 Advanced options are environment variables read by `bin/run.sh` (for example
 `KB_AUTOSLEEP_MIN`, `KB_LIGHT_EDGE`, `KB_ESCAPE_HOLD_SEC`); see
