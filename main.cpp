@@ -720,9 +720,9 @@ void Browser::showTextSizeBar()
     QHBoxLayout *row = new QHBoxLayout(bar);
     row->setContentsMargins(12, 10, 12, 10);
     row->setSpacing(10);
-    FlatButton *smaller = toolButton("A-", 150, 96);
+    FlatButton *smaller = toolButton(QString::fromUtf8("A\xe2\x88\x92"), 150, 96);
     FlatButton *bigger = toolButton("A+", 150, 96);
-    FlatButton *done = toolButton("Done", 170, 96); done->setBold(true);
+    FlatButton *done = toolButton("Done", 230, 96); done->setBold(true);
     done->setIconName("check");
     QLabel *lbl = new QLabel(QString("Text %1%").arg(qRound(m_textZoom * 100)));
     QFont lf; lf.setPixelSize(36); lbl->setFont(lf);
