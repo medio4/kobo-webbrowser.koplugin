@@ -359,6 +359,17 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                 callback = function() self:askUrl() end,
             },
             {
+                text = _("History"),
+                help_text = _("Pages opened in the browser, newest first. Tap one to open the browser on it. The browser's own Menu can turn History off or clear it."),
+                enabled_func = function() return self.menu_session == nil end,
+                sub_item_table_func = function() return self:pageListMenu("history.txt", _("No history yet, or History is turned off in the browser's Menu.")) end,
+            },
+            {
+                text = _("Bookmarks"),
+                enabled_func = function() return self.menu_session == nil end,
+                sub_item_table_func = function() return self:pageListMenu("bookmarks.txt", _("No bookmarks yet. In the browser: Menu > Add bookmark.")) end,
+            },
+            {
                 text_func = function()
                     return T(_("Home page: %1"), self.settings.home or DEFAULT_HOME)
                 end,
@@ -545,6 +556,31 @@ function KoboWebBrowser:writeAdblockFiles()
     put("adblock-off.txt", self.settings.adblock_off == true and "ad blocking turned off in KOReader's menu" or nil)
     put("adblock-allow.txt", self.settings.adblock_allow)
     put("adblock-extra.txt", self.settings.adblock_block)
+end
+
+-- Menu entries for a page list the browser keeps in bin/ (history.txt, bookmarks.txt:
+-- "url<TAB>title" lines). Tapping one launches the browser on that page.
+function KoboWebBrowser:pageListMenu(name, empty_text)
+    local items = {}
+    local f = io.open(self.bin .. "/" .. name, "r")
+    if f then
+        for line in f:lines() do
+            local url, title = line:match("^([^\t]+)\t?(.*)$")
+            if url and url:match("^https?://") then
+                if not title or title == "" then title = url end
+                table.insert(items, {
+                    text = title,
+                    callback = function() self:launch({ args = { url } }) end,
+                })
+                if #items >= 100 then break end
+            end
+        end
+        f:close()
+    end
+    if #items == 0 then
+        table.insert(items, { text = empty_text, enabled_func = function() return false end })
+    end
+    return items
 end
 
 function KoboWebBrowser:askUrl()
