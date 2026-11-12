@@ -164,19 +164,19 @@ function WakeScreen:init()
     local btn_w = math.floor((inner_w - Size.span.horizontal_default) / 2)
     local buttons = HorizontalGroup:new{
         Button:new{
-            text = _("Exit"),
+            text = _("Close browser"),
             width = btn_w,
             callback = function() if self.on_exit then self.on_exit() end end,
         },
         HorizontalSpan:new{ width = Size.span.horizontal_default },
         Button:new{
-            text = _("Cancel"),
+            text = _("Offline copy"),
             width = btn_w,
             callback = function() if self.on_cancel then self.on_cancel() end end,
         },
     }
     local hint = TextBoxWidget:new{
-        text = _("Exit closes the browser. Cancel opens the saved copy of this page without a connection."),
+        text = _("Offline copy: this page as saved before sleep, no Wi-Fi needed."),
         face = Font:getFace("cfont", 18),
         width = inner_w,
         alignment = "center",
@@ -798,7 +798,10 @@ function KoboWebBrowser:launch(extra)
             logger.info("KoboWebBrowser: resuming minimized browser on", m.url)
         end
     end
-    -- A fresh start: drop anything left over from an earlier sleep/wake.
+    -- A fresh start: drop anything left over from an earlier sleep/wake, including a
+    -- hand-off file a browser wrote just before KOReader restarted (its "sleep" line would
+    -- otherwise put the device to sleep when this new session ends).
+    os.remove(self.handoff)
     self.resume_launch = nil
     self:deleteSleepFiles()
     if not reading then self:clearReaderDir() end
