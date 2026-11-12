@@ -1,4 +1,50 @@
-# kobo-browser
+# Web browser for KOReader on Kobo
+
+A touch web browser for Kobo e-readers, shipped as a KOReader plugin
+(`kobo-webbrowser.koplugin`). It reuses the Qt 5.2.1 + QtWebKit libraries already in
+Kobo's firmware, so the plugin itself is under 1 MB. Developed on a Kobo Clara BW.
+
+<p align="center">
+  <img src="docs/screenshots/reading.png" width="30%" alt="Reading a Wikipedia article">
+  <img src="docs/screenshots/menu.png" width="30%" alt="The Menu, grouped into Go to, This page and Settings">
+  <img src="docs/screenshots/search.png" width="30%" alt="Search results">
+</p>
+<p align="center">
+  <img src="docs/screenshots/keyboard.png" width="30%" alt="Built-in on-screen keyboard">
+  <img src="docs/screenshots/contents.png" width="30%" alt="Contents: jump to a heading">
+  <img src="docs/screenshots/bookmarks.png" width="30%" alt="Bookmarks">
+</p>
+<p align="center">
+  <img src="docs/screenshots/phone.png" width="30%" alt="Send to Kobo: scan the QR code to send links from a phone">
+</p>
+
+## Features
+
+- **E-ink friendly**: one-row toolbar, flat buttons, page-turn swipes, refreshes limited
+  to what changed, a single clean flash when a pop-up opens or closes.
+- **Readable text**: a minimum font size and a remembered text size (Menu > Text bigger / smaller).
+- **Save pages as EPUB** into your library, cleaned up with Readability. On a page that
+  lists the parts of a series, save the whole series as one book with a chapter list.
+- **Read in KOReader**: open the article (or a whole series) as a temporary book in
+  KOReader; it is removed when you close it, and you can go back to the page.
+- **Send to Kobo**: open the page shown by the QR code on your phone and paste a link;
+  it opens on the Kobo.
+- **Bookmarks, History** (can be turned off) and a home page of your choice, also listed
+  in KOReader's menu under Web browser to launch straight onto a page.
+- **Ad blocking** with a built-in list, plus your own allowed / blocked sites.
+- **Contents** to jump between a page's headings; Back/Fwd; error page with Try again.
+- Works with KOReader: its top menu opens with a swipe down over the toolbar, KOReader
+  handles sleep and wake, and long-pressing Web browser in its menu opens the browser.
+
+## Install
+
+Download the release zip, unzip it, and copy `kobo-webbrowser.koplugin` into
+`.adds/koreader/plugins/` on the Kobo. Restart KOReader, then open it from the menu:
+Tools > Web browser (or long-press that entry). See [BUILDING.md](BUILDING.md) to build it.
+
+---
+
+## Internals
 
 Minimal touch web browser for Kobo e-readers that reuses the Qt 5.2.1 + QtWebKit
 libraries already inside Kobo's firmware (Nickel). No Nickel process needed; it is
