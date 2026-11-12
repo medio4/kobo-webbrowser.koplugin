@@ -139,6 +139,8 @@ Scrolling is built for e-ink, so the screen redraws as rarely as possible:
 - The slim bar on the right shows where you are on the page. A second one appears along
   the bottom when the page is wider than the screen.
 
+### Quick reference
+
 | To | Do this |
 | --- | --- |
 | Turn a page | Flick up or down (or left or right) |
