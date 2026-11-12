@@ -1332,15 +1332,16 @@ void Browser::showMenu()
 // a non-flashing grayscale pass so no outline of the buttons lingers.
 void Browser::menuClosed()
 {
-    // The page's own repaint (a grayscale partial) already covers the panel area; an extra
-    // cleanup pass only added a third refresh. Kept as a hook (KB_MENU_CLEAN=1 turns it on).
-    if (getenv("KB_MENU_CLEAN")) QTimer::singleShot(300, this, SLOT(cleanMenuArea()));
-    else m_menuRect = QRect();
+    // The plain partial update left faint button outlines on white pages, so once the page
+    // has repainted there, flash just the area the panel covered (not the whole screen).
+    // KB_MENU_NOFLASH=1 skips it.
+    if (getenv("KB_MENU_NOFLASH")) m_menuRect = QRect();
+    else QTimer::singleShot(250, this, SLOT(cleanMenuArea()));
 }
 
 void Browser::cleanMenuArea()
 {
-    if (m_eink && !m_menuRect.isEmpty()) m_eink->cleanRect(m_menuRect);
+    if (m_eink && !m_menuRect.isEmpty()) m_eink->markDirty(m_menuRect, m_eink->flagsFull());
     m_menuRect = QRect();
 }
 
