@@ -363,8 +363,22 @@ function KoboWebBrowser:addToMainMenu(menu_items)
             },
             {
                 text = _("Close web browser"),
-                enabled_func = function() return self.menu_session ~= nil end,
-                callback = function() self:closeFromMenu() end,
+                help_text = _("Closes a browser left open behind this menu, or ends a minimized one so the next start opens the home page."),
+                enabled_func = function() return self.menu_session ~= nil or self.settings.minimized ~= nil end,
+                keep_menu_open = true,
+                callback = function(touchmenu_instance)
+                    if self.menu_session then
+                        self:closeFromMenu()
+                        return
+                    end
+                    -- Minimized: forget the page and its Back/Fwd, so nothing is resumed.
+                    self.settings.minimized = nil
+                    self:saveSettings()
+                    os.remove(self.bin .. "/session-history.dat")
+                    logger.info("KoboWebBrowser: minimized session closed")
+                    if touchmenu_instance then touchmenu_instance:updateItems() end
+                    UIManager:show(InfoMessage:new{ text = _("Web browser closed."), timeout = 2 })
+                end,
                 separator = true,
             },
             {
