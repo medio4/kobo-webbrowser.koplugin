@@ -53,7 +53,8 @@ public:
     quint64 flagsFast() const { return m_flagsFast; }
     // Clean grayscale (GL16) partial refresh of a rect, regardless of whether its
     // pixels changed: clears the ghosting left by fast DU updates.
-    void cleanRect(const QRect &r);
+    void cleanRect(const QRect &r);   // r in window coordinates
+    bool canRotate() const;   // grab mode only: we copy every pixel ourselves (rotation.h)
     // While suspended (KOReader is drawing its keyboard over our picture) nothing is
     // pushed to the framebuffer or refreshed; resuming repaints and flashes everything.
     void setSuspended(bool on);
@@ -74,6 +75,7 @@ private slots:
     void settleFast();   // after a burst of fast updates: clean refresh of their area
     void settleLoad();   // page stopped repainting after a load: one more full flash
 private:
+    void cleanPanelRect(const QRect &r);   // r in panel (framebuffer) coordinates
     // One refresh policy for both backends: picks the waveform name (fbink -W spelling:
     // AUTO, DU, GL16, GC16, REAGL, A2) and whether to flash, and keeps the counters.
     void chooseWaveform(quint64 flags, const QRect &r, QString *wf, bool *flash);

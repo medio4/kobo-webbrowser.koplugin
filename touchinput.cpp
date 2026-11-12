@@ -1,4 +1,5 @@
 #include "touchinput.h"
+#include "rotation.h"
 #include <QtCore/QSocketNotifier>
 #include <QtCore/QDebug>
 #include <QtGui/QGuiApplication>
@@ -139,7 +140,8 @@ void KoboTouchInput::emitState()
     if (m_mirrorY) sy = (m_screenH - 1) - sy;
     if (sx < 0) sx = 0; if (sx >= m_screenW) sx = m_screenW - 1;
     if (sy < 0) sy = 0; if (sy >= m_screenH) sy = m_screenH - 1;
-    QPoint pos(sx, sy);
+    // Rotated screen (rotation.h): turn the panel point into the window's coordinates.
+    QPoint pos = KbRotation::fromPhysical(QPoint(sx, sy));
 
     QWindow *win = QGuiApplication::focusWindow();
     if (!win) {

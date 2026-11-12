@@ -22,6 +22,7 @@
 #include "memtune.h"
 #include "power.h"
 #include "textentry.h"
+#include "rotation.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QSizePolicy>
@@ -418,6 +419,7 @@ private:
 Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_phone(0), m_restoreY(-1), m_relaunch(false), m_offline(false), m_offlineShown(false), m_onlineTimer(0)
 {
+    m_rotPrev = 0;
     setWindowTitle("Browser");
     // Home page: one chosen in the browser (Menu > Set as home) wins over the launcher's.
     // m_home is the page this run starts on; a URL given on the command line (the page
@@ -858,6 +860,8 @@ static const char *kJsActiveField =
 bool Browser::nativeTextEntry()
 {
     if (!m_native || !m_native->available() || m_native->active()) return false;
+    // KOReader draws its keyboard in portrait: on a rotated screen use our own keys.
+    if (KbRotation::angle()) return false;
     QWidget *focus = QApplication::focusWidget();
     if (focus == m_view) {
         QString info = m_view->page()->mainFrame()->evaluateJavaScript(kJsActiveField).toString();
@@ -963,6 +967,42 @@ void Browser::cleanToolbar()
 }
 
 void Browser::fullRefresh()    { if (m_eink) m_eink->refreshAllFull(); }
+
+// ---- Screen rotation (rotation.h). The window is laid out at the turned size; eink.cpp
+// turns the pixels and touchinput.cpp the taps. Saved for the next start.
+void Browser::rotateLeft()  { applyRotation(KbRotation::angle() + 270, true); }
+void Browser::rotateRight() { applyRotation(KbRotation::angle() + 90, true); }
+
+void Browser::applyRotation(int angle, bool save)
+{
+    if (!m_eink || !m_eink->canRotate()) return;
+    hideKeyboard();
+    m_rotPrev = KbRotation::angle();
+    KbRotation::setAngle(angle);
+    QRect g(QPoint(0, 0), KbRotation::logicalSize());
+    qDebug() << "rotate:" << m_rotPrev << "->" << KbRotation::angle() << "window" << g;
+    setWindowState(windowState() & ~Qt::WindowFullScreen);
+    setGeometry(g);
+    if (save) KbRotation::save();
+    m_status->setText("Screen: " + KbRotation::name());
+    // Once the window has its new size and has repainted, check it and flash it all clean.
+    QTimer::singleShot(300, this, SLOT(rotationSettled()));
+}
+
+void Browser::rotationSettled()
+{
+    QSize want = KbRotation::logicalSize();
+    QSize got = windowHandle() ? windowHandle()->geometry().size() : size();
+    if (got != want) {
+        // The platform kept the old size: go back, or the picture and taps won't line up.
+        qWarning() << "rotate: window stayed" << got << "wanted" << want << "- undoing";
+        KbRotation::setAngle(m_rotPrev);
+        KbRotation::save();
+        setGeometry(QRect(QPoint(0, 0), KbRotation::logicalSize()));
+        m_status->setText("Rotation didn't work on this screen");
+    }
+    if (m_eink) m_eink->refreshAllFull();
+}
 void Browser::pinchZoom(double ratio)
 {
     ratio = qBound(0.5, ratio, 2.0);
@@ -1427,6 +1467,10 @@ void Browser::showMenu()
     m->addAction(HistoryStore::enabled() ? "History: on" : "History: off", this, SLOT(toggleHistory()));
     m->addAction(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off", this, SLOT(toggleAdBlock()));
     m->addAction("Clean screen", this, SLOT(fullRefresh()), !plugin);
+    if (m_eink && m_eink->canRotate()) {
+        m->addAction("Rotate left", this, SLOT(rotateLeft()));
+        m->addAction("Rotate right", this, SLOT(rotateRight()));
+    }
     if (plugin) m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()));
     m->addSpacer();
     m->addAction("Exit browser", this, SLOT(quit()), true);
@@ -1717,6 +1761,9 @@ int main(int argc, char **argv)
         qDebug() << "CA bundle:" << bundle << cas.size() << "certs";
     }
 
+    // Panel size in portrait, for software rotation (rotation.h).
+    if (QScreen *ps = app.primaryScreen()) KbRotation::init(ps->geometry().width(), ps->geometry().height());
+
     // Input. Default: our own evdev reader (Kobo's touch_device plugin crashes outside Nickel).
     const char *touchDev = getenv("KB_TOUCH_DEV");
     const char *keysDev  = getenv("KB_KEYS_DEV");
@@ -1767,7 +1814,16 @@ int main(int argc, char **argv)
     QScreen *scr = app.primaryScreen();
     if (scr) qDebug() << "screen:" << scr->geometry() << "dpi" << scr->logicalDotsPerInch();
     const char *showMode = getenv("KB_SHOWMODE");
-    if (showMode && !strcmp(showMode, "show")) {
+    // Saved rotation (Menu > Rotate): lay the window out turned from the start. Only in
+    // grab mode, where eink.cpp copies (and so can turn) every pixel itself.
+    const int savedRotation = KbRotation::loadSaved();
+    if (savedRotation && eink->canRotate()) {
+        KbRotation::setAngle(savedRotation);
+        qDebug() << "rotate: starting at" << savedRotation << "window" << KbRotation::logicalSize();
+        w.setGeometry(QRect(QPoint(0, 0), KbRotation::logicalSize()));
+        w.show();
+        QTimer::singleShot(800, &w, SLOT(rotationSettled()));
+    } else if (showMode && !strcmp(showMode, "show")) {
         if (scr) w.setGeometry(scr->geometry());
         w.show();
     } else if (showMode && !strcmp(showMode, "max")) {
