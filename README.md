@@ -40,6 +40,10 @@ pauses while the browser is open and comes back when you exit.
 - Modern page styles: style sheets written for current browsers (CSS variables, flexbox,
   transforms, `calc()`, `clamp()`) are rewritten into the older forms the Kobo's 2013
   WebKit understands, so slide-in menus stay hidden and layouts hold together.
+- Modern page styles: pages written for current browsers are translated on the fly for
+  the firmware's 2013-era engine (prefixed transforms and flexbox, CSS variables,
+  min()/max()), so off-screen menus stay hidden and layouts hold together. Can be turned off
+  under Tools → Web browser → Fix modern page styles.
 - **Send to Kobo**: scan the QR code (Menu → From phone) with your phone, paste a link on
   the page that opens, and it loads on the Kobo.
 - **Save**: turns the current article into an EPUB (Mozilla Readability plus the article's
