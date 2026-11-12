@@ -473,6 +473,16 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                         end,
                     },
                     {
+                        text = _("Type in a bar above the keyboard"),
+                        help_text = _("KOReader's keyboard with a one-line text bar and shortcut buttons, instead of typing straight into the page. Off by default."),
+                        enabled_func = function() return self.settings.builtin_keyboard ~= true end,
+                        checked_func = function() return self.settings.kbd_dialog == true end,
+                        callback = function()
+                            self.settings.kbd_dialog = (self.settings.kbd_dialog ~= true) or nil
+                            self:saveSettings()
+                        end,
+                    },
+                    {
                         text = _("Start phone link with the browser"),
                         help_text = _("Turn on Send to Kobo (Menu > From phone) as soon as the browser opens, instead of when you open From phone. Off by default."),
                         checked_func = function() return self.settings.phone_autostart == true end,

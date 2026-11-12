@@ -146,6 +146,7 @@ In KOReader, under **Tools → Web browser**:
   - **Ad blocking**: on/off, sites where ads are allowed, extra sites to block.
   - **Fix modern page styles** (on by default): turn off if a site looks worse with it.
   - **Use the browser's own keyboard** (off by default): its built-in keys instead of KOReader's keyboard.
+  - **Type in a bar above the keyboard** (off by default): the earlier one-line bar with shortcut buttons.
   - **Start phone link with the browser** (off by default): Send to Kobo is ready as soon as the browser opens.
   - **Keep the browser's orientation** (off by default): KOReader always turns with the browser while it's open, so its menu and keyboard match the page. With this on, KOReader stays that way after the browser closes.
   - **Hold Menu button**: what holding the browser's Menu button does (default: Reader mode).
