@@ -156,6 +156,8 @@ void KoboWebPage::adblockReport()
 
 void KoboWebPage::fixupSite()
 {
+    if (const char *probe = getenv("KB_JS_PROBE"))   // debugging: log a JS expression after each load
+        qDebug() << "probe:" << mainFrame()->evaluateJavaScript(QString::fromLocal8Bit(probe)).toString();
     if (!isBing(mainFrame()->url())) return;
     runBingFixup();
     // Bing's own scripts may rebuild tiles shortly after load; go over them again.
