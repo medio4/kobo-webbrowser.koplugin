@@ -1,3 +1,4 @@
+#include "icons.h"
 #include "bookmarks.h"
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -176,10 +177,14 @@ BookmarksOverlay::BookmarksOverlay(QWidget *parent, bool history)
     foreach (QPushButton *b, QList<QPushButton *>() << m_prev << m_next << close) {
         b->setFont(f); b->setMinimumHeight(96); b->setFocusPolicy(Qt::NoFocus);
     }
+    KbIcons::setOn(m_prev, "chevron.left");
+    KbIcons::setOn(m_next, "chevron.right");
+    KbIcons::setOn(close, "close");
     nav->addWidget(m_prev); nav->addWidget(m_pageLabel, 1); nav->addWidget(m_next);
     if (history) {
         QPushButton *clear = new QPushButton("Clear all");
         clear->setFont(f); clear->setMinimumHeight(96); clear->setFocusPolicy(Qt::NoFocus);
+        KbIcons::setOn(clear, "cancel");
         connect(clear, SIGNAL(clicked()), this, SLOT(clearClicked()));
         nav->addWidget(clear);
     }
@@ -221,12 +226,13 @@ void BookmarksOverlay::showPage(int page)
         row->setSpacing(10);
         QString t = m_items[i].title;
         QFontMetrics fm(f);
-        QPushButton *open = new QPushButton(fm.elidedText(t, Qt::ElideRight, qMax(200, width() - 340)));
+        QPushButton *open = new QPushButton(fm.elidedText(t, Qt::ElideRight, qMax(200, width() - 380)));
         open->setFont(f); open->setMinimumHeight(96); open->setFocusPolicy(Qt::NoFocus);
         open->setStyleSheet("QPushButton { text-align: left; padding-left: 16px; border: 2px solid black; border-radius: 8px; background: white; color: black; }");
         open->setProperty("idx", i);
         QPushButton *del = new QPushButton("Remove");
-        del->setFont(f); del->setFixedSize(170, 96); del->setFocusPolicy(Qt::NoFocus);
+        del->setFont(f); del->setFixedSize(210, 96); del->setFocusPolicy(Qt::NoFocus);
+        KbIcons::setOn(del, "cancel", 40);
         del->setProperty("idx", i);
         connect(open, SIGNAL(clicked()), this, SLOT(entryClicked()));
         connect(del, SIGNAL(clicked()), this, SLOT(removeClicked()));

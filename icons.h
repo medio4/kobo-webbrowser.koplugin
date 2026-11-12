@@ -5,8 +5,11 @@
 #define KB_ICONS_H
 #include <QtGui/QPixmap>
 #include <QtCore/QString>
+class QAbstractButton;
 namespace KbIcons {
     // Pixmap of the named icon ("home", "chevron.left", ...) at size x size; null if missing.
     QPixmap get(const QString &name, int size);
+    // Puts the named icon on a dialog button, left of its label. Does nothing if missing.
+    void setOn(QAbstractButton *b, const QString &name, int size = 48);
 }
 #endif

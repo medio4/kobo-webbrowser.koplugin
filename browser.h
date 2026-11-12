@@ -82,11 +82,14 @@ private:
 
 // On-screen keyboard laid out like KOReader's English keyboard, with URL
 // helpers. Built once; shift / symbol layers only relabel the keys.
+class QSpacerItem;
 class OnScreenKeyboard : public QWidget {
     Q_OBJECT
 public:
     explicit OnScreenKeyboard(QWidget *parent = 0);
     int preferredHeight() const;
+    // Stretches the keys to fill width w (landscape is wider), with flatter keys there.
+    void fitWidth(int w);
 signals:
     void goPressed();
     void hidePressed();
@@ -105,6 +108,9 @@ private:
     bool m_shift_on;
     bool m_symbols;
     int m_rows;
+    int m_keyH;
+    int m_fitW;
+    QList<QSpacerItem *> m_halfSpacers;   // the half-key indents of the a-l row
 };
 
 class Browser : public QMainWindow {

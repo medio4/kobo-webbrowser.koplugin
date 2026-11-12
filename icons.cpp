@@ -4,6 +4,8 @@
 #include <QtCore/QHash>
 #include <QtGui/QPainter>
 #include <QtSvg/QSvgRenderer>
+#include <QtGui/QIcon>
+#include <QtWidgets/QAbstractButton>
 #include <cstdlib>
 
 static QString iconDir()
@@ -35,4 +37,13 @@ QPixmap KbIcons::get(const QString &name, int size)
     }
     cache.insert(key, pm);
     return pm;
+}
+
+void KbIcons::setOn(QAbstractButton *b, const QString &name, int size)
+{
+    QPixmap pm = get(name, size);
+    if (pm.isNull() || !b) return;
+    b->setIcon(QIcon(pm));
+    b->setIconSize(QSize(size, size));
+    if (!b->text().isEmpty() && !b->text().startsWith(' ')) b->setText("  " + b->text());
 }

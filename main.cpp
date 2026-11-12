@@ -296,8 +296,13 @@ static const char *kLower[] = { "1234567890", "qwertyuiop", "asdfghjkl",  "zxcvb
 static const char *kUpper[] = { "1234567890", "QWERTYUIOP", "ASDFGHJKL",  "ZXCVBNM",  0 };
 static const char *kSym[]   = { "!@#$%^&*()", "-_=+[]{}\\|", ";:'\",<>?",  "~`/.",     0 };
 
+// Key size: taller keys are easier to hit; 5 rows of 108 px take ~40% of the screen.
+static const int kKeyH = 108;
+static const int kKeyGap = 6;
+
 OnScreenKeyboard::OnScreenKeyboard(QWidget *parent)
-    : QWidget(parent), m_shift(0), m_sym(0), m_shift_on(false), m_symbols(false), m_rows(0)
+    : QWidget(parent), m_shift(0), m_sym(0), m_shift_on(false), m_symbols(false), m_rows(0),
+      m_keyH(kKeyH), m_fitW(1072)
 {
     setProperty("kb_fast", true);          // refreshed with the fast DU waveform
     // (no WA_OpaquePaintEvent here: it would stop Qt from filling the white background)
@@ -306,9 +311,6 @@ OnScreenKeyboard::OnScreenKeyboard(QWidget *parent)
     build();
 }
 
-// Key size: taller keys are easier to hit; 5 rows of 108 px take ~40% of the screen.
-static const int kKeyH = 108;
-static const int kKeyGap = 6;
 
 static FlatButton *key(const QString &label, int w, int h, bool dark = false, int px = 50)
 {
@@ -332,7 +334,7 @@ void OnScreenKeyboard::build()
     // shift on the left and backspace on the right).
     for (int r = 0; kLower[r]; ++r) {
         QHBoxLayout *row = new QHBoxLayout; row->setSpacing(gap);
-        if (r == 2) row->addSpacing(keyW / 2);
+        if (r == 2) { row->addSpacing(keyW / 2); m_halfSpacers << row->itemAt(row->count() - 1)->spacerItem(); }
         if (r == 3) {
             m_shift = key("Shift", keyW + keyW / 2 + gap / 2, keyH, true, 38);
             connect(m_shift, SIGNAL(clicked()), this, SLOT(toggleShift()));
@@ -344,7 +346,7 @@ void OnScreenKeyboard::build()
             m_charKeys.append(b);
             row->addWidget(b);
         }
-        if (r == 2) row->addSpacing(keyW / 2);
+        if (r == 2) { row->addSpacing(keyW / 2); m_halfSpacers << row->itemAt(row->count() - 1)->spacerItem(); }
         if (r == 3) {
             FlatButton *bs = key("Del", keyW + keyW / 2 + gap / 2, keyH, true, 40);   // backspace ("<" renders as a clock glyph in the Kobo UI font; no arrow glyphs)
             bs->setProperty("keycode", (int)Qt::Key_Backspace);
@@ -386,10 +388,29 @@ void OnScreenKeyboard::build()
     bottom->addStretch(1);
     v->addLayout(bottom);
     ++m_rows;
+    // Remember each key's width at the portrait size, for fitWidth().
+    foreach (FlatButton *b, findChildren<FlatButton *>()) b->setProperty("baseW", b->width());
     setFixedHeight(preferredHeight());
 }
 
-int OnScreenKeyboard::preferredHeight() const { return m_rows * (kKeyH + kKeyGap) + kKeyGap + 2; }
+int OnScreenKeyboard::preferredHeight() const { return m_rows * (m_keyH + kKeyGap) + kKeyGap + 2; }
+
+void OnScreenKeyboard::fitWidth(int w)
+{
+    if (w <= 0 || w == m_fitW) return;
+    m_fitW = w;
+    const int baseKeyW = (1072 - 11 * kKeyGap) / 10;
+    const int keyW = (w - 11 * kKeyGap) / 10;
+    // Landscape: same row count but much less height to spare, so flatter keys.
+    m_keyH = w > 1200 ? 84 : kKeyH;
+    foreach (FlatButton *b, findChildren<FlatButton *>()) {
+        int bw = b->property("baseW").toInt();
+        if (bw > 0) b->setFixedSize(bw * keyW / baseKeyW, m_keyH);
+    }
+    foreach (QSpacerItem *s, m_halfSpacers) if (s) s->changeSize(keyW / 2, 0);
+    if (layout()) layout()->invalidate();
+    setFixedHeight(preferredHeight());
+}
 
 void OnScreenKeyboard::relabel()
 {
@@ -793,6 +814,7 @@ void Browser::closeTextSizeBar()
 void Browser::placeKeyboard()
 {
     if (!m_central) return;
+    m_kbd->fitWidth(m_central->width());
     int h = m_kbd->preferredHeight();
     m_kbd->setGeometry(0, m_central->height() - h, m_central->width(), h);
 }

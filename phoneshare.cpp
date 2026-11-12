@@ -1,3 +1,4 @@
+#include "icons.h"
 #include "phoneshare.h"
 #include <QtCore/QDebug>
 #include <QtCore/QUrl>
@@ -229,6 +230,7 @@ PhoneDialog::PhoneDialog(const QString &url, QWidget *parent) : QWidget(parent)
     QPushButton *close = new QPushButton("Close");
     close->setFont(f); close->setMinimumSize(300, 100); close->setFocusPolicy(Qt::NoFocus);
     close->setProperty("kb_fast", true);
+    KbIcons::setOn(close, "close");
     v->addWidget(close);
     connect(close, SIGNAL(clicked()), this, SIGNAL(dismissed()));
     connect(close, SIGNAL(clicked()), this, SLOT(close()));

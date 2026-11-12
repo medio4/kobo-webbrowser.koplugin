@@ -1,3 +1,4 @@
+#include "icons.h"
 #include "epub.h"
 
 #include <QtCore/QFile>
@@ -723,6 +724,8 @@ SavedDialog::SavedDialog(const QString &epubPath, QWidget *parent)
         b->setFocusPolicy(Qt::NoFocus);
         b->setProperty("kb_fast", true);
     }
+    KbIcons::setOn(later, "appbar.navigation");
+    KbIcons::setOn(open, "book.opened");
     row->addWidget(later);
     row->addWidget(open);
     v->addLayout(row);
@@ -812,6 +815,9 @@ SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle,
         b->setProperty("kb_fast", true);
         v->addWidget(b);
     }
+    KbIcons::setOn(series, "column.three");
+    KbIcons::setOn(page, "column.one");
+    KbIcons::setOn(cancel, "close");
     connect(series, SIGNAL(clicked()), this, SIGNAL(seriesChosen()));
     connect(page, SIGNAL(clicked()), this, SIGNAL(pageChosen()));
     connect(cancel, SIGNAL(clicked()), this, SIGNAL(cancelled()));

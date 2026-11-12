@@ -1,3 +1,4 @@
+#include "icons.h"
 #include "toc.h"
 
 #include <QtCore/QDebug>
@@ -85,6 +86,9 @@ TocOverlay::TocOverlay(QWebView *view, QWidget *parent)
         b->setMinimumSize(190, 84);
         b->setFocusPolicy(Qt::NoFocus);
     }
+    KbIcons::setOn(m_prev, "chevron.left", 44);
+    KbIcons::setOn(m_next, "chevron.right", 44);
+    KbIcons::setOn(close, "close", 44);
     row->addWidget(m_prev); row->addWidget(m_pageLabel, 1); row->addWidget(m_next); row->addWidget(close);
     v->addLayout(row);
     connect(m_prev, SIGNAL(clicked()), this, SLOT(prevPage()));
