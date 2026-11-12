@@ -238,7 +238,24 @@ void FlatButton::paintEvent(QPaintEvent *)
     p.setFont(font());
     int isz = qMin(r.height() - 16, 64);
     QPixmap icon = m_iconName.isEmpty() ? QPixmap() : KbIcons::get(m_iconName, isz);
-    if (icon.isNull()) { p.drawText(r, Qt::AlignCenter, text()); return; }
+    // Labels never get cut off: shrink the font (down to 70%) until the label fits its box,
+    // and only then fall back to "...".
+    auto fitFont = [&](int room) {
+        QFont f = font();
+        int px = f.pixelSize() > 0 ? f.pixelSize() : QFontMetrics(f).height();
+        int minPx = qMax(14, px * 7 / 10);
+        while (px > minPx && QFontMetrics(f).width(text()) > room) {
+            px -= 2;
+            f.setPixelSize(px);
+        }
+        p.setFont(f);
+        return f;
+    };
+    if (icon.isNull()) {
+        QFont f = fitFont(r.width() - 16);
+        p.drawText(r, Qt::AlignCenter, QFontMetrics(f).elidedText(text(), Qt::ElideRight, r.width() - 8));
+        return;
+    }
     if (!isEnabled()) p.setOpacity(0.4);
     if (m_iconOnly || text().isEmpty()) {
         p.drawPixmap(r.center().x() - isz / 2 + 1, r.center().y() - isz / 2 + 1, icon);
@@ -246,12 +263,15 @@ void FlatButton::paintEvent(QPaintEvent *)
     }
     // Icon then text, centred together as one group.
     int gap = 14;
-    int tw = QFontMetrics(font()).width(text());
+    int room = r.width() - 24 - isz;
+    if (QFontMetrics(font()).width(text()) + gap > room) gap = 8;
+    QFont f = fitFont(room - gap);
+    int tw = QFontMetrics(f).width(text());
     int total = qMin(r.width() - 16, isz + gap + tw);
     int x = r.center().x() - total / 2;
     p.drawPixmap(x, r.center().y() - isz / 2 + 1, icon);
     QRect tr(x + isz + gap, r.top(), r.right() - (x + isz + gap), r.height());
-    p.drawText(tr, Qt::AlignVCenter | Qt::AlignLeft, QFontMetrics(font()).elidedText(text(), Qt::ElideRight, tr.width()));
+    p.drawText(tr, Qt::AlignVCenter | Qt::AlignLeft, QFontMetrics(f).elidedText(text(), Qt::ElideRight, tr.width()));
 }
 
 // ------------------------------------------------------------ OnScreenKeyboard
