@@ -24,6 +24,7 @@
 #include "textentry.h"
 #include "rotation.h"
 #include "icons.h"
+#include <QtWidgets/QFrame>
 #include <QtGui/QBackingStore>
 
 #include <QtWidgets/QApplication>
@@ -438,6 +439,8 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
 {
     m_rotPrev = 0;
     m_rotTarget = 0;
+    m_sizeBar = 0;
+    m_sizeLabel = 0;
     setWindowTitle("Browser");
     // Home page: one chosen in the browser (Menu > Set as home) wins over the launcher's.
     // m_home is the page this run starts on; a URL given on the command line (the page
@@ -699,6 +702,57 @@ void Browser::resizeEvent(QResizeEvent *e)
 {
     QMainWindow::resizeEvent(e);
     placeKeyboard();
+    placeTextSizeBar();
+}
+
+// Menu > Text size: a bar along the bottom of the screen with smaller / bigger and Done.
+// It stays open while you adjust, and the page above it shows each change.
+void Browser::showTextSizeBar()
+{
+    if (m_sizeBar) { m_sizeBar->raise(); return; }
+    hideKeyboard();
+    QFrame *bar = new QFrame(m_central);
+    bar->setFrameStyle(QFrame::Box | QFrame::Plain);
+    bar->setLineWidth(3);
+    bar->setAutoFillBackground(true);
+    QPalette pal = bar->palette(); pal.setColor(QPalette::Window, Qt::white); bar->setPalette(pal);
+    bar->setProperty("kb_overlay", true);   // one clean flash when it opens and closes
+    QHBoxLayout *row = new QHBoxLayout(bar);
+    row->setContentsMargins(12, 10, 12, 10);
+    row->setSpacing(10);
+    FlatButton *smaller = toolButton("A-", 150, 96);
+    FlatButton *bigger = toolButton("A+", 150, 96);
+    FlatButton *done = toolButton("Done", 170, 96); done->setBold(true);
+    done->setIconName("check");
+    QLabel *lbl = new QLabel(QString("Text %1%").arg(qRound(m_textZoom * 100)));
+    QFont lf; lf.setPixelSize(36); lbl->setFont(lf);
+    lbl->setAlignment(Qt::AlignCenter);
+    row->addWidget(smaller); row->addWidget(lbl, 1); row->addWidget(bigger); row->addWidget(done);
+    connect(smaller, SIGNAL(clicked()), this, SLOT(zoomOut()));
+    connect(bigger, SIGNAL(clicked()), this, SLOT(zoomIn()));
+    connect(done, SIGNAL(clicked()), this, SLOT(closeTextSizeBar()));
+    m_sizeBar = bar;
+    m_sizeLabel = lbl;
+    placeTextSizeBar();
+    bar->show();
+    bar->raise();
+}
+
+void Browser::placeTextSizeBar()
+{
+    if (!m_sizeBar || !m_central) return;
+    int hgt = 120;
+    m_sizeBar->setGeometry(0, m_central->height() - hgt, m_central->width(), hgt);
+}
+
+void Browser::closeTextSizeBar()
+{
+    if (!m_sizeBar) return;
+    QWidget *b = m_sizeBar;
+    m_sizeBar = 0;
+    m_sizeLabel = 0;
+    b->hide();
+    b->deleteLater();
 }
 
 void Browser::placeKeyboard()
@@ -1095,6 +1149,7 @@ void Browser::setTextZoom(qreal z, bool save)
     if (tf.open(QIODevice::WriteOnly | QIODevice::Truncate))
         tf.write(QByteArray::number(double(z), 'f', 2) + '\n');
     m_status->setText(QString("Text size %1%").arg(qRound(z * 100)));
+    if (m_sizeLabel) m_sizeLabel->setText(QString("Text %1%").arg(qRound(z * 100)));
 }
 
 static int textStep(qreal z)
@@ -1509,8 +1564,7 @@ void Browser::showMenu()
     m->addSection("This page");
     m->addAction("Reload", this, SLOT(reloadClicked()), false, "cre.render.reload");
     m->addAction("Contents", this, SLOT(showToc()), false, "align.left");
-    m->addAction("Text bigger", this, SLOT(zoomIn()), false, "plus");
-    m->addAction("Text smaller", this, SLOT(zoomOut()), false, "appbar.textsize");
+    m->addAction("Text size", this, SLOT(showTextSizeBar()), false, "appbar.textsize");
     m->addAction("Add bookmark", this, SLOT(addBookmark()), false, "star.empty");
     m->addAction("Set as home", this, SLOT(setAsHome()), false, "check");
     if (plugin) m->addAction("Read in KOReader", this, SLOT(readInKoreader()), false, "book.opened");

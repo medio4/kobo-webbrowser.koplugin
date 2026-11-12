@@ -45,8 +45,8 @@ older NXP and Allwinner models are untested.
   grouped into Go to, This page and Settings.
 - Flick up or down to turn a full screen (a small strip of overlap keeps your place; left
   and right flicks work too), or touch, wait a moment and drag to scroll just a little.
-  Hold and drag sideways on a wide table to slide it. Pinch to zoom, and use **Text bigger
-  / smaller** for a size that is remembered. Text never shrinks below a readable minimum.
+  Hold and drag sideways on a wide table to slide it. Pinch to zoom, and use **Text size**
+  (a small bar along the bottom with smaller, bigger and Done) for a size that is remembered. Text never shrinks below a readable minimum.
 - **Contents** jumps to any heading on a long page.
 - A built-in keyboard that appears when you tap a text box.
 - Screen updates are kept small and clean: only what changed is refreshed, and menus
@@ -125,7 +125,7 @@ the browser needs to be open.
 | Turn a page | Swipe up or down (hold and drag to scroll freely) |
 | Go back / forward | **Back** / **Fwd**, or swipe in from the left / right edge |
 | Type an address or search | Tap the address, type, press **Go** on the keyboard |
-| Zoom | Pinch; or **Menu → Text bigger / smaller** for the text only |
+| Zoom | Pinch; or **Menu → Text size** for the text only |
 | Open KOReader's menu | Swipe down from the toolbar, or **Menu → KOReader menu** |
 | Clear e-ink ghosting | Two-finger tap, or **Menu → Clean screen** |
 | Exit | **Menu → Exit browser** |

@@ -146,6 +146,8 @@ private slots:
     void showMenu();
     void goHome();
     void rotateNow();
+    void showTextSizeBar();
+    void closeTextSizeBar();
     void showRotateMenu();
     void rotateTo0();
     void rotateTo90();
@@ -209,6 +211,9 @@ private:
     EpubSaver *m_saver;
     PhoneShare *m_phone;
     int m_rotTarget;
+    QWidget *m_sizeBar;
+    QLabel *m_sizeLabel;
+    void placeTextSizeBar();
     void rotateTo(int angle);
     QRect m_menuRect;
     QList<EpubSaver::ChapterLink> m_seriesLinks;
