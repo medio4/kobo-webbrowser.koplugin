@@ -732,14 +732,26 @@ void Browser::pageTapped()
     QWebFrame *frame = m_view->page()->mainFrame();
     QWebHitTestResult hit = frame->hitTestContent(m_tapRelease);
     bool editable = hit.isContentEditable();
+    if (getenv("KB_TAP_LOG")) qDebug() << "tap: hit editable" << editable << hit.element().tagName();
     if (!editable) {
-        // Fallback for fields the hit test misses (e.g. inside inner frames).
-        QString tag = frame->evaluateJavaScript(
-            "(function(){var e=document.activeElement;if(!e)return '';var t=(e.tagName||'').toLowerCase();"
-            "if(t=='textarea'||e.isContentEditable)return 'y';"
-            "if(t=='input'&&!/^(button|submit|reset|checkbox|radio|file|image|hidden|range|color)$/i.test(e.type||''))return 'y';"
-            "return '';})()").toString();
-        editable = (tag == "y") && m_lastPageTap.isValid() && m_lastPageTap.elapsed() < 400 && hit.linkUrl().isEmpty();
+        // Fallback for fields the hit test misses. Only what is actually under the finger
+        // counts: a page that focuses its search box on load (autofocus) used to pop the
+        // keyboard up for any tap or small swipe anywhere, because the focused element was
+        // checked instead of the tapped one. The focused element is used only when the tap
+        // lands on an inner frame, whose content the outer page cannot see.
+        qreal z = m_view->zoomFactor();
+        QString js = QString(
+            "(function(x,y){function ed(e){if(!e)return false;var t=(e.tagName||'').toLowerCase();"
+            "if(t=='textarea'||e.isContentEditable)return true;"
+            "return t=='input'&&!/^(button|submit|reset|checkbox|radio|file|image|hidden|range|color)$/i.test(e.type||'');}"
+            "var e=document.elementFromPoint(x,y);if(!e)return '';"
+            "var t=(e.tagName||'').toLowerCase();"
+            "if(t=='iframe'||t=='frame')return ed(document.activeElement)?'y':'';"
+            "if(t=='label'&&e.control)e=e.control;"
+            "return ed(e)?'y':'';})(%1,%2)").arg(m_tapRelease.x() / z).arg(m_tapRelease.y() / z);
+        QString tag = frame->evaluateJavaScript(js).toString();
+        editable = (tag == "y") && hit.linkUrl().isEmpty();
+        if (getenv("KB_TAP_LOG")) qDebug() << "tap:" << m_tapRelease << "zoom" << z << "field" << tag;
     }
     if (!editable) {
         if (m_kbd->isVisible()) hideKeyboard();
@@ -756,7 +768,8 @@ void Browser::pageTapped()
     if (tb.size() == 2) {
         qreal z = m_view->zoomFactor();
         int top = int(tb[0].toDouble() * z), bottom = int(tb[1].toDouble() * z);
-        int kbdTop = m_kbd->mapTo(m_view, QPoint(0, 0)).y();
+        // The keyboard is not inside the view: go through global coordinates (mapTo needs an ancestor).
+        int kbdTop = m_view->mapFromGlobal(m_kbd->mapToGlobal(QPoint(0, 0))).y();
         const int margin = 30;
         if (bottom > kbdTop - margin) {
             int dy = bottom - (kbdTop - margin);
