@@ -129,6 +129,7 @@ the browser needs to be open.
 | Quick action | Hold the Menu button (Reader mode unless changed in Settings) |
 | Open KOReader's menu | Swipe down from the toolbar, or **Menu → KOReader menu** |
 | Clear e-ink ghosting | Two-finger tap, or **Menu → Clean screen** |
+| Step out to KOReader and come back | **Menu → Minimize**, then **Tools → Web browser → Resume web browser** (same page, scroll position and Back) |
 | Exit | **Menu → Exit browser** |
 | Force-quit a frozen page | Hold the power button for 5 seconds |
 

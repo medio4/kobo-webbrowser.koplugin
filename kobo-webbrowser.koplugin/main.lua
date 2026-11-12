@@ -347,7 +347,14 @@ function KoboWebBrowser:addToMainMenu(menu_items)
         sub_item_table = {
             {
                 text_func = function()
-                    return self.menu_session and _("Back to the web browser") or _("Open web browser")
+                    if self.menu_session then return _("Back to the web browser") end
+                    local m = self.settings.minimized
+                    if m then
+                        local name = (m.title and m.title ~= "") and m.title or m.url or ""
+                        if #name > 40 then name = name:sub(1, 38) .. "…" end
+                        return T(_("Resume web browser: %1"), name)
+                    end
+                    return _("Open web browser")
                 end,
                 callback = function()
                     -- Opened over a running browser: closing the menu goes back to it.
@@ -464,6 +471,7 @@ local HOLD_ACTIONS = {
     { "phone", _("From phone") },
     { "screenshot", _("Screenshot") },
     { "koreader", _("KOReader menu") },
+    { "minimize", _("Minimize") },
 }
 
 function KoboWebBrowser:holdMenuLabel()
@@ -706,6 +714,18 @@ function KoboWebBrowser:launch(extra)
             text = T(_("The browser program is missing.\n\nExpected: %1\n\nInstall the plugin from the release zip (kobo-webbrowser.koplugin-<version>.zip), not from the repository's source code."), self.bin .. "/kobo-browser"),
         })
         return
+    end
+    -- Minimized earlier: reopen on that page (with Back/Fwd), unless asked for another one.
+    local m = self.settings.minimized
+    if m then
+        self.settings.minimized = nil
+        self:saveSettings()
+        if not extra and m.url and m.url:match("^https?://") then
+            extra = { args = { m.url }, env = {} }
+            if tonumber(m.y) then extra.env.KB_RESTORE_Y = m.y end
+            if tonumber(m.zoom) then extra.env.KB_RESTORE_ZOOM = m.zoom end
+            logger.info("KoboWebBrowser: resuming minimized browser on", m.url)
+        end
     end
     -- A fresh start: drop anything left over from an earlier sleep/wake.
     self.resume_launch = nil
@@ -1378,7 +1398,19 @@ function KoboWebBrowser:onBrowserGone(reason)
     -- Use a sleep line only when we stopped the browser for sleep, or when it asked
     -- for sleep itself (idle timer). Not after an escape.
     local sleep_req = h.sleep
-    if reason == "escape" or h.to_open or h.read then sleep_req = nil end
+    if reason == "escape" or h.to_open or h.read or h.minimized then sleep_req = nil end
+    if h.minimized and reason == "exit" then
+        -- Minimized: remember where it was, so the next launch resumes there.
+        self.settings.minimized = h.minimized
+        self:saveSettings()
+        logger.info("KoboWebBrowser: minimized on", h.minimized.url)
+        UIManager:scheduleIn(1.6, function()
+            UIManager:show(InfoMessage:new{
+                text = _("Web browser minimized. Resume it from Tools → Web browser, or by long-pressing Web browser."),
+                timeout = 3,
+            })
+        end)
+    end
     local sleeping = reason == "sleep" or (reason == "exit" and sleep_req ~= nil)
 
     if sleeping then
@@ -1429,6 +1461,9 @@ function KoboWebBrowser:readHandoff()
         elseif kind == "read" then
             local file, url, y, zoom = rest:match("^([^\t]+)\t([^\t]*)\t?([^\t]*)\t?([^\t]*)$")
             if file then h.read = { file = file, url = url, y = y, zoom = zoom } end
+        elseif kind == "minimized" then
+            local url, y, zoom, title = rest:match("^([^\t]*)\t?([^\t]*)\t?([^\t]*)\t?(.*)$")
+            if url then h.minimized = { url = url, y = y, zoom = zoom, title = title } end
         elseif kind == "sleep" then
             local url, y, zoom = rest:match("^([^\t]*)\t?([^\t]*)\t?([^\t]*)$")
             h.sleep = { url = url, y = y, zoom = zoom }

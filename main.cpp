@@ -1561,7 +1561,7 @@ bool Browser::restoreSessionHistory(const QString &startUrl)
     QFile f(sessionHistoryFile());
     if (!f.exists()) return false;
     QFileInfo fi(f);
-    bool fresh = fi.lastModified().secsTo(QDateTime::currentDateTime()) < 24 * 3600;
+    bool fresh = fi.lastModified().secsTo(QDateTime::currentDateTime()) < 7 * 24 * 3600;
     bool ok = false;
     if (fresh && getenv("KB_START_FROM_ARG") && f.open(QIODevice::ReadOnly)) {
         QDataStream in(&f);
@@ -1598,6 +1598,26 @@ void Browser::readerFinished(bool ok, const QString &msg)
     saveSessionHistory();
     m_status->setText("Opening in KOReader…");
     QTimer::singleShot(400, qApp, SLOT(quit()));
+}
+
+// Menu > Minimize: hand the screen back to KOReader, remembering the page, its scroll
+// position and Back/Fwd. Tools > Web browser > Resume (or the usual launch) reopens it there.
+void Browser::minimize()
+{
+    QString url = m_view->url().toString();
+    if (m_offline || url.isEmpty() || url == "about:blank") url = m_home;
+    int y = m_view->page()->mainFrame()->scrollPosition().y();
+    QString title = m_view->title().simplified();
+    title.replace('\t', ' ');
+    QString line = url + '\t' + QString::number(y) + '\t' + QString::number(m_view->zoomFactor(), 'f', 2) + '\t' + title;
+    if (!EpubSaver::appendHandoff("minimized", line)) {
+        m_status->setText("Minimize needs the KOReader plugin");
+        return;
+    }
+    saveSessionHistory();
+    qDebug() << "minimize: handoff" << line;
+    m_status->setText("Minimizing…");
+    QTimer::singleShot(300, qApp, SLOT(quit()));
 }
 
 void Browser::phoneUrl(const QString &url)
@@ -1645,13 +1665,13 @@ void Browser::runQuickAction(const QString &key)
         { "addbookmark", "addBookmark" }, { "save", "saveEpub" }, { "home", "goHome" },
         { "reload", "reloadClicked" }, { "clean", "fullRefresh" }, { "rotate", "showRotateMenu" },
         { "keyboard", "toggleKeyboard" }, { "phone", "showPhoneDialog" }, { "screenshot", "screenshot" },
-        { "koreader", "openKoreaderMenu" },
+        { "koreader", "openKoreaderMenu" }, { "minimize", "minimize" },
     };
     const char *slot = "showMenu";
     for (unsigned i = 0; i < sizeof table / sizeof table[0]; ++i)
         if (key == QLatin1String(table[i][0])) { slot = table[i][1]; break; }
     // Reader mode and the KOReader menu need the plugin; without it, just open the Menu.
-    if (!plugin && (key == "reader" || key == "koreader")) slot = "showMenu";
+    if (!plugin && (key == "reader" || key == "koreader" || key == "minimize")) slot = "showMenu";
     if (key == "rotate" && !(m_eink && m_eink->canRotate())) slot = "showMenu";
     QMetaObject::invokeMethod(this, slot, Qt::QueuedConnection);
 }
@@ -1686,7 +1706,8 @@ void Browser::showMenu()
     if (rot) m->addAction("Rotate screen", this, SLOT(showRotateMenu()), !plugin, "appbar.rotation");
     if (plugin) m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()), !rot, "appbar.settings");
     m->addSpacer();
-    m->addAction("Exit browser", this, SLOT(quit()), true, "exit");
+    if (plugin) m->addAction("Minimize", this, SLOT(minimize()), false, "zoom.page");
+    m->addAction("Exit browser", this, SLOT(quit()), !plugin, "exit");
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
     m->popup();
     // No full-screen flash: the panel's own repaint is a plain partial update of its area.

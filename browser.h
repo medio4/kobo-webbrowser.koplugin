@@ -152,6 +152,7 @@ private slots:
     void showPhoneHint();
     void showPhoneDialog();
     void showMenu();
+    void minimize();
     void menuPressed();
     void menuReleased();
     void menuHoldFired();
