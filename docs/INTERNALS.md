@@ -16,7 +16,7 @@ Layout
     webpage.cpp, memtune.cpp, csscompat.cpp, adblock.cpp   page loading and fix-ups
     epub.cpp (+ js/)      Save / Reader mode: EPUBs and CBZ comics
     textentry.cpp         hand-offs to the KOReader plugin (keyboard, KOReader menu)
-    menupanel.cpp, toc.cpp, bookmarks.cpp, phoneshare.cpp, scrollmark.cpp, icons.cpp   UI pieces
+    menupanel.cpp, toc.cpp, navigator.cpp, bookmarks.cpp, phoneshare.cpp, scrollmark.cpp, icons.cpp   UI pieces
     kb-escape.c           power-button escape for a frozen browser
 - device/               — files that ship in the plugin's bin/: run.sh (launcher), wifi-sleep.sh,
                           ca-bundle.crt, adblock-hosts.txt (+ qt/ for the optional linuxfb backend)

@@ -16,6 +16,7 @@
 #include "scrollmark.h"
 #include "adblock.h"
 #include "toc.h"
+#include "navigator.h"
 #include "memtune.h"
 #include "power.h"
 #include "textentry.h"
@@ -1428,10 +1429,13 @@ void Browser::showMenu()
     m->addAction("Save", this, SLOT(saveEpub()), false, "move.down");
     m->addAction("Share", this, SLOT(sharePage()), false, "move.up");
     m->addAction("Screenshot", this, SLOT(screenshot()), false, "appbar.crop");
+    if (PageNavigator::enabled()) m->addAction("Page overview", this, SLOT(showNavigator()), false, "appbar.pageview");
     m->addAction("Clean screen", this, SLOT(fullRefresh()), m->atRowStart(), "appbar.contrast");
     m->addSection("Settings");
     m->addAction(HistoryStore::enabled() ? "History: on" : "History: off", this, SLOT(toggleHistory()), false, "back.top");
     m->addAction(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off", this, SLOT(toggleAdBlock()), false, "cancel");
+    m->addAction(PageNavigator::enabled() ? "Page overview (beta): on" : "Page overview (beta): off",
+                 this, SLOT(toggleNavigator()), true, "appbar.pageview");
     const bool rot = m_eink && m_eink->canRotate();
     if (rot) m->addAction("Rotate screen", this, SLOT(showRotateMenu()), !plugin, "appbar.rotation");
     if (plugin) m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()), !rot, "appbar.settings");
@@ -1629,6 +1633,22 @@ void Browser::showToc()
         connect(t, SIGNAL(beforeJump()), m_eink, SLOT(hintPageTurn()));
         // Closing it repaints the page under it with a normal partial update (no flash).
     }
+}
+
+// ---- Page overview (experimental, see navigator.cpp)
+
+void Browser::showNavigator()
+{
+    hideKeyboard();
+    PageNavigator *n = new PageNavigator(m_view, centralWidget());
+    if (m_eink) connect(n, SIGNAL(beforeJump()), m_eink, SLOT(hintPageTurn()));
+}
+
+void Browser::toggleNavigator()
+{
+    bool on = !PageNavigator::enabled();
+    PageNavigator::setEnabled(on);
+    m_status->setText(on ? "Page overview on: Menu > Page overview" : "Page overview off");
 }
 
 // "Open now": the handoff line is already written; exit so KOReader (kobo-webbrowser.koplugin)
