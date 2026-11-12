@@ -15,6 +15,7 @@ Kobo's firmware, so the whole plugin is about 1.5 MB (most of it the ad blocking
   <img src="docs/screenshots/bookmarks.png" width="30%" alt="Bookmarks">
 </p>
 <p align="center">
+  <img src="docs/screenshots/article-image.png" width="30%" alt="An article with a diagram, at a smaller text size">
   <img src="docs/screenshots/phone.png" width="30%" alt="Send to Kobo: scan the QR code to send links from a phone">
 </p>
 
