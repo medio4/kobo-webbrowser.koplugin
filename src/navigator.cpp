@@ -10,6 +10,7 @@
 #include <QtCore/QTimer>
 #include <QtCore/QVariant>
 #include <QtGui/QFont>
+#include <QtGui/QIcon>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QPainter>
 #include <QtGui/QPalette>
@@ -131,6 +132,23 @@ void PageNavigator::setEnabled(bool on)
     else { QFile f(settingFile()); if (f.open(QIODevice::WriteOnly)) f.write("on\n"); }
 }
 
+QPushButton *PageNavigator::navButton(const QString &text, const QString &icon, const QFont &font)
+{
+    QPushButton *b = new QPushButton;
+    b->setFont(font);
+    b->setFocusPolicy(Qt::NoFocus);
+    QPixmap pm = KbIcons::get(icon, 52);
+    if (pm.isNull()) {
+        b->setText(text);
+        b->setMinimumSize(110, 84);
+    } else {
+        b->setIcon(QIcon(pm));
+        b->setIconSize(pm.size());
+        b->setMinimumSize(100, 84);
+    }
+    return b;
+}
+
 PageNavigator::PageNavigator(QWebView *view, QWidget *parent)
     : QWidget(parent), m_view(view), m_viewW(1), m_viewH(1), m_step(1), m_count(0), m_current(0),
       m_scrollX(0), m_cols(3), m_rows(3), m_thumbW(1), m_thumbH(1), m_page(0)
@@ -169,24 +187,27 @@ PageNavigator::PageNavigator(QWebView *view, QWidget *parent)
     QHBoxLayout *row = new QHBoxLayout;
     row->setSpacing(12);
     QFont fb; fb.setPixelSize(34);
-    m_prev = new QPushButton("Prev");   // no "<": the Kobo UI font renders it as a clock glyph
-    m_next = new QPushButton("Next");
+    // Paging buttons are icon-only when KOReader's icons are there (six buttons don't fit a
+    // portrait row with labels), else short words. No "<": the Kobo UI font draws a clock glyph.
+    m_first = navButton("First", "chevron.first", fb);
+    m_prev = navButton("Prev", "chevron.left", fb);
+    m_next = navButton("Next", "chevron.right", fb);
+    m_last = navButton("Last", "chevron.last", fb);
     QPushButton *close = new QPushButton("Close");
+    close->setFont(fb);
+    close->setMinimumSize(190, 84);
+    close->setFocusPolicy(Qt::NoFocus);
+    KbIcons::setOn(close, "close", 44);
     m_pageLabel = new QLabel;
     m_pageLabel->setFont(fb);
     m_pageLabel->setAlignment(Qt::AlignCenter);
-    foreach (QPushButton *b, QList<QPushButton *>() << m_prev << m_next << close) {
-        b->setFont(fb);
-        b->setMinimumSize(190, 84);
-        b->setFocusPolicy(Qt::NoFocus);
-    }
-    KbIcons::setOn(m_prev, "chevron.left", 44);
-    KbIcons::setOn(m_next, "chevron.right", 44);
-    KbIcons::setOn(close, "close", 44);
-    row->addWidget(m_prev); row->addWidget(m_pageLabel, 1); row->addWidget(m_next); row->addWidget(close);
+    row->addWidget(m_first); row->addWidget(m_prev); row->addWidget(m_pageLabel, 1);
+    row->addWidget(m_next); row->addWidget(m_last); row->addWidget(close);
     v->addLayout(row);
+    connect(m_first, SIGNAL(clicked()), this, SLOT(firstPage()));
     connect(m_prev, SIGNAL(clicked()), this, SLOT(prevPage()));
     connect(m_next, SIGNAL(clicked()), this, SLOT(nextPage()));
+    connect(m_last, SIGNAL(clicked()), this, SLOT(lastPage()));
     connect(close, SIGNAL(clicked()), this, SLOT(closeClicked()));
 
     if (parent) resize(parent->size());
@@ -242,8 +263,10 @@ void PageNavigator::showPage(int page)
     m_head->setText(m_count == 1 ? QString("Page overview (1 screen)")
                                  : QString("Page overview (%1 screens)").arg(m_count));
     m_pageLabel->setText(QString("%1 / %2").arg(m_page + 1).arg(pages));
+    m_first->setEnabled(m_page > 0);
     m_prev->setEnabled(m_page > 0);
     m_next->setEnabled(m_page < pages - 1);
+    m_last->setEnabled(m_page < pages - 1);
     renderVisible();
     m_grid->update();
 }
@@ -335,6 +358,8 @@ void PageNavigator::resizeEvent(QResizeEvent *e)
 
 void PageNavigator::mousePressEvent(QMouseEvent *e) { e->accept(); }   // swallow taps outside the box
 
+void PageNavigator::firstPage() { showPage(0); }
 void PageNavigator::prevPage() { showPage(m_page - 1); }
+void PageNavigator::lastPage() { showPage(m_count); }   // showPage clamps to the last one
 void PageNavigator::nextPage() { showPage(m_page + 1); }
 void PageNavigator::closeClicked() { emit closed(); close(); }

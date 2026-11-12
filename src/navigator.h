@@ -15,6 +15,7 @@ class QWebView;
 class QLabel;
 class QPushButton;
 class QResizeEvent;
+class QFont;
 class QMouseEvent;
 class NavGrid;
 
@@ -30,8 +31,10 @@ signals:
     void closed();
 
 private slots:
+    void firstPage();
     void prevPage();
     void nextPage();
+    void lastPage();
     void closeClicked();
     void renderVisible();
 
@@ -51,7 +54,8 @@ private:
     QWidget *m_box;
     NavGrid *m_grid;
     QLabel *m_head, *m_pageLabel;
-    QPushButton *m_prev, *m_next;
+    QPushButton *m_first, *m_prev, *m_next, *m_last;
+    static QPushButton *navButton(const QString &text, const QString &icon, const QFont &font);
     int m_viewW, m_viewH;     // the page's viewport, frame pixels
     int m_step;               // scroll distance of one page turn (as PageScroller)
     int m_count;              // screens in the page
