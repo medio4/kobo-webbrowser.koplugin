@@ -109,6 +109,11 @@ KoboEink::KoboEink(QObject *parent)
     m_timer.setSingleShot(true);
     m_timer.setInterval(80);
     m_fastDelayMs = (int)envFlags("KB_FAST_DELAY_MS", 25);
+    m_batching = false;
+    m_shrinkFull = false;
+    m_batchTimer.setSingleShot(true);
+    m_batchTimer.setInterval((int)envFlags("KB_POPUP_SETTLE_MS", 90));
+    connect(&m_batchTimer, SIGNAL(timeout()), this, SLOT(flashOverlays()));
     if (getenv("KB_AUDIT")) {
         QTimer *at = new QTimer(this);
         connect(at, SIGNAL(timeout()), this, SLOT(audit()));
@@ -120,6 +125,12 @@ KoboEink::KoboEink(QObject *parent)
 void KoboEink::markDirty(const QRect &r, quint64 flags)
 {
     if (!available() || r.isEmpty() || m_suspended) return;
+    if (m_batching) {
+        m_overlayRect |= r;
+        // Keep waiting while repaints keep coming, but never longer than 400 ms in all.
+        if (m_batchSince.elapsed() < 400) m_batchTimer.start();
+        return;
+    }
     m_pending.append(qMakePair(r, flags));
     // Key presses and button taps (fast waveform) go out almost at once; everything else
     // waits a little longer so a burst of repaints becomes one update.
@@ -156,21 +167,19 @@ bool KoboEink::eventFilter(QObject *obj, QEvent *e)
             && obj->property("kb_overlay").toBool()) {
         QWidget *w = static_cast<QWidget *>(obj);
         if (e->type() == QEvent::Show) {
-            // Not laid out yet: measure its box when the flash is due.
-            m_shownOverlays << QPointer<QWidget>(w);
-            QTimer::singleShot(150, this, SLOT(flashOverlays()));
+            m_shownOverlays << QPointer<QWidget>(w);   // its box is measured once laid out
         } else {
             QWidget *top = w->window();
-            QRect area;
             foreach (QObject *o, w->children())
                 if (o->isWidgetType()) {
                     QWidget *ch = static_cast<QWidget *>(o);
-                    area |= QRect(ch->mapTo(top, QPoint(0, 0)), ch->size());
+                    m_overlayRect |= QRect(ch->mapTo(top, QPoint(0, 0)), ch->size()).adjusted(-4, -4, 4, 4);
                 }
-            if (area.isEmpty()) area = QRect(w->mapTo(top, QPoint(0, 0)), w->size());
-            m_overlayRect |= area.adjusted(-4, -4, 4, 4);
-            QTimer::singleShot(250, this, SLOT(flashOverlays()));
         }
+        // Start (or extend) a batch: the pop-up, whatever it covers or uncovers, and a
+        // pop-up opened right after it (Menu > Bookmarks) all appear in one refresh.
+        if (!m_batching) { m_batching = true; m_batchSince.start(); }
+        m_batchTimer.start();
     }
     if (e->type() == QEvent::Paint && obj->isWidgetType()) {
         QWidget *w = static_cast<QWidget *>(obj);
@@ -233,12 +242,17 @@ void KoboEink::flush()
                                  << "depth" << src->depth();
                         if (getenv("KB_DEBUG_GRAB")) img.save(QCoreApplication::applicationDirPath() + QString("/grab%1.png").arg(dbg));
                     }
-                    int fy = -1, ly = -1;
-                    changed = m_fb->write(img, r.topLeft(), &fy, &ly);
-                    // Only refresh the rows that really changed (a panel over the page, a
-                    // repaint of identical text): a smaller update is quicker and flashes less.
-                    if (changed && !full && fy >= r.top() && ly >= fy && (ly - fy + 1) < r.height())
-                        r = QRect(r.left(), fy, r.width(), ly - fy + 1);
+                    int fy = -1, ly = -1, fx = -1, lx = -1;
+                    changed = m_fb->write(img, r.topLeft(), &fy, &ly, false, &fx, &lx);
+                    // Only refresh what really changed (a panel over the page, a repaint of
+                    // identical text): a smaller update is quicker and flashes less. A pop-up
+                    // flash shrinks too, to the box of changed pixels.
+                    bool mayShrink = !full || m_shrinkFull;
+                    if (changed && mayShrink && fy >= r.top() && ly >= fy) {
+                        QRect c(r.left(), fy, r.width(), ly - fy + 1);
+                        if (fx >= r.left() && lx >= fx) { c.setLeft(qMax(r.left(), fx - 8)); c.setRight(qMin(r.right(), lx + 8)); }
+                        r = c;
+                    }
                 } else if (dbg < 3) {
                     ++dbg;
                     qDebug() << "grab: no backing store image";
@@ -270,6 +284,7 @@ void KoboEink::flush()
             QProcess::startDetached(m_fbink, args);
         }
         m_nextFlags = 0;
+        m_shrinkFull = false;
         return;
     }
     if (!m_repaint) { m_pending.clear(); return; }
@@ -578,8 +593,10 @@ void KoboEink::flashOverlays()
             }
     }
     m_shownOverlays.clear();
+    m_batching = false;
     if (m_overlayRect.isEmpty()) return;
     QRect r = m_overlayRect;
     m_overlayRect = QRect();
+    m_shrinkFull = true;
     markDirty(r, m_flagsFull);
 }

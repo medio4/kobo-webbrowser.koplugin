@@ -16,7 +16,8 @@ public:
     // button's pressed/released repaint or a non-blinking cursor).
     // Copies src to the framebuffer at dst; returns whether any pixel changed. With
     // firstY/lastY, also reports the first and last changed row (screen coordinates).
-    bool write(const QImage &src, const QPoint &dst, int *firstY = 0, int *lastY = 0, bool compareOnly = false);
+    bool write(const QImage &src, const QPoint &dst, int *firstY = 0, int *lastY = 0, bool compareOnly = false,
+               int *firstX = 0, int *lastX = 0);   // firstX/lastX: changed columns (screen x)
 private:
     int m_fd;
     unsigned char *m_mem;

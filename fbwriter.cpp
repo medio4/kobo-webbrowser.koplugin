@@ -31,15 +31,22 @@ FbWriter::~FbWriter()
 
 // Compare-then-copy one converted scanline; returns true if it differed.
 static bool s_compareOnly = false;   // audit: report differences without copying
+static int s_firstByte, s_lastByte;    // changed byte span across the lines of one write()
 static inline bool putLine(unsigned char *dst, const unsigned char *src, int bytes)
 {
     if (memcmp(dst, src, bytes) == 0) return false;
+    int a = 0; while (a < bytes && dst[a] == src[a]) ++a;
+    int b = bytes - 1; while (b > a && dst[b] == src[b]) --b;
+    if (s_firstByte < 0 || a < s_firstByte) s_firstByte = a;
+    if (b > s_lastByte) s_lastByte = b;
     if (!s_compareOnly) memcpy(dst, src, bytes);
     return true;
 }
 
-bool FbWriter::write(const QImage &srcIn, const QPoint &dst, int *firstY, int *lastY, bool compareOnly)
+bool FbWriter::write(const QImage &srcIn, const QPoint &dst, int *firstY, int *lastY, bool compareOnly,
+                     int *firstX, int *lastX)
 {
+    s_firstByte = -1; s_lastByte = -1;
     struct CmpGuard { CmpGuard(bool c) { s_compareOnly = c; } ~CmpGuard() { s_compareOnly = false; } } guard(compareOnly);
     int fy = -1, ly = -1;
     if (!isOpen() || srcIn.isNull()) return false;
@@ -54,6 +61,8 @@ bool FbWriter::write(const QImage &srcIn, const QPoint &dst, int *firstY, int *l
             if (putLine(m_mem + (unsigned long)(y0 + y) * m_stride + x0, srcIn.constScanLine(y), w)) { changed = true; if (fy < 0) fy = y0 + y; ly = y0 + y; }
         if (firstY) *firstY = fy;
         if (lastY) *lastY = ly;
+        if (firstX) *firstX = s_firstByte < 0 ? -1 : x0 + s_firstByte;
+        if (lastX) *lastX = s_lastByte < 0 ? -1 : x0 + s_lastByte;
         return changed;
     }
     QImage src = srcIn.format() == QImage::Format_RGB32 || srcIn.format() == QImage::Format_ARGB32
@@ -80,5 +89,8 @@ bool FbWriter::write(const QImage &srcIn, const QPoint &dst, int *firstY, int *l
     }
     if (firstY) *firstY = fy;
     if (lastY) *lastY = ly;
+    const int bpp = (m_bpp / 8 > 0 ? m_bpp / 8 : 1);
+    if (firstX) *firstX = s_firstByte < 0 ? -1 : x0 + s_firstByte / bpp;
+    if (lastX) *lastX = s_lastByte < 0 ? -1 : x0 + s_lastByte / bpp;
     return changed;
 }

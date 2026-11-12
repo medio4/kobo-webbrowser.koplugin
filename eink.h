@@ -91,6 +91,12 @@ private:
     QTimer m_settleTimer;
     QRect m_overlayRect;
     QList<QPointer<QWidget> > m_shownOverlays;   // opened pop-ups whose area is measured once laid out
+    // Pop-up transitions are drawn as ONE refresh: while one is in progress, repaints only
+    // collect their area, and a single flash shows the finished picture.
+    bool m_batching;
+    bool m_shrinkFull;   // the next full flash may shrink to the pixels that changed
+    QElapsedTimer m_batchSince;
+    QTimer m_batchTimer;
     QTimer m_loadSettleTimer;      // quiet-period timer after a load
     QWidget *m_loadSettleWidget;   // the web view to flash when it settles (0 = inactive)
     QElapsedTimer m_loadSettleSince;
