@@ -94,6 +94,7 @@ private:
     // Pop-up transitions are drawn as ONE refresh: while one is in progress, repaints only
     // collect their area, and a single flash shows the finished picture.
     bool m_batching;
+    bool m_batchOverlay;   // the batch saw a pop-up open or close (flash); else a plain update
     bool m_shrinkFull;   // the next full flash may shrink to the pixels that changed
     QElapsedTimer m_batchSince;
     QTimer m_batchTimer;

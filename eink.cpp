@@ -110,6 +110,7 @@ KoboEink::KoboEink(QObject *parent)
     m_timer.setInterval(80);
     m_fastDelayMs = (int)envFlags("KB_FAST_DELAY_MS", 25);
     m_batching = false;
+    m_batchOverlay = false;
     m_shrinkFull = false;
     m_batchTimer.setSingleShot(true);
     m_batchTimer.setInterval((int)envFlags("KB_POPUP_SETTLE_MS", 90));
@@ -179,7 +180,19 @@ bool KoboEink::eventFilter(QObject *obj, QEvent *e)
         // Start (or extend) a batch: the pop-up, whatever it covers or uncovers, and a
         // pop-up opened right after it (Menu > Bookmarks) all appear in one refresh.
         if (!m_batching) { m_batching = true; m_batchSince.start(); }
+        m_batchOverlay = true;
         m_batchTimer.start();
+    }
+    // A tap inside a pop-up often closes it or opens another: hold the button's own repaint
+    // in a batch too, so it doesn't show as a separate step. A tap that changes nothing else
+    // just ends as a normal update.
+    if (e->type() == QEvent::MouseButtonPress && obj->isWidgetType()) {
+        for (QWidget *p = static_cast<QWidget *>(obj); p; p = p->parentWidget())
+            if (p->property("kb_overlay").toBool() && p->isVisible()) {
+                if (!m_batching) { m_batching = true; m_batchSince.start(); }
+                m_batchTimer.start();
+                break;
+            }
     }
     if (e->type() == QEvent::Paint && obj->isWidgetType()) {
         QWidget *w = static_cast<QWidget *>(obj);
@@ -594,9 +607,11 @@ void KoboEink::flashOverlays()
     }
     m_shownOverlays.clear();
     m_batching = false;
+    bool flash = m_batchOverlay;
+    m_batchOverlay = false;
     if (m_overlayRect.isEmpty()) return;
     QRect r = m_overlayRect;
     m_overlayRect = QRect();
-    m_shrinkFull = true;
-    markDirty(r, m_flagsFull);
+    if (flash) { m_shrinkFull = true; markDirty(r, m_flagsFull); }
+    else markDirty(r, m_flagsPartial);
 }

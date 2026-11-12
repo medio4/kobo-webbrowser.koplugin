@@ -12,6 +12,7 @@
 #include "phoneshare.h"
 #include "menupanel.h"
 #include "bookmarks.h"
+#include "scrollmark.h"
 #include "adblock.h"
 #include "toc.h"
 #include "memtune.h"
@@ -487,6 +488,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
 
     m_view = new TouchWebView;
     m_view->setPage(new KoboWebPage(m_view));
+    new ScrollMark(m_view);   // slim position marks instead of WebKit's beveled scrollbars
     vbox->addWidget(m_view, 1);
 
     // The keyboard is NOT in the layout: it floats over the bottom of the page, so
@@ -1555,6 +1557,18 @@ int main(int argc, char **argv)
     if (getenv("KB_VERBOSE"))
         QLoggingCategory::setFilterRules(QStringLiteral("*.debug=true"));
     QApplication app(argc, argv);
+    // Flat, e-ink friendly look for dialog buttons and scrollbars (Qt's default style draws
+    // beveled gray buttons and arrowed scrollbars). Buttons match the toolbar's FlatButton.
+    app.setStyleSheet(
+        "QPushButton { background: white; color: black; border: 2px solid black; border-radius: 10px;"
+        "  padding: 6px 14px; }"
+        "QPushButton:disabled { color: #9a9a9a; border-color: #b0b0b0; }"
+        "QScrollBar:vertical { background: white; width: 10px; margin: 0; border: none; }"
+        "QScrollBar:horizontal { background: white; height: 10px; margin: 0; border: none; }"
+        "QScrollBar::handle:vertical { background: #333; border-radius: 4px; min-height: 60px; margin: 2px; }"
+        "QScrollBar::handle:horizontal { background: #333; border-radius: 4px; min-width: 60px; margin: 2px; }"
+        "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; background: none; }"
+        "QScrollBar::add-page, QScrollBar::sub-page { background: none; }");
     app.setApplicationName("kobo-browser");
     // A blinking text cursor would refresh the address bar twice a second.
     app.setCursorFlashTime(0);
