@@ -28,27 +28,38 @@ static const char *kEinkCss =
     ".mw-indicators,.pre-content .page-actions-menu,.last-modified-bar{display:none !important}"
     ".mw-body,.mw-page-container,.mw-content-container,.vector-body{margin:0 !important;padding:0 8px !important;max-width:none !important}";
 
-// Bing Images, which stands in for Google Images (see mobileVariant), fills each
-// thumbnail's src from data-src with a lazy-load script, and opens results in a
-// JavaScript viewer. Do both by hand so the grid works whatever this WebKit can run:
-// fill in the thumbnails, point each tile straight at the full image, and add a
-// plain "More images" link in place of the script-driven "See more" button.
+// Bing Images stands in for Google Images (see mobileVariant). Its results page draws
+// its thumbnails and viewer with JavaScript this WebKit can't run, so the page is
+// replaced with a plain grid built from the result data Bing puts in each tile's link:
+// thumbnail (JPEG) -> full image, the source site under it, a search box, and a
+// "More images" link for the next page.
 static const char *kBingImagesJs =
     "(function(){"
-    "var im=document.querySelectorAll('img[data-src]');"
-    "for(var i=0;i<im.length;i++){var s=im[i].getAttribute('data-src'),c=im[i].getAttribute('src');"
-    " if(s&&(!c||c.indexOf('data:')==0))im[i].setAttribute('src',s);}"
-    "var a=document.querySelectorAll('a[m]'),n=0;"
-    "for(var j=0;j<a.length;j++){try{var m=JSON.parse(a[j].getAttribute('m'));n++;"
-    " if(m.murl){a[j].setAttribute('href',m.murl);a[j].removeAttribute('target');}}catch(e){}}"
-    "if(!n||document.getElementById('kb-more'))return;"
-    "var q=(location.search.match(/[?&]q=([^&]*)/)||[])[1];if(!q)return;"
+    "if(document.getElementById('kb-grid'))return;"
+    // Results: each tile's link carries JSON (title, thumbnail, full image, source page).
+    "var a=document.querySelectorAll('a.iusc[m],a[m]'),r=[];"
+    "for(var j=0;j<a.length;j++){try{var m=JSON.parse(a[j].getAttribute('m'));"
+    " if(m.turl&&m.murl)r.push(m);}catch(e){}}"
+    "if(!r.length)return;"
+    "var q=(location.search.match(/[?&]q=([^&]*)/)||[])[1]||'';"
     "var f=parseInt((location.search.match(/[?&]first=(\\d+)/)||[])[1]||'1',10);"
-    "if(location.pathname.indexOf('/images/async')!=0)f=1;"
-    "var l=document.createElement('a');l.id='kb-more';l.textContent='More images \\u203a';"
-    "l.href='/images/async?q='+q+'&first='+(f+n)+'&count=35';"
-    "l.setAttribute('style','display:block;clear:both;font-size:1.3em;padding:16px;text-align:center');"
-    "document.body.appendChild(l);"
+    "function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\"/g,'&quot;');}"
+    "function host(u){var x=document.createElement('a');x.href=u;return x.hostname.replace(/^www\\./,'');}"
+    "var dq='';try{dq=decodeURIComponent(q.replace(/\\+/g,' '));}catch(e){dq=q;}"
+    "var h='<div id=\"kb-grid\" style=\"font-family:sans-serif;padding:6px\">'"
+    " +'<form action=\"/images/search\" method=\"get\" style=\"margin:4px 0 10px\">'"
+    " +'<input name=\"q\" value=\"'+esc(dq)+'\" style=\"width:70%;font-size:1.1em;padding:6px;border:2px solid #000;border-radius:6px\">'"
+    " +' <input type=\"submit\" value=\"Search\" style=\"font-size:1.1em;padding:6px 12px;border:2px solid #000;border-radius:6px;background:#fff\"></form>';"
+    "for(var k=0;k<r.length;k++){var m=r[k];"
+    " h+='<div style=\"display:inline-block;vertical-align:top;width:48%;margin:0 1% 14px;text-align:center\">'"
+    "  +'<a href=\"'+esc(m.murl)+'\"><img src=\"'+esc(m.turl)+'\" style=\"max-width:100%;max-height:260px;border:1px solid #888\"></a>'"
+    "  +'<div style=\"font-size:.8em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis\">'+esc(m.t||'')+'</div>'"
+    "  +(m.purl?'<a href=\"'+esc(m.purl)+'\" style=\"font-size:.75em;color:#444\">'+esc(host(m.purl))+'</a>':'')+'</div>';}"
+    "h+='<a id=\"kb-more\" href=\"/images/search?q='+q+'&first='+(f+r.length)+'\" style=\"display:block;font-size:1.3em;padding:16px;text-align:center\">More images \\u203a</a></div>';"
+    // Replace Bing's script-driven page with this plain grid; its styles go with it.
+    "var ss=document.querySelectorAll('style,link[rel=stylesheet]');for(var s=0;s<ss.length;s++)ss[s].parentNode.removeChild(ss[s]);"
+    "document.body.setAttribute('style','margin:0;background:#fff');"
+    "document.body.innerHTML=h;window.scrollTo(0,0);"
     "})()";
 
 static bool isBing(const QUrl &url)
