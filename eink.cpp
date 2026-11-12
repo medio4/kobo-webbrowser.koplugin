@@ -251,6 +251,11 @@ void KoboEink::flush()
                 }
                 static int dbg = 0;
                 if (src && !src->isNull()) {
+                    // Never past the window: a rect queued just before a rotation can be
+                    // in the old (turned) size, and the panel driver rejects any update
+                    // that runs off the screen.
+                    r &= QRect(QPoint(0, 0), src->size());
+                    if (r.isEmpty()) continue;
                     QImage img = src->copy(r);
                     // Rotated screen: Qt painted the window at its turned (logical) size;
                     // turn the piece and its rect to the panel's portrait orientation.

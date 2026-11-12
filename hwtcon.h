@@ -18,5 +18,6 @@ private:
     int m_fd;
     bool m_ok;
     unsigned m_marker;
+    int m_failures;
 };
 #endif

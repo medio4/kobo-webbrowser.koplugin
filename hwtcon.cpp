@@ -23,7 +23,7 @@ enum {
 };
 enum { HWTCON_UPDATE_MODE_PARTIAL = 0, HWTCON_UPDATE_MODE_FULL = 1 };
 
-HwtconRefresh::HwtconRefresh(int fd) : m_fd(fd), m_ok(fd >= 0), m_marker(0)
+HwtconRefresh::HwtconRefresh(int fd) : m_fd(fd), m_ok(fd >= 0), m_marker(0), m_failures(0)
 {
     if (getenv("KB_NO_HWTCON")) m_ok = false;
 }
@@ -46,9 +46,15 @@ bool HwtconRefresh::refresh(const QRect &r, Waveform w, bool full)
     u.update_mode = full ? HWTCON_UPDATE_MODE_FULL : HWTCON_UPDATE_MODE_PARTIAL;
     u.update_marker = ++m_marker;
     if (ioctl(m_fd, HWTCON_SEND_UPDATE, &u) < 0) {
-        qWarning() << "hwtcon: HWTCON_SEND_UPDATE failed:" << strerror(errno) << "- falling back to fbink";
-        m_ok = false;
+        // One bad update (e.g. a rect off the panel) must not turn the fast path off for
+        // good; give up on it only after several failures in a row.
+        qWarning() << "hwtcon: HWTCON_SEND_UPDATE failed:" << strerror(errno) << r << "- using fbink for this one";
+        if (++m_failures >= 5) {
+            qWarning() << "hwtcon: giving up on direct refreshes";
+            m_ok = false;
+        }
         return false;
     }
+    m_failures = 0;
     return true;
 }
