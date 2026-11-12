@@ -464,6 +464,15 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                         end,
                     },
                     {
+                        text = _("Use the browser's own keyboard"),
+                        help_text = _("Type with the browser's built-in keys instead of KOReader's keyboard. Off by default; a fallback in case a KOReader update changes its keyboard. Takes effect the next time the browser opens."),
+                        checked_func = function() return self.settings.builtin_keyboard == true end,
+                        callback = function()
+                            self.settings.builtin_keyboard = (self.settings.builtin_keyboard ~= true) or nil
+                            self:saveSettings()
+                        end,
+                    },
+                    {
                         text = _("Start phone link with the browser"),
                         help_text = _("Turn on Send to Kobo (Menu > From phone) as soon as the browser opens, instead of when you open From phone. Off by default."),
                         checked_func = function() return self.settings.phone_autostart == true end,
@@ -821,11 +830,16 @@ function KoboWebBrowser:run(extra)
     os.remove(self.menu_request); os.remove(self.menu_reply)
     env.KB_MENU_FILE = self.menu_request
     env.KB_MENU_REPLY = self.menu_reply
-    -- Typing always uses KOReader's keyboard (KB_NATIVE_KBD: older browsers ask for it).
-    env.KB_NATIVE_KBD = "1"
     if self.settings.phone_autostart then env.KB_PHONE_AUTOSTART = "1" end
-    env.KB_KBD_FILE = self.kbd_request
-    env.KB_KBD_REPLY = self.kbd_reply
+    -- Typing uses KOReader's keyboard (KB_NATIVE_KBD: older browsers ask for it), unless
+    -- Settings > "Use the browser's own keyboard" (a fallback if a KOReader update breaks it).
+    if self.settings.builtin_keyboard then
+        env.KB_NO_NATIVE_KBD = "1"
+    else
+        env.KB_NATIVE_KBD = "1"
+        env.KB_KBD_FILE = self.kbd_request
+        env.KB_KBD_REPLY = self.kbd_reply
+    end
     local timeout = G_reader_settings:readSetting("auto_suspend_timeout_seconds")
     if type(timeout) == "number" then
         env.KB_AUTOSLEEP_MIN = tostring(timeout > 0 and math.ceil(timeout / 60) or 0)
