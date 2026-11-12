@@ -128,7 +128,9 @@ public slots:
     void screenshot();
     void releaseLoadHold();
     void sleepToKoreader();   // power button with KB_KO_SLEEP=1: hand off and exit
-    void readInKoreader();    // reader mode: article as a temporary EPUB in KOReader, then back here
+    void readInKoreader();
+    void readPageInKoreader();
+    void readSeriesInKoreader();    // reader mode: article as a temporary EPUB in KOReader, then back here
 private slots:
     void keyboardGo();
     void pageTapped();           // a tap landed in the page: keyboard for a text box, else hide it

@@ -1266,6 +1266,36 @@ void Browser::readInKoreader()
 {
     if (m_saver && m_saver->isRunning()) return;
     hideKeyboard();
+    // A page that lists the parts of a series: offer them all as one temporary book.
+    QString listTitle;
+    m_seriesLinks = EpubSaver::findChapters(m_view->page(), &listTitle);
+    if (m_seriesLinks.size() >= 2) {
+        m_seriesTitle = listTitle;
+        SaveChoiceDialog *d = new SaveChoiceDialog(m_seriesLinks.size(), QString(), centralWidget(), true);
+        connect(d, SIGNAL(pageChosen()), this, SLOT(readPageInKoreader()));
+        connect(d, SIGNAL(seriesChosen()), this, SLOT(readSeriesInKoreader()));
+        return;
+    }
+    readPageInKoreader();
+}
+
+// The whole series as one temporary book (chapters + table of contents), removed on close
+// like a single page.
+void Browser::readSeriesInKoreader()
+{
+    if (m_saver && m_saver->isRunning()) return;
+    EpubSaver::clearReaderDir();
+    delete m_saver;
+    m_saver = new EpubSaver(m_view->page(), EpubSaver::readerDir(), this);
+    m_saver->setLibrary(false);
+    connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
+    connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(readerFinished(bool,QString)));
+    m_saver->startSeries(m_seriesLinks, m_seriesTitle);
+}
+
+void Browser::readPageInKoreader()
+{
+    if (m_saver && m_saver->isRunning()) return;
     EpubSaver::clearReaderDir();
     delete m_saver;
     m_saver = new EpubSaver(m_view->page(), EpubSaver::readerDir(), this);

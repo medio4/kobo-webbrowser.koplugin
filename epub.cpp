@@ -769,7 +769,7 @@ void SavedDialog::laterClicked()
 
 // ------------------------------------------------------------- SaveChoiceDialog
 
-SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle, QWidget *parent)
+SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle, QWidget *parent, bool reading)
     : QWidget(parent)
 {
     setAttribute(Qt::WA_DeleteOnClose);
@@ -790,11 +790,15 @@ SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle,
     QFont f; f.setPixelSize(38);
     QFont fs; fs.setPixelSize(30);
 
-    QLabel *head = new QLabel("Save to the library");
+    QLabel *head = new QLabel(reading ? "Read in KOReader" : "Save to the library");
     head->setFont(f); head->setAlignment(Qt::AlignCenter);
     v->addWidget(head);
-    QLabel *q = new QLabel(QString("This page links to %1 parts of a series%2. Save just this page, or all of them as one book with a chapter list?")
-                           .arg(chapterCount).arg(seriesTitle.isEmpty() ? QString() : " (" + seriesTitle + ")"));
+    QString named = seriesTitle.isEmpty() ? QString() : " (" + seriesTitle + ")";
+    QLabel *q = new QLabel(reading
+        ? QString("This page links to %1 parts of a series%2. Read just this page, or all of them as one book "
+                  "with a chapter list? Either way it is removed when you close it.").arg(chapterCount).arg(named)
+        : QString("This page links to %1 parts of a series%2. Save just this page, or all of them as one book "
+                  "with a chapter list?").arg(chapterCount).arg(named));
     q->setFont(fs); q->setWordWrap(true); q->setAlignment(Qt::AlignCenter);
     v->addWidget(q);
 

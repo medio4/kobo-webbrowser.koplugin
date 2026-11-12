@@ -106,7 +106,8 @@ private:
 class SaveChoiceDialog : public QWidget {
     Q_OBJECT
 public:
-    SaveChoiceDialog(int chapterCount, const QString &seriesTitle, QWidget *parent);
+    // reading: worded for "Read in KOReader" (a temporary book) instead of saving.
+    SaveChoiceDialog(int chapterCount, const QString &seriesTitle, QWidget *parent, bool reading = false);
 signals:
     void pageChosen();
     void seriesChosen();
