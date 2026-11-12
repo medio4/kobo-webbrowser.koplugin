@@ -141,6 +141,11 @@ private slots:
     void showMenu();
     void goHome();
     void rotateNow();
+    void showRotateMenu();
+    void rotateTo0();
+    void rotateTo90();
+    void rotateTo180();
+    void rotateTo270();
     void saveSessionHistory();
     bool restoreSessionHistory(const QString &startUrl);
     void showHistory();
@@ -199,6 +204,7 @@ private:
     EpubSaver *m_saver;
     PhoneShare *m_phone;
     int m_rotTarget;
+    void rotateTo(int angle);
     QRect m_menuRect;
     QList<EpubSaver::ChapterLink> m_seriesLinks;
     QString m_seriesTitle;

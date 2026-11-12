@@ -978,6 +978,27 @@ void Browser::rotateLeft()  { m_rotTarget = KbRotation::angle() + 270; QTimer::s
 void Browser::rotateRight() { m_rotTarget = KbRotation::angle() + 90;  QTimer::singleShot(500, this, SLOT(rotateNow())); }
 void Browser::rotateNow()   { applyRotation(m_rotTarget, true); }
 
+// Menu > Rotate screen: the four orientations, as KOReader offers them. The current one
+// is marked; picking another turns the screen once the panel has closed.
+void Browser::showRotateMenu()
+{
+    int top = m_bar->mapTo(centralWidget(), QPoint(0, m_bar->height())).y() + 4;
+    MenuPanel *m = new MenuPanel(centralWidget(), top);
+    const int cur = KbRotation::angle();
+    m->addSection("Rotate screen");
+    m->addAction(QString("Portrait") + (cur == 0 ? "  (now)" : ""), this, SLOT(rotateTo0()));
+    m->addAction(QString("Landscape") + (cur == 90 ? "  (now)" : ""), this, SLOT(rotateTo90()));
+    m->addAction(QString("Portrait, upside down") + (cur == 180 ? "  (now)" : ""), this, SLOT(rotateTo180()));
+    m->addAction(QString("Landscape, flipped") + (cur == 270 ? "  (now)" : ""), this, SLOT(rotateTo270()));
+    connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
+    m->popup();
+}
+void Browser::rotateTo(int a) { if (a == KbRotation::angle()) return; m_rotTarget = a; QTimer::singleShot(500, this, SLOT(rotateNow())); }
+void Browser::rotateTo0()   { rotateTo(0); }
+void Browser::rotateTo90()  { rotateTo(90); }
+void Browser::rotateTo180() { rotateTo(180); }
+void Browser::rotateTo270() { rotateTo(270); }
+
 void Browser::applyRotation(int angle, bool save)
 {
     if (!m_eink || !m_eink->canRotate()) return;
@@ -1480,10 +1501,7 @@ void Browser::showMenu()
     m->addAction(HistoryStore::enabled() ? "History: on" : "History: off", this, SLOT(toggleHistory()));
     m->addAction(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off", this, SLOT(toggleAdBlock()));
     m->addAction("Clean screen", this, SLOT(fullRefresh()), !plugin);
-    if (m_eink && m_eink->canRotate()) {
-        m->addAction("Rotate left", this, SLOT(rotateLeft()));
-        m->addAction("Rotate right", this, SLOT(rotateRight()));
-    }
+    if (m_eink && m_eink->canRotate()) m->addAction("Rotate screen", this, SLOT(showRotateMenu()));
     if (plugin) m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()));
     m->addSpacer();
     m->addAction("Exit browser", this, SLOT(quit()), true);
