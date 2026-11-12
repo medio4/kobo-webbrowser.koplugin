@@ -120,7 +120,7 @@ the browser needs to be open.
 
 | To | Do this |
 | --- | --- |
-| Turn a page | Swipe up or down (hold and drag to scroll freely) |
+| Turn a page | Flick up or down for a full screen (a small strip of overlap keeps your place); left/right flicks in the middle work too. To scroll just a little, touch, wait a moment, then drag. Hold and drag sideways on a wide table to slide it |
 | Go back / forward | **Back** / **Fwd**, or swipe in from the left / right edge |
 | Type an address or search | Tap the address, type, press **Go** on the keyboard |
 | Zoom | Pinch; or **Menu → Text bigger / smaller** for the text only |
