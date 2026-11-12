@@ -25,7 +25,7 @@ The browser talks back through a handoff file (bin/epub-handoff.txt), one reques
                                          never the library); when that book is closed, delete it
                                          and offer to reopen the browser on the same page
 
-Text entry uses KOReader's own keyboard (setting "Use KOReader keyboard", default on): the
+Text entry always uses KOReader's own keyboard: the
 browser writes bin/kbd-request.txt (line 1: url|field|text, line 2: label, rest: current
 text) and releases the touchscreen. We notice it within POLL_SEC, lift the draw guard, show
 an InputDialog over the browser's frozen picture and answer in bin/kbd-reply.txt (line 1:
@@ -59,11 +59,13 @@ local ffiutil = require("ffi/util")
 local time = require("ui/time")
 local T = ffiutil.template
 local Blitbuffer = require("ffi/blitbuffer")
+local BottomContainer = require("ui/widget/container/bottomcontainer")
 local Button = require("ui/widget/button")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
+local GestureRange = require("ui/gesturerange")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local ImageWidget = require("ui/widget/imagewidget")
@@ -262,6 +264,12 @@ local active = nil
 -- ({ file, url, y, zoom }). Module-level like `active`: the ReaderUI showing the book has
 -- its own plugin instance.
 local reading = nil
+-- Remote launch (for testing over SSH): a file /tmp/kobo-webbrowser-launch makes the
+-- current KOReader screen's instance open the browser, on the URL in the file if any.
+-- One cheap file check every few seconds; nothing else runs.
+local LAUNCH_REQUEST = "/tmp/kobo-webbrowser-launch"
+local latest_instance = nil
+local launch_poll_started = false
 
 local function lastLines(path, n)
     local f = io.open(path, "r")
@@ -316,6 +324,27 @@ function KoboWebBrowser:init()
     if not reading then self:clearReaderDir() end
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
+    latest_instance = self
+    if not launch_poll_started then
+        launch_poll_started = true
+        local function poll()
+            if lfs.attributes(LAUNCH_REQUEST, "mode") == "file" then
+                local f = io.open(LAUNCH_REQUEST, "r")
+                local url = f and (f:read("*l") or "") or ""
+                if f then f:close() end
+                os.remove(LAUNCH_REQUEST)
+                local me = latest_instance
+                if me and not (active and active.job) then
+                    logger.info("KoboWebBrowser: remote launch request", url)
+                    local extra
+                    if url:match("^https?://") then extra = { args = { url }, env = {} } end
+                    me:launch(extra)
+                end
+            end
+            UIManager:scheduleIn(3, poll)
+        end
+        UIManager:scheduleIn(3, poll)
+    end
 end
 
 function KoboWebBrowser:saveSettings()
@@ -435,11 +464,11 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                         end,
                     },
                     {
-                        text = _("Use KOReader keyboard (experimental)"),
-                        help_text = _("Type addresses and form fields in a KOReader input dialog instead of the browser's own keyboard. Off by default: the browser's keyboard types straight into the field. Takes effect the next time the browser starts."),
-                        checked_func = function() return self.settings.native_keyboard == true end,
+                        text = _("Start phone link with the browser"),
+                        help_text = _("Turn on Send to Kobo (Menu > From phone) as soon as the browser opens, instead of when you open From phone. Off by default."),
+                        checked_func = function() return self.settings.phone_autostart == true end,
                         callback = function()
-                            self.settings.native_keyboard = (self.settings.native_keyboard == true) and nil or true
+                            self.settings.phone_autostart = (self.settings.phone_autostart ~= true) or nil
                             self:saveSettings()
                         end,
                     },
@@ -792,11 +821,11 @@ function KoboWebBrowser:run(extra)
     os.remove(self.menu_request); os.remove(self.menu_reply)
     env.KB_MENU_FILE = self.menu_request
     env.KB_MENU_REPLY = self.menu_reply
-    if self.settings.native_keyboard == true then
-        env.KB_NATIVE_KBD = "1"
-        env.KB_KBD_FILE = self.kbd_request
-        env.KB_KBD_REPLY = self.kbd_reply
-    end
+    -- Typing always uses KOReader's keyboard (KB_NATIVE_KBD: older browsers ask for it).
+    env.KB_NATIVE_KBD = "1"
+    if self.settings.phone_autostart then env.KB_PHONE_AUTOSTART = "1" end
+    env.KB_KBD_FILE = self.kbd_request
+    env.KB_KBD_REPLY = self.kbd_reply
     local timeout = G_reader_settings:readSetting("auto_suspend_timeout_seconds")
     if type(timeout) == "number" then
         env.KB_AUTOSLEEP_MIN = tostring(timeout > 0 and math.ceil(timeout / 60) or 0)
@@ -910,6 +939,9 @@ function KoboWebBrowser:liftDrawGuard()
     end
     if saved.bb then
         self.scratch_bb = screen.bb
+        -- KOReader may have turned (with the browser) while it drew into the scratch
+        -- buffer: give the real one the same turn, or its menus come up sideways.
+        pcall(function() saved.bb:setRotation(screen.bb:getRotation()) end)
         screen.bb = saved.bb
     end
 end
@@ -937,6 +969,120 @@ local function writeAtomically(path, data)
     return os.rename(path .. ".tmp", path)
 end
 
+-- Address typing: KOReader's keyboard with a slim one-line field right above it,
+-- instead of a dialog box with a title.
+local AddressBarDialog = InputDialog:extend{}
+function AddressBarDialog:init()
+    InputDialog.init(self)
+    local vg = self.vgroup
+    local found = false
+    if vg and self.title_bar then
+        for i = 1, #vg do
+            if vg[i] == self.title_bar then
+                vg[i] = VerticalSpan:new{ width = 0 }
+                found = true
+            end
+        end
+        if found and vg.resetLayout then vg:resetLayout() end
+    end
+    -- Sit right on top of the keyboard (InputDialog centres itself in the space above it).
+    local frame = self.movable or self.dialog_frame
+    if frame then
+        local kb_h = self.keyboard_visible and self._input_widget:getKeyboardDimen().h or 0
+        self[1] = BottomContainer:new{
+            dimen = Geom:new{ w = self.screen_width, h = self.screen_height - kb_h },
+            frame,
+        }
+    end
+end
+
+function KoboWebBrowser:startLiveKeyboard(kind, VirtualKeyboard)
+    local keys_path = self.kbd_reply .. ".keys"
+    os.remove(keys_path)
+    local function send(line)
+        local f = io.open(keys_path, "a")
+        if f then f:write(line, "\n"); f:close() end
+    end
+    local session = { live = true }
+    local kbd
+    local function finish(action)
+        if self.kbd_dialog ~= session then return end
+        self.kbd_dialog = nil
+        -- Guard back up before closing, as for the dialog (nothing repaints over the page).
+        self:restoreDrawGuard()
+        UIManager:close(kbd)
+        if not writeAtomically(self.kbd_reply, action .. "\n") then
+            logger.warn("KoboWebBrowser: cannot write", self.kbd_reply)
+        end
+        pcall(Device.input.resetState, Device.input)
+    end
+    -- What KOReader's keyboard calls on its text box, forwarded to the browser.
+    local box = {}
+    function box:addChars(chars)
+        if chars == "\n" then
+            if kind == "text" then send("add\t\\n") else finish("go") end
+            return
+        end
+        send("add\t" .. chars:gsub("\\", "\\\\"):gsub("\n", "\\n"):gsub("\t", " "))
+    end
+    function box:delChar() send("del") end
+    function box:delWord() send("delword") end
+    function box:delToStartOfLine() send("dellinestart") end
+    function box:leftChar() send("left") end
+    function box:rightChar() send("right") end
+    function box:upLine() send("up") end
+    function box:downLine() send("down") end
+    function box:goToStartOfLine() send("home") end
+    function box:goToEndOfLine() send("end") end
+    function box:scrollUp() end
+    function box:scrollDown() end
+    function box:onSwitchingKeyboardLayout() end
+    box.onSwitchingKeyboardLayout = nil   -- (only called when present)
+
+    self:liftDrawGuard()
+    kbd = VirtualKeyboard:new{ inputbox = box }
+    -- In the browser the bottom row gets web keys: ⌥ . / space .com Enter (KOReader's
+    -- row, or a home screen's trimmed one, may have no Enter at all). This keyboard only:
+    -- it gets its own copy of the rows, then is laid out again.
+    pcall(function()
+        local rows = kbd.KEYS
+        local row = rows and rows[5]
+        if not row then return end
+        local space, enter
+        for _i, k in ipairs(row) do
+            if k[2] == " " then space = k end
+            if k[2] == "\n" then enter = k end
+        end
+        if not space then return end
+        local function key(text, width) return { label = text, text, text, text, text, width = width } end
+        local wide_space = {}
+        for name, v in pairs(space) do wide_space[name] = v end
+        wide_space.width = 3.5
+        local copy = {}
+        for i, r in ipairs(rows) do copy[i] = r end
+        copy[5] = { row[1], key("."), key("/"), wide_space, key(".com", 1.5),
+                    enter or { label = "⮠", "\n", "\n", "\n", "\n", width = 1.5 } }
+        kbd.KEYS = copy
+        kbd:initLayer(kbd.keyboard_layer)
+    end)
+    -- KOReader gives a tap only to the topmost window: the keyboard itself ends typing
+    -- when a tap lands above it (the text is already in the field).
+    local Screen = Device.screen
+    local kb_h = kbd.dimen and kbd.dimen.h or kbd.height or 0
+    local orig_gesture = kbd.onGesture
+    kbd.onGesture = function(w, ev)
+        if orig_gesture and orig_gesture(w, ev) then return true end
+        if ev and ev.ges == "tap" and ev.pos and ev.pos.y < Screen:getHeight() - kb_h then
+            finish("done")
+            return true
+        end
+    end
+    self.kbd_dialog = session
+    UIManager:show(kbd)
+    send("live\t" .. tostring(kb_h))
+    logger.info("KoboWebBrowser: live keyboard,", kind, "height", kb_h)
+end
+
 function KoboWebBrowser:onKeyboardRequest()
     local f = io.open(self.kbd_request, "r")
     if not f then return end
@@ -948,6 +1094,17 @@ function KoboWebBrowser:onKeyboardRequest()
     label = label or ""
     text = text or ""
     logger.info("KoboWebBrowser: keyboard request", kind, label)
+
+    -- Live typing: KOReader's own keyboard alone at the bottom of the screen; every key goes
+    -- straight into the browser's field (bin/kbd-reply.txt.keys, one line per key) and the
+    -- browser keeps drawing the page above the keyboard. Enter = go; a tap above = done.
+    local ok_vk, VirtualKeyboard = pcall(require, "ui/widget/virtualkeyboard")
+    if ok_vk and VirtualKeyboard and not self.settings.kbd_dialog then
+        local ok_live, err = pcall(self.startLiveKeyboard, self, kind, VirtualKeyboard)
+        if ok_live then return end
+        logger.warn("KoboWebBrowser: live keyboard failed, using the dialog:", err)
+        self:restoreDrawGuard()
+    end
 
     local dialog
     local function finish(action, value)
@@ -966,7 +1123,16 @@ function KoboWebBrowser:onKeyboardRequest()
     end
     local buttons = {
         { text = _("Cancel"), id = "close", callback = function() finish("cancel") end },
+        { text = _("Clear"), callback = function()
+            dialog:setInputText("")
+        end },
     }
+    if kind == "url" then
+        -- Web shortcuts the keyboard has no key for.
+        for _i, t in ipairs({ "/", ".", ".com", "www." }) do
+            buttons[#buttons + 1] = { text = t, callback = function() dialog:addTextToInput(t) end }
+        end
+    end
     if kind ~= "url" then
         buttons[#buttons + 1] = { text = _("Set"), callback = function() finish("set", dialog:getInputText()) end }
     end
@@ -984,7 +1150,7 @@ function KoboWebBrowser:onKeyboardRequest()
         title = _("Text field")
     end
     self:liftDrawGuard()
-    dialog = InputDialog:new{
+    dialog = (kind == "url" and AddressBarDialog or InputDialog):new{
         title = title,
         input = text,
         input_hint = kind == "url" and _("https://example.com or search words") or nil,
@@ -1040,6 +1206,8 @@ function KoboWebBrowser:onMenuRequest()
     -- Copy the browser's frozen picture off the real framebuffer: the cover paints it, so
     -- whatever KOReader repaints under its menus (a menu getting shorter, a dialog closing)
     -- shows the page instead of stale menu pixels or the file manager.
+    -- Read the page in KOReader's current turn (it turns with the browser).
+    if self.hooks.bb then pcall(function() self.hooks.bb:setRotation(Device.screen.bb:getRotation()) end) end
     local real = self.hooks.bb or Device.screen.bb
     local snap
     local ok, err = pcall(function()
@@ -1375,6 +1543,7 @@ function KoboWebBrowser:removeHooks()
     end
     if saved.bb then
         local scratch = Device.screen.bb
+        pcall(function() saved.bb:setRotation(scratch:getRotation()) end)   -- KOReader's current turn
         Device.screen.bb = saved.bb
         pcall(function() if scratch and scratch.free then scratch:free() end end)
     end
@@ -1479,12 +1648,13 @@ function KoboWebBrowser:onBrowserGone(reason)
 end
 
 -- The browser's screen angle (bin/rotation.txt: 0, 90, 180 or 270) as a KOReader
--- rotation mode. The browser's "Landscape" uses KOReader's clockwise icon, so 90 = CW.
+-- rotation mode. The browser turns its picture clockwise; KOReader's modes count the
+-- device's turn, the other way round: 90 = mode 3 (CCW), 270 = mode 1 (CW).
 function KoboWebBrowser:browserRotationMode()
     local f = io.open(self.bin .. "/rotation.txt", "r")
     local angle = f and tonumber(f:read("*l")) or 0
     if f then f:close() end
-    return ({ [0] = 0, [90] = 1, [180] = 2, [270] = 3 })[angle] or 0
+    return ({ [0] = 0, [90] = 3, [180] = 2, [270] = 1 })[angle] or 0
 end
 
 function KoboWebBrowser:setKoreaderRotation(mode, why)
@@ -1495,6 +1665,25 @@ function KoboWebBrowser:setKoreaderRotation(mode, why)
     if self.cover and self.cover.dimen then
         self.cover.dimen.w, self.cover.dimen.h = Device.screen:getWidth(), Device.screen:getHeight()
     end
+    -- Rotating rebuilds KOReader's screens (a home screen may close and reopen itself),
+    -- which can drop our cover or put a screen above it. Put it back on top while the
+    -- browser runs, now and once the rebuild has settled.
+    if self.job then
+        self:keepCoverOnTop()
+        UIManager:scheduleIn(0.5, function() self:keepCoverOnTop() end)
+    end
+end
+
+function KoboWebBrowser:keepCoverOnTop()
+    if not (self.job and self.cover) or self.menu_session or self.kbd_dialog then return end
+    local stack = UIManager._window_stack
+    local top = stack[#stack] and stack[#stack].widget
+    if top == self.cover then return end
+    local present = false
+    for _, win in ipairs(stack) do if win.widget == self.cover then present = true end end
+    logger.info("KoboWebBrowser: cover", present and "was under another screen" or "was gone", "after rotating; putting it back on top")
+    if present then UIManager:close(self.cover) end
+    UIManager:show(self.cover)
 end
 
 -- While the browser runs, KOReader (behind it) is turned the same way, so its menu,
@@ -1688,7 +1877,7 @@ function KoboWebBrowser:clearReaderDir()
     if lfs.attributes(self.reader_dir, "mode") ~= "directory" then return end
     for name in lfs.dir(self.reader_dir) do
         local path = self.reader_dir .. "/" .. name
-        if name:match("%.epub$") then
+        if name:match("%.epub$") or name:match("%.cbz$") then
             self:deleteReaderCopy(path)
         elseif name:match("%.sdr$") and lfs.attributes(path, "mode") == "directory" then
             ffiutil.purgeDir(path)   -- book settings left from an earlier copy

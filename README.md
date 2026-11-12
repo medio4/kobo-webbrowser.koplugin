@@ -48,7 +48,7 @@ older NXP and Allwinner models are untested.
   Hold and drag sideways on a wide table to slide it. Pinch to zoom, and use **Text size**
   (a small bar along the bottom with smaller, bigger and Done) for a size that is remembered. Text never shrinks below a readable minimum.
 - **Contents** jumps to any heading on a long page.
-- A built-in keyboard that appears when you tap a text box.
+- Typing uses KOReader's own keyboard, in any screen orientation.
 - Screen updates are kept small and clean: only what changed is refreshed, and menus
   open and close in a single flash.
 
@@ -84,7 +84,8 @@ older NXP and Allwinner models are untested.
 
 Open **Menu → From phone** and scan the QR code with your phone. On the page that opens,
 paste a link and tap **Open on the Kobo**. Phone and Kobo need to be on the same Wi-Fi, and
-the browser needs to be open.
+the browser needs to be open. The phone link only runs once you open From phone:
+**Minimize** keeps it ready while you browse, **Stop** turns it off.
 
 <p align="center">
   <img src="docs/screenshots/phone.png" width="30%" alt="Send to Kobo: the QR code">
@@ -144,7 +145,7 @@ In KOReader, under **Tools → Web browser**:
   - **Collection for saved articles** (default `Web`; leave empty to skip collections).
   - **Ad blocking**: on/off, sites where ads are allowed, extra sites to block.
   - **Fix modern page styles** (on by default): turn off if a site looks worse with it.
-  - **Use KOReader keyboard (experimental)**: type with KOReader's keyboard instead.
+  - **Start phone link with the browser** (off by default): Send to Kobo is ready as soon as the browser opens.
   - **Keep the browser's orientation** (off by default): KOReader always turns with the browser while it's open, so its menu and keyboard match the page. With this on, KOReader stays that way after the browser closes.
   - **Hold Menu button**: what holding the browser's Menu button does (default: Reader mode).
 - **Close web browser**: closes a browser left open behind KOReader's menu, or ends a minimized one.

@@ -151,6 +151,9 @@ private slots:
     void phoneUrl(const QString &url);
     void showPhoneHint();
     void showPhoneDialog();
+    void stopPhone();
+    void sharePage();
+    void nativeKey(const QString &line);
     void showMenu();
     void minimize();
     void menuPressed();
@@ -179,6 +182,9 @@ private slots:
     void cleanMenuArea();
     void saveEpub();
     void savePageOnly();
+    void saveSeriesSplit();
+    void probeLoaded(bool ok);
+    void probeTimedOut();
     void saveSeries();
     void saveProgress(const QString &msg);
     void saveFinished(bool ok, const QString &msg);
@@ -226,6 +232,9 @@ private:
     PhoneShare *m_phone;
     int m_rotTarget;
     QTimer *m_holdTimer;
+    bool m_live;            // typing with KOReader's keyboard, live into our field
+    QString m_liveOrig;     // the field's text before, for Cancel
+    void sendLiveKey(int key, const QString &text, Qt::KeyboardModifiers mods = Qt::NoModifier);
     bool m_menuHeld;
     QWidget *m_sizeBar;
     QLabel *m_sizeLabel;
@@ -234,6 +243,9 @@ private:
     QRect m_menuRect;
     QList<EpubSaver::ChapterLink> m_seriesLinks;
     QString m_seriesTitle;
+    QWebPage *m_probe;
+    QTimer *m_probeTimer;
+    void showSaveChoice(bool comic);
     qreal m_textZoom;         // A+/A-: text-only zoom on top of the page zoom (1.0 = normal)
     void setTextZoom(qreal z, bool save);
     int m_restoreY;           // KB_RESTORE_Y: scroll position to restore after the first load (-1 = none)

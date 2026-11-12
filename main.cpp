@@ -491,7 +491,7 @@ private:
 };
 
 Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
-    : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_phone(0), m_restoreY(-1), m_relaunch(false), m_offline(false), m_offlineShown(false), m_onlineTimer(0)
+    : QMainWindow(parent), m_home(home), m_eink(eink), m_saver(0), m_probe(0), m_probeTimer(0), m_phone(0), m_restoreY(-1), m_relaunch(false), m_offline(false), m_offlineShown(false), m_onlineTimer(0)
 {
     m_rotPrev = 0;
     m_rotTarget = 0;
@@ -596,17 +596,19 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     m_view->setZoomFactor(2.0);
     // A+/A- scale the text only (saved in bin/text-size.txt), so the page keeps its layout
     // width; pinch still zooms the whole page.
-    // "Send to Kobo" page for a phone on the same Wi-Fi (KB_PHONE_PORT, 0 = off).
+    // "Send to Kobo" page for a phone on the same Wi-Fi (KB_PHONE_PORT, 0 = off). It only
+    // runs after Menu > From phone, until its window's Stop (Minimize keeps it running).
     {
         bool okp = false;
         int port = QString::fromLocal8Bit(qgetenv("KB_PHONE_PORT")).toInt(&okp);
         if (!okp) port = 8080;
         if (port > 0) {
             m_phone = new PhoneShare(this);
-            if (m_phone->listen(port)) {
-                connect(m_phone, SIGNAL(urlReceived(QString)), this, SLOT(phoneUrl(QString)));
+            m_phone->setProperty("wantedPort", port);
+            connect(m_phone, SIGNAL(urlReceived(QString)), this, SLOT(phoneUrl(QString)));
+            // Setting "Start phone link with the browser" (KB_PHONE_AUTOSTART=1).
+            if (qgetenv("KB_PHONE_AUTOSTART") == "1" && m_phone->listen(port))
                 QTimer::singleShot(4000, this, SLOT(showPhoneHint()));
-            } else { delete m_phone; m_phone = 0; }
         }
     }
 
@@ -656,6 +658,8 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     if (m_native) connect(m_native, SIGNAL(started()), this, SLOT(nativeStarted()));
     if (m_native) connect(m_native, SIGNAL(replied(QString,QString)), this, SLOT(nativeReplied(QString,QString)));
     if (m_native) connect(m_native, SIGNAL(unavailable()), this, SLOT(nativeUnavailable()));
+    if (m_native) connect(m_native, SIGNAL(keyLine(QString)), this, SLOT(nativeKey(QString)));
+    m_live = false;
     // KOReader's top menu over the browser: swipe down from the toolbar (see eventFilter).
     m_menu = new NativeTextEntry("KB_MENU_FILE", "KB_MENU_REPLY", this);
     m_barSwipe = false; m_swipeMenu = false;
@@ -1001,8 +1005,6 @@ static const char *kJsActiveField =
 bool Browser::nativeTextEntry()
 {
     if (!m_native || !m_native->available() || m_native->active()) return false;
-    // KOReader draws its keyboard in portrait: on a rotated screen use our own keys.
-    if (KbRotation::angle()) return false;
     QWidget *focus = QApplication::focusWidget();
     if (focus == m_view) {
         QString info = m_view->page()->mainFrame()->evaluateJavaScript(kJsActiveField).toString();
@@ -1010,12 +1012,14 @@ bool Browser::nativeTextEntry()
         int b = a < 0 ? -1 : info.indexOf('\n', a + 1);
         if (a > 0 && b > a) {
             m_nativeKind = info.left(a);
+            m_liveOrig = info.mid(b + 1);
             return m_native->request(m_nativeKind, info.mid(a + 1, b - a - 1), info.mid(b + 1));
         }
         // Nothing editable has focus in the page: the keyboard is for the address bar.
         m_url->setFocus();
     }
     m_nativeKind = "url";
+    m_liveOrig = m_url->text();
     return m_native->request("url", "Address or search", m_url->text());
 }
 
@@ -1026,9 +1030,72 @@ void Browser::nativeStarted()
     if (m_touch) m_touch->setHandedOff(true);
 }
 
+// Live typing: one key from KOReader's keyboard, typed into the address bar or page field.
+void Browser::sendLiveKey(int key, const QString &text, Qt::KeyboardModifiers mods)
+{
+    QWidget *target = m_nativeKind == "url" ? static_cast<QWidget *>(m_url) : static_cast<QWidget *>(m_view);
+    QKeyEvent press(QEvent::KeyPress, key, mods, text);
+    QApplication::sendEvent(target, &press);
+    QKeyEvent release(QEvent::KeyRelease, key, mods, text);
+    QApplication::sendEvent(target, &release);
+}
+
+void Browser::nativeKey(const QString &line)
+{
+    QString cmd = line.section('\t', 0, 0), arg = line.section('\t', 1);
+    if (cmd == "live") {
+        // KOReader's keyboard is up: draw the page again, above it, and type into our field.
+        m_live = true;
+        int kbH = arg.toInt();
+        QWidget *w = window();
+        if (m_eink) {
+            m_eink->setClip(QRect(0, 0, w->width(), qMax(0, w->height() - kbH)));
+            m_eink->setSuspended(false, false);
+        }
+        if (m_nativeKind == "url") {
+            m_url->setFocus();
+            m_url->end(false);
+        } else {
+            m_view->setFocus();
+            m_view->page()->mainFrame()->evaluateJavaScript(
+                "(function(){var e=document.activeElement;if(e&&e.scrollIntoView)e.scrollIntoView(true);})()");
+        }
+        qDebug() << "textentry: live typing, keyboard" << kbH << "px";
+        return;
+    }
+    if (!m_live) return;
+    if (cmd == "add") {
+        QString t = arg;
+        t.replace("\\n", "\n").replace("\\\\", "\\");
+        if (t == "\n") sendLiveKey(Qt::Key_Return, "\r");
+        else sendLiveKey(0, t);
+    } else if (cmd == "del") sendLiveKey(Qt::Key_Backspace, QString());
+    else if (cmd == "delword") sendLiveKey(Qt::Key_Backspace, QString(), Qt::ControlModifier);
+    else if (cmd == "dellinestart") { sendLiveKey(Qt::Key_Home, QString(), Qt::ShiftModifier); sendLiveKey(Qt::Key_Backspace, QString()); }
+    else if (cmd == "left") sendLiveKey(Qt::Key_Left, QString());
+    else if (cmd == "right") sendLiveKey(Qt::Key_Right, QString());
+    else if (cmd == "up") sendLiveKey(Qt::Key_Up, QString());
+    else if (cmd == "down") sendLiveKey(Qt::Key_Down, QString());
+    else if (cmd == "home") sendLiveKey(Qt::Key_Home, QString());
+    else if (cmd == "end") sendLiveKey(Qt::Key_End, QString());
+}
+
 void Browser::nativeReplied(const QString &action, const QString &text)
 {
     if (m_touch) m_touch->setHandedOff(false);
+    if (m_live) {
+        // Live typing ended: the text is already in the field.
+        m_live = false;
+        if (m_eink) { m_eink->setClip(QRect()); m_eink->setSuspended(false); m_eink->refreshAllFull(); }
+        if (m_nativeKind == "url") {
+            if (action == "go") { loadUrlText(m_url->text()); m_view->setFocus(); }
+            else if (action == "cancel") { m_url->setText(m_liveOrig); m_view->setFocus(); }
+            else m_view->setFocus();
+        } else if (action == "go") {
+            sendLiveKey(Qt::Key_Return, "\r");
+        }
+        return;
+    }
     if (m_eink) m_eink->setSuspended(false);   // puts our picture back, flashed
     if (action == "cancel") { if (m_nativeKind == "url") m_view->setFocus(); return; }
     if (m_nativeKind == "url") {
@@ -1462,12 +1529,60 @@ void Browser::saveEpub()
     m_seriesLinks = EpubSaver::findChapters(m_view->page(), &listTitle);
     if (m_seriesLinks.size() >= 2) {
         m_seriesTitle = listTitle;
-        SaveChoiceDialog *d = new SaveChoiceDialog(m_seriesLinks.size(), QString(), centralWidget());
-        connect(d, SIGNAL(pageChosen()), this, SLOT(savePageOnly()));
-        connect(d, SIGNAL(seriesChosen()), this, SLOT(saveSeries()));
+        if (EpubSaver::looksLikeComic(m_view->page())) { showSaveChoice(true); return; }
+        // A list of parts (an artist's or a series' page): look at the first part to see
+        // whether they are comics, which adds "each part as its own comic".
+        if (!m_probe) {
+            m_probe = new QWebPage(this);
+            m_probe->setNetworkAccessManager(m_view->page()->networkAccessManager());
+            m_probe->settings()->setAttribute(QWebSettings::AutoLoadImages, false);
+            m_probe->settings()->setAttribute(QWebSettings::PluginsEnabled, false);
+            m_probe->setViewportSize(QSize(1000, 1400));
+            connect(m_probe, SIGNAL(loadFinished(bool)), this, SLOT(probeLoaded(bool)));
+            m_probeTimer = new QTimer(this);
+            m_probeTimer->setSingleShot(true);
+            connect(m_probeTimer, SIGNAL(timeout()), this, SLOT(probeTimedOut()));
+        }
+        m_status->setText("Saving: checking the series...");
+        m_probeTimer->start(20000);
+        m_probe->mainFrame()->load(m_seriesLinks.first().url);
         return;
     }
     savePageOnly();
+}
+
+void Browser::probeLoaded(bool ok)
+{
+    if (!m_probeTimer->isActive()) return;   // timed out already
+    m_probeTimer->stop();
+    showSaveChoice(ok && EpubSaver::isComicChapter(m_probe));
+    m_probe->mainFrame()->setHtml(QString());
+}
+
+void Browser::probeTimedOut()
+{
+    m_probe->triggerAction(QWebPage::Stop);
+    showSaveChoice(false);
+}
+
+void Browser::showSaveChoice(bool comic)
+{
+    SaveChoiceDialog *d = new SaveChoiceDialog(m_seriesLinks.size(), QString(), centralWidget(), false, comic);
+    connect(d, SIGNAL(pageChosen()), this, SLOT(savePageOnly()));
+    connect(d, SIGNAL(seriesChosen()), this, SLOT(saveSeries()));
+    connect(d, SIGNAL(seriesSplitChosen()), this, SLOT(saveSeriesSplit()));
+}
+
+// Each part of a comic series as its own CBZ.
+void Browser::saveSeriesSplit()
+{
+    if (m_saver && m_saver->isRunning()) return;
+    delete m_saver;
+    m_saver = new EpubSaver(m_view->page(), EpubSaver::defaultOutDir(), this);
+    m_saver->setComicSplit(true);
+    connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
+    connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(saveFinished(bool,QString)));
+    m_saver->startSeries(m_seriesLinks, m_seriesTitle);
 }
 
 void Browser::savePageOnly()
@@ -1476,6 +1591,7 @@ void Browser::savePageOnly()
     if (saveImageIfImagePage()) return;
     delete m_saver;
     m_saver = new EpubSaver(m_view->page(), EpubSaver::defaultOutDir(), this);
+    m_saver->setComic(EpubSaver::looksLikeComic(m_view->page()));
     connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
     connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(saveFinished(bool,QString)));
     m_saver->start();
@@ -1486,6 +1602,7 @@ void Browser::saveSeries()
     if (m_saver && m_saver->isRunning()) return;
     delete m_saver;
     m_saver = new EpubSaver(m_view->page(), EpubSaver::defaultOutDir(), this);
+    if (EpubSaver::looksLikeComic(m_view->page())) m_saver->setComic(true);
     connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
     connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(saveFinished(bool,QString)));
     m_saver->startSeries(m_seriesLinks, m_seriesTitle);
@@ -1521,6 +1638,7 @@ void Browser::readSeriesInKoreader()
     delete m_saver;
     m_saver = new EpubSaver(m_view->page(), EpubSaver::readerDir(), this);
     m_saver->setLibrary(false);
+    if (EpubSaver::looksLikeComic(m_view->page())) m_saver->setComic(true);
     connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
     connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(readerFinished(bool,QString)));
     m_saver->startSeries(m_seriesLinks, m_seriesTitle);
@@ -1533,6 +1651,7 @@ void Browser::readPageInKoreader()
     delete m_saver;
     m_saver = new EpubSaver(m_view->page(), EpubSaver::readerDir(), this);
     m_saver->setLibrary(false);
+    m_saver->setComic(EpubSaver::looksLikeComic(m_view->page()));
     connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
     connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(readerFinished(bool,QString)));
     m_saver->start();
@@ -1633,7 +1752,7 @@ void Browser::showPhoneHint()
     if (!m_phone) return;
     QString a = m_phone->address();
     if (a.isEmpty()) return;
-    m_status->setText("Phone: " + a + "  (QR in Menu)");
+    m_status->setText("Phone link on: " + a + "  (Menu > From phone to stop)");
 }
 
 void Browser::menuPressed()  { m_menuHeld = false; m_holdTimer->start(); }
@@ -1697,6 +1816,7 @@ void Browser::showMenu()
     m->addAction("Set as home", this, SLOT(setAsHome()), false, "check");
     if (plugin) m->addAction("Reader mode", this, SLOT(readInKoreader()), false, "book.opened");
     m->addAction("Save", this, SLOT(saveEpub()), false, "move.down");
+    m->addAction("Share", this, SLOT(sharePage()), false, "move.up");
     m->addAction("Screenshot", this, SLOT(screenshot()), false, "appbar.crop");
     m->addAction("Clean screen", this, SLOT(fullRefresh()), m->atRowStart(), "appbar.contrast");
     m->addSection("Settings");
@@ -1793,8 +1913,27 @@ void Browser::setAsHome()
 void Browser::showPhoneDialog()
 {
     if (!m_phone) return;
+    if (!m_phone->isListening() && !m_phone->listen(m_phone->property("wantedPort").toInt())) {
+        m_status->setText("Phone link: could not start (port in use?)");
+        return;
+    }
     // Closing it repaints the page under it with a normal partial update (no flash).
-    new PhoneDialog(m_phone->address(), centralWidget());
+    PhoneDialog *d = new PhoneDialog(m_phone->address(), centralWidget());
+    connect(d, SIGNAL(minimized()), this, SLOT(showPhoneHint()));
+    connect(d, SIGNAL(stopped()), this, SLOT(stopPhone()));
+}
+
+void Browser::sharePage()
+{
+    QString url = m_view->url().toString();
+    if (url.isEmpty() || url == "about:blank") { m_status->setText("Nothing to share"); return; }
+    PhoneDialog::share(m_view->title().simplified(), url, centralWidget());
+}
+
+void Browser::stopPhone()
+{
+    if (m_phone) m_phone->stop();
+    m_status->setText("Phone link off");
 }
 
 void Browser::saveProgress(const QString &msg) { m_status->setText(msg); }
@@ -1893,8 +2032,9 @@ void Browser::saveFinished(bool ok, const QString &msg)
     if (ok) {
         QString shown = msg;
         if (shown.startsWith("/mnt/onboard/")) shown = shown.mid(13);
-        m_status->setText("Saved: " + shown);
-        SavedDialog *d = new SavedDialog(msg, centralWidget());
+        int count = m_saver ? m_saver->savedFiles().size() : 1;
+        m_status->setText(count > 1 ? QString("Saved %1 comics").arg(count) : "Saved: " + shown);
+        SavedDialog *d = new SavedDialog(msg, centralWidget(), qMax(1, count));
         connect(d, SIGNAL(openRequested(QString)), this, SLOT(openSavedEpub(QString)));
     } else {
         m_status->setText("Save failed: " + msg);
