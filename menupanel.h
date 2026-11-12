@@ -19,6 +19,7 @@ public:
     // Adds a button; picking it closes the panel and then calls receiver->slot().
     void addAction(const QString &label, QObject *receiver, const char *slot, bool wide = false);
     void popup();
+    bool atRowStart() const { return m_col == 0; }
 signals:
     void closed();
 protected:

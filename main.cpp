@@ -1317,7 +1317,8 @@ void Browser::showMenu()
     m->addAction(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off", this, SLOT(toggleAdBlock()));
     if (m_menu && m_menu->available())   // launched from the KOReader plugin
         m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()));
-    m->addAction("Clean screen", this, SLOT(fullRefresh()), true);
+    // Fills the gap next to an odd button out, else takes a row of its own.
+    m->addAction("Clean screen", this, SLOT(fullRefresh()), m->atRowStart());
     m->addAction("Exit browser", this, SLOT(quit()), true);
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
     m->popup();
