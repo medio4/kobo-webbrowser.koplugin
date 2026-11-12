@@ -55,7 +55,7 @@ older NXP and Allwinner models are untested.
 <p align="center">
   <img src="docs/screenshots/article-image.png" width="30%" alt="An article with a diagram, at a smaller text size">
   <img src="docs/screenshots/search.png" width="30%" alt="Search results">
-  <img src="docs/screenshots/keyboard.png" width="30%" alt="The built-in keyboard">
+  <img src="docs/screenshots/keyboard.png" width="30%" alt="KOReader's keyboard typing straight into the address bar">
 </p>
 <p align="center">
   <img src="docs/screenshots/contents.png" width="30%" alt="Contents: jump to a heading">
@@ -87,8 +87,12 @@ paste a link and tap **Open on the Kobo**. Phone and Kobo need to be on the same
 the browser needs to be open. The phone link only runs once you open From phone:
 **Minimize** keeps it ready while you browse, **Stop** turns it off.
 
+The other way round, **Menu → Share** shows a QR code of the page you're on, so you can
+open it on your phone.
+
 <p align="center">
-  <img src="docs/screenshots/phone.png" width="30%" alt="Send to Kobo: the QR code">
+  <img src="docs/screenshots/phone.png" width="30%" alt="Send to Kobo: the QR code, with Minimize and Stop">
+  <img src="docs/screenshots/share.png" width="30%" alt="Share: a QR code of the current page">
 </p>
 
 ### Bookmarks, history and a home page
@@ -119,6 +123,10 @@ the browser needs to be open. The phone link only runs once you open From phone:
   the browser reopens on the same page. If Wi-Fi isn't back yet, you can read a saved copy.
 - Frontlight: swipe up or down along the left edge for brightness, the right edge for
   warmth.
+
+<p align="center">
+  <img src="docs/screenshots/wake.png" width="30%" alt="After sleep: reconnecting Wi-Fi, with Close browser and Offline copy">
+</p>
 
 ## How to use it
 
