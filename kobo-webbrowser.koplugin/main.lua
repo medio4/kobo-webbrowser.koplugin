@@ -337,6 +337,13 @@ function KoboWebBrowser:addToMainMenu(menu_items)
     menu_items.kobo_webbrowser = {
         text = _("Web browser"),
         sorting_hint = "tools",
+        help_text = _("Tap for the browser's options. Long-press to open the browser right away."),
+        -- Long-press opens the browser straight away (like holding the SSH entry).
+        hold_callback = function(touchmenu_instance)
+            if self.menu_session then return end   -- already open over KOReader
+            if touchmenu_instance then touchmenu_instance:closeMenu() end
+            UIManager:nextTick(function() self:onLaunchKoboBrowser() end)
+        end,
         sub_item_table = {
             {
                 text_func = function()
