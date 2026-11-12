@@ -149,7 +149,6 @@ private slots:
     void saveEpub();
     void savePageOnly();
     void saveSeries();
-    void saveSeriesSplit();
     void saveProgress(const QString &msg);
     void saveFinished(bool ok, const QString &msg);
     void readerFinished(bool ok, const QString &msg);

@@ -33,8 +33,6 @@ public:
     // false: a temporary copy (reader mode), no "saved" handoff line, so it never joins
     // the KOReader collection.
     void setLibrary(bool library) { m_library = library; }
-    // Series only: one EPUB per part, in a folder named after the series, instead of one book.
-    void setSplit(bool split) { m_split = split; }
 
     // Chapters of the work this page belongs to, found by js/series.js (same-site links
     // under the page's folder). Empty when the page doesn't look like part of a series.
@@ -80,7 +78,6 @@ private:
     void imagesDone();
     void storeImage(Image &img, const QByteArray &raw);
     void writeEpub();
-    QString writeEpubFile();   // writes the book; empty on failure (fail() already called)
     void fail(const QString &why);
     void loadNextChapter();
 
@@ -100,9 +97,6 @@ private:
     QList<ChapterLink> m_links;
     QString m_seriesTitle;
     QList<Chapter> m_chapters;
-    bool m_split;
-    int m_splitWritten;
-    QString m_firstSplitPath;
     int m_chapterIndex;
     QWebPage *m_hidden;
     QTimer m_chapterTimer;
@@ -117,7 +111,6 @@ public:
 signals:
     void pageChosen();
     void seriesChosen();
-    void seriesSplitChosen();   // save only: one book per part
     void cancelled();
 protected:
     void resizeEvent(QResizeEvent *e);

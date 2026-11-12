@@ -1232,7 +1232,6 @@ void Browser::saveEpub()
         SaveChoiceDialog *d = new SaveChoiceDialog(m_seriesLinks.size(), QString(), centralWidget());
         connect(d, SIGNAL(pageChosen()), this, SLOT(savePageOnly()));
         connect(d, SIGNAL(seriesChosen()), this, SLOT(saveSeries()));
-        connect(d, SIGNAL(seriesSplitChosen()), this, SLOT(saveSeriesSplit()));
         return;
     }
     savePageOnly();
@@ -1254,17 +1253,6 @@ void Browser::saveSeries()
     if (m_saver && m_saver->isRunning()) return;
     delete m_saver;
     m_saver = new EpubSaver(m_view->page(), EpubSaver::defaultOutDir(), this);
-    connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
-    connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(saveFinished(bool,QString)));
-    m_saver->startSeries(m_seriesLinks, m_seriesTitle);
-}
-
-void Browser::saveSeriesSplit()
-{
-    if (m_saver && m_saver->isRunning()) return;
-    delete m_saver;
-    m_saver = new EpubSaver(m_view->page(), EpubSaver::defaultOutDir(), this);
-    m_saver->setSplit(true);
     connect(m_saver, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
     connect(m_saver, SIGNAL(finished(bool,QString)), this, SLOT(saveFinished(bool,QString)));
     m_saver->startSeries(m_seriesLinks, m_seriesTitle);
