@@ -2,7 +2,7 @@
 
 A touch web browser for Kobo e-readers, shipped as a KOReader plugin
 (`kobo-webbrowser.koplugin`). It reuses the Qt 5.2.1 + QtWebKit libraries already in
-Kobo's firmware, so the plugin itself is under 1 MB. Developed on a Kobo Clara BW.
+Kobo's firmware, so the whole plugin is about 1.5 MB (most of it the ad blocking list). Developed on a Kobo Clara BW.
 
 <p align="center">
   <img src="docs/screenshots/reading.png" width="30%" alt="Reading a Wikipedia article">
