@@ -444,6 +444,15 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                         end,
                     },
                     {
+                        text = _("Keep the browser's orientation"),
+                        help_text = _("When the browser closes or is minimized, turn KOReader the way the browser was turned. Off: KOReader keeps its own orientation."),
+                        checked_func = function() return self.settings.keep_rotation == true end,
+                        callback = function()
+                            self.settings.keep_rotation = (self.settings.keep_rotation ~= true) or nil
+                            self:saveSettings()
+                        end,
+                    },
+                    {
                         text_func = function()
                             return T(_("Hold Menu button: %1"), self:holdMenuLabel())
                         end,
@@ -1435,6 +1444,8 @@ function KoboWebBrowser:onBrowserGone(reason)
         -- The session is over: no white cover, no temp files.
         self:closeCover()
         self:deleteSleepFiles()
+        -- Settings > "Keep the browser's orientation": turn KOReader the way the browser was.
+        if self.settings.keep_rotation then pcall(self.applyBrowserRotation, self) end
         -- The browser drew over everything. Repaint KOReader's UI first, then flash the
         -- whole screen (flashing before repainting would just re-show the browser's last
         -- image), and do it again a moment later in case the browser left a refresh in
@@ -1460,6 +1471,18 @@ function KoboWebBrowser:onBrowserGone(reason)
     end
     local ok_h, err = pcall(self.processHandoff, self, h, sleep_req, reason)
     if not ok_h then logger.warn("KoboWebBrowser: handoff failed:", err) end
+end
+
+-- The browser's screen angle (bin/rotation.txt: 0, 90, 180 or 270) as a KOReader
+-- rotation mode. The browser's "Landscape" uses KOReader's clockwise icon, so 90 = CW.
+function KoboWebBrowser:applyBrowserRotation()
+    local f = io.open(self.bin .. "/rotation.txt", "r")
+    local angle = f and tonumber(f:read("*l")) or 0
+    if f then f:close() end
+    local mode = ({ [0] = 0, [90] = 1, [180] = 2, [270] = 3 })[angle]
+    if not mode or mode == Device.screen:getRotationMode() then return end
+    logger.info("KoboWebBrowser: turning KOReader to match the browser:", angle, "-> mode", mode)
+    UIManager:broadcastEvent(Event:new("SetRotationMode", mode))
 end
 
 function KoboWebBrowser:readHandoff()
