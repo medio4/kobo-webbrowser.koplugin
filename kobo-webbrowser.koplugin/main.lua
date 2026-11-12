@@ -222,10 +222,13 @@ function WakeScreen:init()
         end
     end
     local box_size = self.box:getSize()
-    table.insert(layers, CenterContainer:new{
-        dimen = Geom:new{ x = 0, y = sh - box_size.h - Screen:scaleBySize(40), w = sw, h = box_size.h },
+    -- OverlapGroup ignores a child's dimen.y; overlap_offset is how it places one lower down.
+    local bottom = CenterContainer:new{
+        dimen = Geom:new{ w = sw, h = box_size.h },
         self.box,
-    })
+    }
+    bottom.overlap_offset = { 0, sh - box_size.h - Screen:scaleBySize(40) }
+    table.insert(layers, bottom)
     self.layers = layers
     self[1] = layers
 end
