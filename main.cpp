@@ -23,6 +23,7 @@
 #include "power.h"
 #include "textentry.h"
 #include "rotation.h"
+#include "icons.h"
 #include <QtGui/QBackingStore>
 
 #include <QtWidgets/QApplication>
@@ -208,7 +209,7 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
 // ---------------------------------------------------------------- FlatButton
 
 FlatButton::FlatButton(const QString &text, QWidget *parent)
-    : QAbstractButton(parent), m_dark(false), m_flash(getenv("KB_KEY_FLASH") != 0)
+    : QAbstractButton(parent), m_dark(false), m_flash(getenv("KB_KEY_FLASH") != 0), m_iconOnly(false)
 {
     setText(text);
     setFocusPolicy(Qt::NoFocus);
@@ -234,7 +235,22 @@ void FlatButton::paintEvent(QPaintEvent *)
     p.drawRoundedRect(r, 8, 8);
     p.setPen(ink);
     p.setFont(font());
-    p.drawText(r, Qt::AlignCenter, text());
+    int isz = qMin(r.height() - 16, 64);
+    QPixmap icon = m_iconName.isEmpty() ? QPixmap() : KbIcons::get(m_iconName, isz);
+    if (icon.isNull()) { p.drawText(r, Qt::AlignCenter, text()); return; }
+    if (!isEnabled()) p.setOpacity(0.4);
+    if (m_iconOnly || text().isEmpty()) {
+        p.drawPixmap(r.center().x() - isz / 2 + 1, r.center().y() - isz / 2 + 1, icon);
+        return;
+    }
+    // Icon then text, centred together as one group.
+    int gap = 14;
+    int tw = QFontMetrics(font()).width(text());
+    int total = qMin(r.width() - 16, isz + gap + tw);
+    int x = r.center().x() - total / 2;
+    p.drawPixmap(x, r.center().y() - isz / 2 + 1, icon);
+    QRect tr(x + isz + gap, r.top(), r.right() - (x + isz + gap), r.height());
+    p.drawText(tr, Qt::AlignVCenter | Qt::AlignLeft, QFontMetrics(font()).elidedText(text(), Qt::ElideRight, tr.width()));
 }
 
 // ------------------------------------------------------------ OnScreenKeyboard
@@ -463,6 +479,10 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     FlatButton *back = toolButton("Back", 110, bh);   // NB: "<" renders as a clock in the Kobo UI font
     FlatButton *fwd  = toolButton("Fwd", 96, bh);
     FlatButton *menu = toolButton("Menu", 130, bh); menu->setBold(true);
+    // KOReader's icons when its icon set is there (text otherwise).
+    back->setIconName("chevron.left", true);
+    fwd->setIconName("chevron.right", true);
+    menu->setIconName("appbar.menu", true);
     QHBoxLayout *row1 = new QHBoxLayout; row1->setSpacing(6);
     row1->addWidget(back); row1->addWidget(fwd); row1->addWidget(m_url, 1); row1->addWidget(menu);
     barBox->addLayout(row1);
@@ -986,10 +1006,10 @@ void Browser::showRotateMenu()
     MenuPanel *m = new MenuPanel(centralWidget(), top);
     const int cur = KbRotation::angle();
     m->addSection("Rotate screen");
-    m->addAction(QString("Portrait") + (cur == 0 ? "  (now)" : ""), this, SLOT(rotateTo0()));
-    m->addAction(QString("Landscape") + (cur == 90 ? "  (now)" : ""), this, SLOT(rotateTo90()));
-    m->addAction(QString("Portrait, upside down") + (cur == 180 ? "  (now)" : ""), this, SLOT(rotateTo180()));
-    m->addAction(QString("Landscape, flipped") + (cur == 270 ? "  (now)" : ""), this, SLOT(rotateTo270()));
+    m->addAction(QString("Portrait") + (cur == 0 ? "  (now)" : ""), this, SLOT(rotateTo0()), false, "rotation.0UR");
+    m->addAction(QString("Landscape") + (cur == 90 ? "  (now)" : ""), this, SLOT(rotateTo90()), false, "rotation.90CW");
+    m->addAction(QString("Portrait, upside down") + (cur == 180 ? "  (now)" : ""), this, SLOT(rotateTo180()), false, "rotation.180UD");
+    m->addAction(QString("Landscape, flipped") + (cur == 270 ? "  (now)" : ""), this, SLOT(rotateTo270()), false, "rotation.90CCW");
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
     m->popup();
 }
@@ -1482,29 +1502,29 @@ void Browser::showMenu()
     MenuPanel *m = new MenuPanel(centralWidget(), top);
     const bool plugin = m_menu && m_menu->available();   // started from the KOReader plugin
     m->addSection("Go to");
-    m->addAction("Home", this, SLOT(goHome()));
-    m->addAction("Bookmarks", this, SLOT(showBookmarks()));
-    m->addAction("History", this, SLOT(showHistory()));
-    m->addAction("From phone", this, SLOT(showPhoneDialog()));
+    m->addAction("Home", this, SLOT(goHome()), false, "home");
+    m->addAction("Bookmarks", this, SLOT(showBookmarks()), false, "bookmark");
+    m->addAction("History", this, SLOT(showHistory()), false, "back.top");
+    m->addAction("From phone", this, SLOT(showPhoneDialog()), false, "wifi");
     m->addSection("This page");
-    m->addAction("Reload", this, SLOT(reloadClicked()));
-    m->addAction("Contents", this, SLOT(showToc()));
-    m->addAction("Text bigger", this, SLOT(zoomIn()));
-    m->addAction("Text smaller", this, SLOT(zoomOut()));
-    m->addAction("Add bookmark", this, SLOT(addBookmark()));
-    m->addAction("Set as home", this, SLOT(setAsHome()));
-    if (plugin) m->addAction("Read in KOReader", this, SLOT(readInKoreader()));
-    m->addAction("Save", this, SLOT(saveEpub()));
-    m->addAction("Screenshot", this, SLOT(screenshot()));
-    m->addAction("Keyboard", this, SLOT(toggleKeyboard()), m->atRowStart() && !plugin);
+    m->addAction("Reload", this, SLOT(reloadClicked()), false, "cre.render.reload");
+    m->addAction("Contents", this, SLOT(showToc()), false, "align.left");
+    m->addAction("Text bigger", this, SLOT(zoomIn()), false, "plus");
+    m->addAction("Text smaller", this, SLOT(zoomOut()), false, "appbar.textsize");
+    m->addAction("Add bookmark", this, SLOT(addBookmark()), false, "star.empty");
+    m->addAction("Set as home", this, SLOT(setAsHome()), false, "check");
+    if (plugin) m->addAction("Read in KOReader", this, SLOT(readInKoreader()), false, "book.opened");
+    m->addAction("Save", this, SLOT(saveEpub()), false, "move.down");
+    m->addAction("Screenshot", this, SLOT(screenshot()), false, "appbar.crop");
+    m->addAction("Keyboard", this, SLOT(toggleKeyboard()), m->atRowStart() && !plugin, "edit");
     m->addSection("Settings");
-    m->addAction(HistoryStore::enabled() ? "History: on" : "History: off", this, SLOT(toggleHistory()));
-    m->addAction(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off", this, SLOT(toggleAdBlock()));
-    m->addAction("Clean screen", this, SLOT(fullRefresh()), !plugin);
-    if (m_eink && m_eink->canRotate()) m->addAction("Rotate screen", this, SLOT(showRotateMenu()));
-    if (plugin) m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()));
+    m->addAction(HistoryStore::enabled() ? "History: on" : "History: off", this, SLOT(toggleHistory()), false, "back.top");
+    m->addAction(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off", this, SLOT(toggleAdBlock()), false, "cancel");
+    m->addAction("Clean screen", this, SLOT(fullRefresh()), !plugin, "appbar.contrast");
+    if (m_eink && m_eink->canRotate()) m->addAction("Rotate screen", this, SLOT(showRotateMenu()), false, "appbar.rotation");
+    if (plugin) m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()), false, "appbar.settings");
     m->addSpacer();
-    m->addAction("Exit browser", this, SLOT(quit()), true);
+    m->addAction("Exit browser", this, SLOT(quit()), true, "exit");
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
     m->popup();
     // No full-screen flash: the panel's own repaint is a plain partial update of its area.

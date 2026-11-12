@@ -17,7 +17,8 @@ class MenuPanel : public QWidget {
 public:
     MenuPanel(QWidget *parent, int top);
     // Adds a button; picking it closes the panel and then calls receiver->slot().
-    void addAction(const QString &label, QObject *receiver, const char *slot, bool wide = false);
+    void addAction(const QString &label, QObject *receiver, const char *slot, bool wide = false,
+                   const QString &icon = QString());   // icon: KOReader icon name (icons.h)
     void popup();
     bool atRowStart() const { return m_col == 0; }
     void addSection(const QString &title);   // small heading across both columns

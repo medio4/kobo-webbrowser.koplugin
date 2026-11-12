@@ -32,9 +32,10 @@ MenuPanel::MenuPanel(QWidget *parent, int top)
     m_grid->setVerticalSpacing(10);
 }
 
-void MenuPanel::addAction(const QString &label, QObject *receiver, const char *slot, bool wide)
+void MenuPanel::addAction(const QString &label, QObject *receiver, const char *slot, bool wide, const QString &icon)
 {
     FlatButton *b = new FlatButton(label);
+    if (!icon.isEmpty()) b->setIconName(icon);
     b->setPixelSize(38);
     b->setMinimumHeight(88);
     b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);

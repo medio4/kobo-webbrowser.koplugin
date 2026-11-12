@@ -66,11 +66,16 @@ public:
     void setPixelSize(int px);
     void setDark(bool d) { m_dark = d; update(); }   // gray face for utility keys
     void setFlash(bool f) { m_flash = f; }
+    // Icon from KOReader's set (icons.h), drawn left of the text, or alone (iconOnly).
+    // Falls back to the text when the icon file isn't there.
+    void setIconName(const QString &name, bool iconOnly = false) { m_iconName = name; m_iconOnly = iconOnly; update(); }
 protected:
     void paintEvent(QPaintEvent *e);
 private:
     bool m_dark;
     bool m_flash;
+    QString m_iconName;
+    bool m_iconOnly;
 };
 
 // On-screen keyboard laid out like KOReader's English keyboard, with URL
