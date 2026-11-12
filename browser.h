@@ -152,6 +152,11 @@ private slots:
     void showPhoneHint();
     void showPhoneDialog();
     void showMenu();
+    void menuPressed();
+    void menuReleased();
+    void menuHoldFired();
+    void menuClicked();
+    void runQuickAction(const QString &key);
     void goHome();
     void rotateNow();
     void showTextSizeBar();
@@ -219,6 +224,8 @@ private:
     EpubSaver *m_saver;
     PhoneShare *m_phone;
     int m_rotTarget;
+    QTimer *m_holdTimer;
+    bool m_menuHeld;
     QWidget *m_sizeBar;
     QLabel *m_sizeLabel;
     void placeTextSizeBar();

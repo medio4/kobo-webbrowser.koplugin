@@ -636,7 +636,15 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
 
     connect(back, SIGNAL(clicked()), m_view, SLOT(back()));
     connect(fwd, SIGNAL(clicked()), m_view, SLOT(forward()));
-    connect(menu, SIGNAL(clicked()), this, SLOT(showMenu()));
+    // Tap: the Menu. Hold: the quick action chosen in KOReader's Web browser > Settings.
+    m_menuHeld = false;
+    m_holdTimer = new QTimer(this);
+    m_holdTimer->setSingleShot(true);
+    m_holdTimer->setInterval(600);
+    connect(m_holdTimer, SIGNAL(timeout()), this, SLOT(menuHoldFired()));
+    connect(menu, SIGNAL(pressed()), this, SLOT(menuPressed()));
+    connect(menu, SIGNAL(released()), this, SLOT(menuReleased()));
+    connect(menu, SIGNAL(clicked()), this, SLOT(menuClicked()));
     connect(m_url, SIGNAL(returnPressed()), this, SLOT(go()));
     connect(m_kbd, SIGNAL(goPressed()), this, SLOT(keyboardGo()));
     connect(m_kbd, SIGNAL(hidePressed()), this, SLOT(hideKeyboard()));
@@ -1606,6 +1614,46 @@ void Browser::showPhoneHint()
     QString a = m_phone->address();
     if (a.isEmpty()) return;
     m_status->setText("Phone: " + a + "  (QR in Menu)");
+}
+
+void Browser::menuPressed()  { m_menuHeld = false; m_holdTimer->start(); }
+void Browser::menuReleased() { m_holdTimer->stop(); }
+void Browser::menuClicked()
+{
+    if (m_menuHeld) { m_menuHeld = false; return; }   // the hold already ran its action
+    showMenu();
+}
+
+void Browser::menuHoldFired()
+{
+    m_menuHeld = true;
+    QString key = "reader";
+    QFile f(QDir(QCoreApplication::applicationDirPath()).filePath("hold-menu.txt"));
+    if (f.open(QIODevice::ReadOnly)) {
+        QString k = QString::fromUtf8(f.readAll()).trimmed();
+        if (!k.isEmpty()) key = k;
+    }
+    runQuickAction(key);
+}
+
+void Browser::runQuickAction(const QString &key)
+{
+    const bool plugin = m_menu && m_menu->available();
+    static const char *const table[][2] = {
+        { "reader", "readInKoreader" }, { "menu", "showMenu" }, { "textsize", "showTextSizeBar" },
+        { "contents", "showToc" }, { "bookmarks", "showBookmarks" }, { "history", "showHistory" },
+        { "addbookmark", "addBookmark" }, { "save", "saveEpub" }, { "home", "goHome" },
+        { "reload", "reloadClicked" }, { "clean", "fullRefresh" }, { "rotate", "showRotateMenu" },
+        { "keyboard", "toggleKeyboard" }, { "phone", "showPhoneDialog" }, { "screenshot", "screenshot" },
+        { "koreader", "openKoreaderMenu" },
+    };
+    const char *slot = "showMenu";
+    for (unsigned i = 0; i < sizeof table / sizeof table[0]; ++i)
+        if (key == QLatin1String(table[i][0])) { slot = table[i][1]; break; }
+    // Reader mode and the KOReader menu need the plugin; without it, just open the Menu.
+    if (!plugin && (key == "reader" || key == "koreader")) slot = "showMenu";
+    if (key == "rotate" && !(m_eink && m_eink->canRotate())) slot = "showMenu";
+    QMetaObject::invokeMethod(this, slot, Qt::QueuedConnection);
 }
 
 void Browser::showMenu()

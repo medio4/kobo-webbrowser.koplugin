@@ -377,47 +377,59 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                 sub_item_table_func = function() return self:pageListMenu("bookmarks.txt", _("No bookmarks yet. In the browser: Menu > Add bookmark.")) end,
             },
             {
-                text_func = function()
-                    return T(_("Home page: %1"), self.settings.home or DEFAULT_HOME)
-                end,
-                keep_menu_open = true,
+                text = _("Settings"),
                 separator = true,
-                callback = function(touchmenu_instance)
-                    self:askSetting("home", _("Home page"), DEFAULT_HOME, touchmenu_instance)
-                end,
-            },
-            {
-                text_func = function()
-                    return T(_("Collection for saved articles: %1"), self.settings.collection or DEFAULT_COLLECTION)
-                end,
-                keep_menu_open = true,
-                callback = function(touchmenu_instance)
-                    self:askSetting("collection", _("Collection for saved articles"), DEFAULT_COLLECTION, touchmenu_instance)
-                end,
-            },
-            {
-                text = _("Ad blocking"),
-                sub_item_table = self:adblockMenu(),
-            },
-            {
-                text = _("Fix modern page styles"),
-                help_text = _("Rewrites style sheets that use newer CSS (variables, flexbox, transforms, calc) into the older forms this browser understands, so menus and layouts look as intended. Turn it off if a page looks worse with it. Applies from the next page you open."),
-                checked_func = function() return self.settings.css_compat_off ~= true end,
-                callback = function()
-                    self.settings.css_compat_off = (self.settings.css_compat_off ~= true) or nil
-                    self:saveSettings()
-                    self:writeAdblockFiles()
-                end,
-            },
-            {
-                text = _("Use KOReader keyboard (experimental)"),
-                help_text = _("Type addresses and form fields in a KOReader input dialog instead of the browser's own keyboard. Off by default: the browser's keyboard types straight into the field. Takes effect the next time the browser starts."),
-                checked_func = function() return self.settings.native_keyboard == true end,
-                callback = function()
-                    self.settings.native_keyboard = (self.settings.native_keyboard == true) and nil or true
-                    self:saveSettings()
-                end,
-                separator = true,
+                sub_item_table = {
+                    {
+                        text_func = function()
+                            return T(_("Home page: %1"), self.settings.home or DEFAULT_HOME)
+                        end,
+                        keep_menu_open = true,
+                        separator = true,
+                        callback = function(touchmenu_instance)
+                            self:askSetting("home", _("Home page"), DEFAULT_HOME, touchmenu_instance)
+                        end,
+                    },
+                    {
+                        text_func = function()
+                            return T(_("Collection for saved articles: %1"), self.settings.collection or DEFAULT_COLLECTION)
+                        end,
+                        keep_menu_open = true,
+                        callback = function(touchmenu_instance)
+                            self:askSetting("collection", _("Collection for saved articles"), DEFAULT_COLLECTION, touchmenu_instance)
+                        end,
+                    },
+                    {
+                        text = _("Ad blocking"),
+                        sub_item_table = self:adblockMenu(),
+                    },
+                    {
+                        text = _("Fix modern page styles"),
+                        help_text = _("Rewrites style sheets that use newer CSS (variables, flexbox, transforms, calc) into the older forms this browser understands, so menus and layouts look as intended. Turn it off if a page looks worse with it. Applies from the next page you open."),
+                        checked_func = function() return self.settings.css_compat_off ~= true end,
+                        callback = function()
+                            self.settings.css_compat_off = (self.settings.css_compat_off ~= true) or nil
+                            self:saveSettings()
+                            self:writeAdblockFiles()
+                        end,
+                    },
+                    {
+                        text = _("Use KOReader keyboard (experimental)"),
+                        help_text = _("Type addresses and form fields in a KOReader input dialog instead of the browser's own keyboard. Off by default: the browser's keyboard types straight into the field. Takes effect the next time the browser starts."),
+                        checked_func = function() return self.settings.native_keyboard == true end,
+                        callback = function()
+                            self.settings.native_keyboard = (self.settings.native_keyboard == true) and nil or true
+                            self:saveSettings()
+                        end,
+                    },
+                    {
+                        text_func = function()
+                            return T(_("Hold Menu button: %1"), self:holdMenuLabel())
+                        end,
+                        help_text = _("What holding the browser's Menu button does. A short tap still opens the Menu."),
+                        sub_item_table_func = function() return self:holdMenuChoices() end,
+                    },
+                },
             },
             {
                 text = _("Show log"),
@@ -432,6 +444,51 @@ function KoboWebBrowser:addToMainMenu(menu_items)
             },
         },
     }
+end
+
+-- Quick actions for holding the browser's Menu button (bin/hold-menu.txt holds the key).
+local HOLD_ACTIONS = {
+    { "reader", _("Reader mode") },
+    { "menu", _("Open the Menu") },
+    { "textsize", _("Text size") },
+    { "contents", _("Contents") },
+    { "bookmarks", _("Bookmarks") },
+    { "history", _("History") },
+    { "addbookmark", _("Add bookmark") },
+    { "save", _("Save") },
+    { "home", _("Home") },
+    { "reload", _("Reload") },
+    { "clean", _("Clean screen") },
+    { "rotate", _("Rotate screen") },
+    { "keyboard", _("Keyboard") },
+    { "phone", _("From phone") },
+    { "screenshot", _("Screenshot") },
+    { "koreader", _("KOReader menu") },
+}
+
+function KoboWebBrowser:holdMenuLabel()
+    local key = self.settings.hold_menu or "reader"
+    for _i, a in ipairs(HOLD_ACTIONS) do
+        if a[1] == key then return a[2] end
+    end
+    return HOLD_ACTIONS[1][2]
+end
+
+function KoboWebBrowser:holdMenuChoices()
+    local items = {}
+    for _i, a in ipairs(HOLD_ACTIONS) do
+        table.insert(items, {
+            text = a[2],
+            radio = true,
+            checked_func = function() return (self.settings.hold_menu or "reader") == a[1] end,
+            callback = function()
+                self.settings.hold_menu = (a[1] ~= "reader") and a[1] or nil
+                self:saveSettings()
+                self:writeAdblockFiles()
+            end,
+        })
+    end
+    return items
 end
 
 function KoboWebBrowser:askSetting(key, title, default, touchmenu_instance)
@@ -574,6 +631,7 @@ function KoboWebBrowser:writeAdblockFiles()
     put("adblock-allow.txt", self.settings.adblock_allow)
     put("adblock-extra.txt", self.settings.adblock_block)
     -- Not ad blocking, but read the same way (at each page the browser opens).
+    put("hold-menu.txt", self.settings.hold_menu or "reader")
     put("css-compat-off.txt", self.settings.css_compat_off == true and "modern page style fixes turned off in KOReader's menu" or nil)
 end
 

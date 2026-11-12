@@ -126,6 +126,7 @@ the browser needs to be open.
 | Go back / forward | **Back** / **Fwd**, or swipe in from the left / right edge |
 | Type an address or search | Tap the address, type, press **Go** on the keyboard |
 | Zoom | Pinch; or **Menu → Text size** for the text only |
+| Quick action | Hold the Menu button (Reader mode unless changed in Settings) |
 | Open KOReader's menu | Swipe down from the toolbar, or **Menu → KOReader menu** |
 | Clear e-ink ghosting | Two-finger tap, or **Menu → Clean screen** |
 | Exit | **Menu → Exit browser** |
@@ -136,11 +137,13 @@ the browser needs to be open.
 In KOReader, under **Tools → Web browser**:
 
 - **Open address…**, **History**, **Bookmarks**: open the browser on a page.
-- **Home page** (default `https://lite.duckduckgo.com/lite/`).
-- **Collection for saved articles** (default `Web`; leave empty to skip collections).
-- **Ad blocking**: on/off, sites where ads are allowed, extra sites to block.
-- **Fix modern page styles** (on by default): turn off if a site looks worse with it.
-- **Use KOReader keyboard (experimental)**: type with KOReader's keyboard instead.
+- **Settings**:
+  - **Home page** (default `https://lite.duckduckgo.com/lite/`).
+  - **Collection for saved articles** (default `Web`; leave empty to skip collections).
+  - **Ad blocking**: on/off, sites where ads are allowed, extra sites to block.
+  - **Fix modern page styles** (on by default): turn off if a site looks worse with it.
+  - **Use KOReader keyboard (experimental)**: type with KOReader's keyboard instead.
+  - **Hold Menu button**: what holding the browser's Menu button does (default: Reader mode).
 - **Close web browser**: closes a browser left open behind KOReader's menu.
 - **Show log**: shows the end of the launcher log.
 
