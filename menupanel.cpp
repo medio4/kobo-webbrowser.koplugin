@@ -6,6 +6,7 @@
 #include <QtGui/QMouseEvent>
 #include <QtWidgets/QFrame>
 #include <QtWidgets/QGridLayout>
+#include <QtWidgets/QLabel>
 
 MenuPanel::MenuPanel(QWidget *parent, int top)
     : QWidget(parent), m_top(top), m_row(0), m_col(0)
@@ -25,16 +26,17 @@ MenuPanel::MenuPanel(QWidget *parent, int top)
     box->setPalette(pal);
     m_grid = new QGridLayout(box);
     m_grid->setContentsMargins(16, 16, 16, 16);
-    m_grid->setSpacing(12);
+    m_grid->setHorizontalSpacing(12);
+    m_grid->setVerticalSpacing(10);
 }
 
 void MenuPanel::addAction(const QString &label, QObject *receiver, const char *slot, bool wide)
 {
     FlatButton *b = new FlatButton(label);
     b->setPixelSize(38);
-    b->setMinimumHeight(100);
+    b->setMinimumHeight(88);
     b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    b->setFixedHeight(100);
+    b->setFixedHeight(88);
     if (wide && m_col != 0) { m_row++; m_col = 0; }
     m_grid->addWidget(b, m_row, m_col, 1, wide ? 2 : 1);
     if (wide || m_col == 1) { m_row++; m_col = 0; } else m_col = 1;
@@ -47,6 +49,24 @@ void MenuPanel::addAction(const QString &label, QObject *receiver, const char *s
     t.slot = name;
     m_targets << qMakePair(static_cast<QAbstractButton *>(b), t);
     connect(b, SIGNAL(clicked()), this, SLOT(picked()));
+}
+
+void MenuPanel::addSection(const QString &title)
+{
+    if (m_col != 0) { m_row++; m_col = 0; }
+    QLabel *l = new QLabel(title);
+    QFont f; f.setPixelSize(28); f.setBold(true);
+    l->setFont(f);
+    l->setContentsMargins(6, m_row ? 10 : 0, 0, 0);
+    m_grid->addWidget(l, m_row, 0, 1, 2);
+    m_row++;
+}
+
+void MenuPanel::addSpacer()
+{
+    if (m_col != 0) { m_row++; m_col = 0; }
+    m_grid->setRowMinimumHeight(m_row, 10);
+    m_row++;
 }
 
 void MenuPanel::popup()

@@ -20,6 +20,8 @@ public:
     void addAction(const QString &label, QObject *receiver, const char *slot, bool wide = false);
     void popup();
     bool atRowStart() const { return m_col == 0; }
+    void addSection(const QString &title);   // small heading across both columns
+    void addSpacer();
 signals:
     void closed();
 protected:

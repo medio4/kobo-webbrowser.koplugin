@@ -1346,27 +1346,29 @@ void Browser::showMenu()
     hideKeyboard();
     int top = m_bar->mapTo(centralWidget(), QPoint(0, m_bar->height())).y() + 4;
     MenuPanel *m = new MenuPanel(centralWidget(), top);
+    const bool plugin = m_menu && m_menu->available();   // started from the KOReader plugin
+    m->addSection("Go to");
     m->addAction("Home", this, SLOT(goHome()));
     m->addAction("Bookmarks", this, SLOT(showBookmarks()));
-    m->addAction("Add bookmark", this, SLOT(addBookmark()));
-    m->addAction("Set as home", this, SLOT(setAsHome()));
     m->addAction("History", this, SLOT(showHistory()));
-    m->addAction(HistoryStore::enabled() ? "History: on" : "History: off", this, SLOT(toggleHistory()));
+    m->addAction("From phone", this, SLOT(showPhoneDialog()));
+    m->addSection("This page");
     m->addAction("Reload", this, SLOT(reloadClicked()));
     m->addAction("Contents", this, SLOT(showToc()));
     m->addAction("Text bigger", this, SLOT(zoomIn()));
     m->addAction("Text smaller", this, SLOT(zoomOut()));
-    if (m_menu && m_menu->available())   // reader mode hands the article to KOReader
-        m->addAction("Read in KOReader", this, SLOT(readInKoreader()));
+    m->addAction("Add bookmark", this, SLOT(addBookmark()));
+    m->addAction("Set as home", this, SLOT(setAsHome()));
+    if (plugin) m->addAction("Read in KOReader", this, SLOT(readInKoreader()));
     m->addAction("Save", this, SLOT(saveEpub()));
     m->addAction("Screenshot", this, SLOT(screenshot()));
-    m->addAction("Keyboard", this, SLOT(toggleKeyboard()));
-    m->addAction("From phone", this, SLOT(showPhoneDialog()));
+    m->addAction("Keyboard", this, SLOT(toggleKeyboard()), m->atRowStart() && !plugin);
+    m->addSection("Settings");
+    m->addAction(HistoryStore::enabled() ? "History: on" : "History: off", this, SLOT(toggleHistory()));
     m->addAction(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off", this, SLOT(toggleAdBlock()));
-    if (m_menu && m_menu->available())   // launched from the KOReader plugin
-        m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()));
-    // Fills the gap next to an odd button out, else takes a row of its own.
-    m->addAction("Clean screen", this, SLOT(fullRefresh()), m->atRowStart());
+    m->addAction("Clean screen", this, SLOT(fullRefresh()), !plugin);
+    if (plugin) m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()));
+    m->addSpacer();
     m->addAction("Exit browser", this, SLOT(quit()), true);
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
     m->popup();
