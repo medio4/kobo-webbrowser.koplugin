@@ -23,7 +23,7 @@ The browser talks back through a handoff file (bin/epub-handoff.txt), one reques
   read<TAB>/path/tmp.epub<TAB>url<TAB>scrollY<TAB>zoom
                                          reader mode: open the temporary EPUB (in bin/reader-tmp,
                                          never the library); when that book is closed, delete it
-                                         and reopen the browser on the same page
+                                         and offer to reopen the browser on the same page
 
 Text entry uses KOReader's own keyboard (setting "Use KOReader keyboard", default on): the
 browser writes bin/kbd-request.txt (line 1: url|field|text, line 2: label, rest: current
@@ -1424,12 +1424,25 @@ function KoboWebBrowser:returnFromReader(r)
     -- This instance belonged to the closed ReaderUI: start the browser from the file manager's.
     local plugin = fm and fm.kobowebbrowser or self
     if active and active.job then return end
-    local extra = { args = {}, env = {} }
-    if r.url and r.url:match("^https?://") then extra.args[1] = r.url end
-    if tonumber(r.y) then extra.env.KB_RESTORE_Y = r.y end
-    if tonumber(r.zoom) then extra.env.KB_RESTORE_ZOOM = r.zoom end
-    logger.info("KoboWebBrowser: reader mode: back to", r.url, "y", r.y)
-    plugin:launch(extra)
+    -- Ask first: going back is the usual case, but the reader may be done with the web.
+    local ConfirmBox = require("ui/widget/confirmbox")
+    UIManager:show(ConfirmBox:new{
+        text = _("Go back to the web page in the browser?"),
+        ok_text = _("Back to the browser"),
+        cancel_text = _("Stay in KOReader"),
+        ok_callback = function()
+            if active and active.job then return end
+            local extra = { args = {}, env = {} }
+            if r.url and r.url:match("^https?://") then extra.args[1] = r.url end
+            if tonumber(r.y) then extra.env.KB_RESTORE_Y = r.y end
+            if tonumber(r.zoom) then extra.env.KB_RESTORE_ZOOM = r.zoom end
+            logger.info("KoboWebBrowser: reader mode: back to", r.url, "y", r.y)
+            plugin:launch(extra)
+        end,
+        cancel_callback = function()
+            logger.info("KoboWebBrowser: reader mode: staying in KOReader")
+        end,
+    })
 end
 
 -- Delete a reader-mode copy and everything KOReader keeps about it (book settings,
