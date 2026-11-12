@@ -57,6 +57,26 @@ pauses while the browser is open and comes back when you exit.
   keyboard, experimental).
 - Escape hatch: hold the power button to force-quit a frozen page.
 
+## Reader mode and series
+
+On a page that lists the parts of a series (here the Python tutorial), **Save** and
+**Read in KOReader** offer the whole series as one book with a chapter list. Read in
+KOReader opens it as a temporary book; closing it deletes it and asks whether to go back
+to the page. History and Bookmarks are also in KOReader's own menu.
+
+<p align="center">
+  <img src="docs/screenshots/save-series.png" width="30%" alt="Save: whole series or just this page">
+  <img src="docs/screenshots/read-series.png" width="30%" alt="Read in KOReader: whole series or just this page, removed when closed">
+  <img src="docs/screenshots/reader-book.png" width="30%" alt="The series open in KOReader as a temporary book">
+</p>
+<p align="center">
+  <img src="docs/screenshots/reader-contents.png" width="30%" alt="The temporary book's chapter list in KOReader">
+  <img src="docs/screenshots/koreader-menu.png" width="30%" alt="Web browser in KOReader's Tools menu, with History and Bookmarks">
+</p>
+<p align="center">
+  <img src="docs/screenshots/reader-return.png" width="60%" alt="Closing the temporary book: go back to the browser or stay in KOReader">
+</p>
+
 ## Requirements
 
 - A Kobo e-reader with firmware 4.x that includes Qt 5.2.1 and QtWebKit. Developed and
