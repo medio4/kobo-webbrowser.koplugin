@@ -8,6 +8,10 @@
 #include "eink.h"
 #include "webpage.h"
 #include "pagescroll.h"
+#include <QtWebKit/QWebHistory>
+#include <QtCore/QDataStream>
+#include <QtCore/QFileInfo>
+#include <QtCore/QDateTime>
 #include "epub.h"
 #include "phoneshare.h"
 #include "menupanel.h"
@@ -611,6 +615,8 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     }
     if (rf && *rf) qDebug() << "restore: can't read" << restore.fileName() << restore.errorString() << "- loading online";
 
+    // Back from a temporary book or a sleep: bring the Back/Fwd history back too.
+    if (restoreSessionHistory(m_home)) return;
     loadUrlText(m_home);
 }
 
@@ -1103,6 +1109,7 @@ void Browser::sleepToKoreader()
         qDebug() << "power: can't write sleep page" << pagePath << page.errorString();
     }
     qDebug() << "power: sleep files took" << t.elapsed() << "ms";
+    saveSessionHistory();
     EpubSaver::appendHandoff("sleep", line);
     qDebug() << "power: sleep handoff" << line;
     qApp->quit();
@@ -1316,6 +1323,48 @@ void Browser::readPageInKoreader()
     m_saver->start();
 }
 
+// Back/Fwd history kept across a relaunch (back from a temporary book, or after sleep):
+// written just before the browser hands over to KOReader, read once by the next start.
+static QString sessionHistoryFile()
+{
+    return QDir(QCoreApplication::applicationDirPath()).filePath("session-history.dat");
+}
+
+void Browser::saveSessionHistory()
+{
+    QFile f(sessionHistoryFile());
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
+    QDataStream out(&f);
+    out << *m_view->history();
+    qDebug() << "history: saved" << m_view->history()->count() << "entries for the next start";
+}
+
+// Restores the saved history when this start reopens its current page; true if it did
+// (the history then loads that page itself).
+bool Browser::restoreSessionHistory(const QString &startUrl)
+{
+    QFile f(sessionHistoryFile());
+    if (!f.exists()) return false;
+    QFileInfo fi(f);
+    bool fresh = fi.lastModified().secsTo(QDateTime::currentDateTime()) < 24 * 3600;
+    bool ok = false;
+    if (fresh && getenv("KB_START_FROM_ARG") && f.open(QIODevice::ReadOnly)) {
+        QDataStream in(&f);
+        in >> *m_view->history();
+        f.close();
+        QWebHistory *h = m_view->history();
+        QString cur = h->currentItem().isValid() ? h->currentItem().url().toString() : QString();
+        QString want = QUrl(startUrl).toString();
+        if (cur.endsWith('/')) cur.chop(1);
+        if (want.endsWith('/')) want.chop(1);
+        ok = h->count() > 1 && !cur.isEmpty() && cur == want;
+        if (!ok) h->clear();
+        qDebug() << "history:" << (ok ? "restored" : "not restored") << h->count() << "entries, current" << cur << "start" << want;
+    }
+    QFile::remove(sessionHistoryFile());   // used once
+    return ok;
+}
+
 void Browser::readerFinished(bool ok, const QString &msg)
 {
     if (!ok) {
@@ -1331,6 +1380,7 @@ void Browser::readerFinished(bool ok, const QString &msg)
         return;
     }
     qDebug() << "reader: handoff" << line;
+    saveSessionHistory();
     m_status->setText("Opening in KOReader…");
     QTimer::singleShot(400, qApp, SLOT(quit()));
 }

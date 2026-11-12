@@ -140,6 +140,8 @@ private slots:
     void showPhoneDialog();
     void showMenu();
     void goHome();
+    void saveSessionHistory();
+    bool restoreSessionHistory(const QString &startUrl);
     void showHistory();
     void toggleHistory();
     void toggleAdBlock();
