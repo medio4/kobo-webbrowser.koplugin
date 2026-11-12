@@ -79,6 +79,12 @@ older NXP and Allwinner models are untested.
   or episodes, Save offers each one as its own comic, all of them as one, or just this page.
 
 <p align="center">
+  <img src="docs/screenshots/comic-page.png" width="30%" alt="A web comic in the browser">
+  <img src="docs/screenshots/comic-koreader.png" width="30%" alt="The same comic as a CBZ in KOReader">
+</p>
+<p align="center"><sub>Comic: <a href="https://www.peppercarrot.com">Pepper&amp;Carrot</a> by David Revoy, CC BY 4.0.</sub></p>
+
+<p align="center">
   <img src="docs/screenshots/read-series.png" width="30%" alt="Reader mode: whole series or just this page">
   <img src="docs/screenshots/reader-contents.png" width="30%" alt="The series as one book, with a chapter list">
   <img src="docs/screenshots/save-series.png" width="30%" alt="Save: whole series or just this page">
