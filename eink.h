@@ -8,6 +8,8 @@
 #include <QtCore/QList>
 #include <QtCore/QPair>
 #include <QtCore/QRect>
+#include <QtCore/QPointer>
+#include <QtCore/QList>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 #include <QtCore/QElapsedTimer>
@@ -88,6 +90,7 @@ private:
     QTimer m_holdTimer;
     QTimer m_settleTimer;
     QRect m_overlayRect;
+    QList<QPointer<QWidget> > m_shownOverlays;   // opened pop-ups whose area is measured once laid out
     QTimer m_loadSettleTimer;      // quiet-period timer after a load
     QWidget *m_loadSettleWidget;   // the web view to flash when it settles (0 = inactive)
     QElapsedTimer m_loadSettleSince;

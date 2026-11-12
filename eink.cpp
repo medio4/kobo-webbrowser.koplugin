@@ -150,18 +150,27 @@ bool KoboEink::eventFilter(QObject *obj, QEvent *e)
     // A pop-up (menu, dialog, list) closing: the toolbar and status line under it repaint
     // with the fast 1-bit waveform, which left pieces of the pop-up's frame and buttons on
     // the panel. Once everything has repainted, flash just the area it covered.
-    if (e->type() == QEvent::Hide && obj->isWidgetType() && obj->property("kb_overlay").toBool()) {
+    // Same when one opens: it is often drawn over another (Menu > Bookmarks) and its 1-bit
+    // update let the old buttons show through, so its area also gets a flash once drawn.
+    if ((e->type() == QEvent::Hide || e->type() == QEvent::Show) && obj->isWidgetType()
+            && obj->property("kb_overlay").toBool()) {
         QWidget *w = static_cast<QWidget *>(obj);
-        QWidget *top = w->window();
-        QRect area;
-        foreach (QObject *o, w->children())
-            if (o->isWidgetType()) {
-                QWidget *c = static_cast<QWidget *>(o);
-                area |= QRect(c->mapTo(top, QPoint(0, 0)), c->size());
-            }
-        if (area.isEmpty()) area = QRect(w->mapTo(top, QPoint(0, 0)), w->size());
-        m_overlayRect |= area.adjusted(-4, -4, 4, 4);
-        QTimer::singleShot(250, this, SLOT(flashOverlays()));
+        if (e->type() == QEvent::Show) {
+            // Not laid out yet: measure its box when the flash is due.
+            m_shownOverlays << QPointer<QWidget>(w);
+            QTimer::singleShot(150, this, SLOT(flashOverlays()));
+        } else {
+            QWidget *top = w->window();
+            QRect area;
+            foreach (QObject *o, w->children())
+                if (o->isWidgetType()) {
+                    QWidget *ch = static_cast<QWidget *>(o);
+                    area |= QRect(ch->mapTo(top, QPoint(0, 0)), ch->size());
+                }
+            if (area.isEmpty()) area = QRect(w->mapTo(top, QPoint(0, 0)), w->size());
+            m_overlayRect |= area.adjusted(-4, -4, 4, 4);
+            QTimer::singleShot(250, this, SLOT(flashOverlays()));
+        }
     }
     if (e->type() == QEvent::Paint && obj->isWidgetType()) {
         QWidget *w = static_cast<QWidget *>(obj);
@@ -559,6 +568,16 @@ void KoboEink::audit()
 
 void KoboEink::flashOverlays()
 {
+    foreach (const QPointer<QWidget> &p, m_shownOverlays) {
+        if (!p || !p->isVisible()) continue;
+        QWidget *top = p->window();
+        foreach (QObject *o, p->children())
+            if (o->isWidgetType()) {
+                QWidget *ch = static_cast<QWidget *>(o);
+                m_overlayRect |= QRect(ch->mapTo(top, QPoint(0, 0)), ch->size()).adjusted(-4, -4, 4, 4);
+            }
+    }
+    m_shownOverlays.clear();
     if (m_overlayRect.isEmpty()) return;
     QRect r = m_overlayRect;
     m_overlayRect = QRect();
