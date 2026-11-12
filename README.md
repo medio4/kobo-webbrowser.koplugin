@@ -145,7 +145,7 @@ In KOReader, under **Tools → Web browser**:
   - **Ad blocking**: on/off, sites where ads are allowed, extra sites to block.
   - **Fix modern page styles** (on by default): turn off if a site looks worse with it.
   - **Use KOReader keyboard (experimental)**: type with KOReader's keyboard instead.
-  - **Keep the browser's orientation** (off by default): when the browser closes, turn KOReader the way the browser was turned.
+  - **Keep the browser's orientation** (off by default): KOReader always turns with the browser while it's open, so its menu and keyboard match the page. With this on, KOReader stays that way after the browser closes.
   - **Hold Menu button**: what holding the browser's Menu button does (default: Reader mode).
 - **Close web browser**: closes a browser left open behind KOReader's menu, or ends a minimized one.
 - **Show log**: shows the end of the launcher log.

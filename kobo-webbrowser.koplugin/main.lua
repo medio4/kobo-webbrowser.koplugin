@@ -445,7 +445,7 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                     },
                     {
                         text = _("Keep the browser's orientation"),
-                        help_text = _("When the browser closes or is minimized, turn KOReader the way the browser was turned. Off: KOReader keeps its own orientation."),
+                        help_text = _("While the browser is open, KOReader turns with it, so its menu and keyboard match the page. When the browser closes or is minimized, this keeps that orientation. Off: KOReader goes back to its own orientation."),
                         checked_func = function() return self.settings.keep_rotation == true end,
                         callback = function()
                             self.settings.keep_rotation = (self.settings.keep_rotation ~= true) or nil
@@ -865,6 +865,11 @@ function KoboWebBrowser:poll()
         if self.poll_tick % ACTIVITY_EVERY == 0 then
             -- Counts as user activity, so AutoSuspend doesn't sleep under the browser.
             UIManager:broadcastEvent(Event:new("InputEvent"))
+        end
+        if not self.menu_session and not self.kbd_dialog then
+            -- cheap: one small file read; turns KOReader only when the browser turned
+            local ok, err = pcall(self.syncRotation, self)
+            if not ok then logger.warn("KoboWebBrowser: rotation sync failed:", err) end
         end
         if self.menu_session then
             local ok, err = pcall(self.checkMenuSession, self)
@@ -1445,7 +1450,7 @@ function KoboWebBrowser:onBrowserGone(reason)
         self:closeCover()
         self:deleteSleepFiles()
         -- Settings > "Keep the browser's orientation": turn KOReader the way the browser was.
-        if self.settings.keep_rotation then pcall(self.applyBrowserRotation, self) end
+        pcall(self.finishRotation, self)
         -- The browser drew over everything. Repaint KOReader's UI first, then flash the
         -- whole screen (flashing before repainting would just re-show the browser's last
         -- image), and do it again a moment later in case the browser left a refresh in
@@ -1475,14 +1480,36 @@ end
 
 -- The browser's screen angle (bin/rotation.txt: 0, 90, 180 or 270) as a KOReader
 -- rotation mode. The browser's "Landscape" uses KOReader's clockwise icon, so 90 = CW.
-function KoboWebBrowser:applyBrowserRotation()
+function KoboWebBrowser:browserRotationMode()
     local f = io.open(self.bin .. "/rotation.txt", "r")
     local angle = f and tonumber(f:read("*l")) or 0
     if f then f:close() end
-    local mode = ({ [0] = 0, [90] = 1, [180] = 2, [270] = 3 })[angle]
+    return ({ [0] = 0, [90] = 1, [180] = 2, [270] = 3 })[angle] or 0
+end
+
+function KoboWebBrowser:setKoreaderRotation(mode, why)
     if not mode or mode == Device.screen:getRotationMode() then return end
-    logger.info("KoboWebBrowser: turning KOReader to match the browser:", angle, "-> mode", mode)
+    logger.info("KoboWebBrowser: turning KOReader to mode", mode, why or "")
     UIManager:broadcastEvent(Event:new("SetRotationMode", mode))
+    -- Our full-screen cover was sized for the old orientation.
+    if self.cover and self.cover.dimen then
+        self.cover.dimen.w, self.cover.dimen.h = Device.screen:getWidth(), Device.screen:getHeight()
+    end
+end
+
+-- While the browser runs, KOReader (behind it) is turned the same way, so its menu,
+-- keyboard and sleep screen match the page. Turned once per browser rotation.
+function KoboWebBrowser:syncRotation()
+    if self.orig_rotation == nil then self.orig_rotation = Device.screen:getRotationMode() end
+    self:setKoreaderRotation(self:browserRotationMode(), "to match the browser")
+end
+
+-- The browser is gone for good: keep its orientation or go back to KOReader's own.
+function KoboWebBrowser:finishRotation()
+    local orig = self.orig_rotation
+    self.orig_rotation = nil
+    if self.settings.keep_rotation then return end
+    if orig ~= nil then self:setKoreaderRotation(orig, "back to KOReader's own orientation") end
 end
 
 function KoboWebBrowser:readHandoff()
