@@ -32,7 +32,7 @@ MenuPanel::MenuPanel(QWidget *parent, int top)
     m_grid->setVerticalSpacing(10);
 }
 
-void MenuPanel::addAction(const QString &label, QObject *receiver, const char *slot, bool wide, const QString &icon)
+FlatButton *MenuPanel::addAction(const QString &label, QObject *receiver, const char *slot, bool wide, const QString &icon)
 {
     FlatButton *b = new FlatButton(label);
     if (!icon.isEmpty()) b->setIconName(icon);
@@ -52,6 +52,7 @@ void MenuPanel::addAction(const QString &label, QObject *receiver, const char *s
     t.slot = name;
     m_targets << qMakePair(static_cast<QAbstractButton *>(b), t);
     connect(b, SIGNAL(clicked()), this, SLOT(picked()));
+    return b;
 }
 
 void MenuPanel::addSection(const QString &title)
@@ -100,6 +101,16 @@ void MenuPanel::place()
     int w = qMin(width() - 24, m_cols > 2 ? 1400 : 820);
     m_box->setFixedWidth(w);
     m_box->adjustSize();
+    // One text size for every button, the largest at which all labels fit, so the panel
+    // looks even instead of having one squeezed label.
+    m_grid->activate();
+    int px = 38;
+    for (int i = 0; i < m_targets.size(); ++i) {
+        FlatButton *b = static_cast<FlatButton *>(m_targets[i].first);
+        px = qMin(px, b->fitPixelSize(38));
+    }
+    for (int i = 0; i < m_targets.size(); ++i)
+        static_cast<FlatButton *>(m_targets[i].first)->setPixelSize(px);
     // Hang it from the right end of the toolbar, under the Menu button.
     m_box->move(width() - m_box->width() - 12, m_top);
 }

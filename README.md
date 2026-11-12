@@ -65,13 +65,13 @@ older NXP and Allwinner models are untested.
 
 - **Save** turns the article into an EPUB in your library (`<KOReader home>/Web`), with
   its pictures and without the clutter around it, and can open it right away.
-- **Read in KOReader** opens the article as a temporary book. When you close it, it's
+- **Reader mode** opens the article in KOReader as a temporary book. When you close it, it's
   deleted, and KOReader asks whether to go back to the page.
 - **Whole series:** on a page that lists the parts of a story or a guide, both Save and
-  Read in KOReader can fetch every part into one book with a chapter list.
+  Reader mode can fetch every part into one book with a chapter list.
 
 <p align="center">
-  <img src="docs/screenshots/read-series.png" width="30%" alt="Read in KOReader: whole series or just this page">
+  <img src="docs/screenshots/read-series.png" width="30%" alt="Reader mode: whole series or just this page">
   <img src="docs/screenshots/reader-contents.png" width="30%" alt="The series as one book, with a chapter list">
   <img src="docs/screenshots/save-series.png" width="30%" alt="Save: whole series or just this page">
 </p>
@@ -153,7 +153,7 @@ Advanced options are environment variables read by `bin/run.sh` (for example
 ## Troubleshooting
 
 - **A page looks broken:** try turning **Fix modern page styles** off for a moment, or open
-  the page with **Read in KOReader**, which keeps just the text and pictures.
+  the page with **Reader mode**, which keeps just the text and pictures.
 - **A site doesn't load or misses parts:** the engine is old, so heavy web apps may be slow
   or fail. If a site breaks only with ad blocking on, add it to the allowed sites.
 - **"The browser program is missing":** install from the release zip, not from the

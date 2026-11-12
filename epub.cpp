@@ -790,7 +790,7 @@ SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle,
     QFont f; f.setPixelSize(38);
     QFont fs; fs.setPixelSize(30);
 
-    QLabel *head = new QLabel(reading ? "Read in KOReader" : "Save to the library");
+    QLabel *head = new QLabel(reading ? "Reader mode" : "Save to the library");
     head->setFont(f); head->setAlignment(Qt::AlignCenter);
     v->addWidget(head);
     QString named = seriesTitle.isEmpty() ? QString() : " (" + seriesTitle + ")";

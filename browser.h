@@ -66,6 +66,8 @@ public:
     void setPixelSize(int px);
     void setDark(bool d) { m_dark = d; update(); }   // gray face for utility keys
     void setFlash(bool f) { m_flash = f; }
+    // Largest pixel size, up to maxPx, at which the label fits the button beside its icon.
+    int fitPixelSize(int maxPx) const;
     // Icon from KOReader's set (icons.h), drawn left of the text, or alone (iconOnly).
     // Falls back to the text when the icon file isn't there.
     void setIconName(const QString &name, bool iconOnly = false) { m_iconName = name; m_iconOnly = iconOnly; update(); }

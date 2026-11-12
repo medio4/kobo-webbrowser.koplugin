@@ -221,6 +221,21 @@ FlatButton::FlatButton(const QString &text, QWidget *parent)
 void FlatButton::setBold(bool b) { QFont f = font(); f.setBold(b); setFont(f); }
 void FlatButton::setPixelSize(int px) { QFont f = font(); f.setPixelSize(px); setFont(f); }
 
+int FlatButton::fitPixelSize(int maxPx) const
+{
+    QRect r = rect().adjusted(1, 1, -2, -2);
+    int isz = qMin(r.height() - 16, 64);
+    bool icon = !m_iconName.isEmpty() && !m_iconOnly && !KbIcons::get(m_iconName, isz).isNull();
+    int room = r.width() - 24 - (icon ? isz + 14 : 0);
+    QFont f = font();
+    int px = maxPx;
+    for (; px > 14; px -= 2) {
+        f.setPixelSize(px);
+        if (QFontMetrics(f).width(text()) <= room) break;
+    }
+    return px;
+}
+
 void FlatButton::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
@@ -1080,10 +1095,11 @@ void Browser::showRotateMenu()
     MenuPanel *m = new MenuPanel(centralWidget(), top);
     const int cur = KbRotation::angle();
     m->addSection("Rotate screen");
-    m->addAction(QString("Portrait") + (cur == 0 ? "  (now)" : ""), this, SLOT(rotateTo0()), false, "rotation.0UR");
-    m->addAction(QString("Landscape") + (cur == 90 ? "  (now)" : ""), this, SLOT(rotateTo90()), false, "rotation.90CW");
-    m->addAction(QString("Portrait, upside down") + (cur == 180 ? "  (now)" : ""), this, SLOT(rotateTo180()), false, "rotation.180UD");
-    m->addAction(QString("Landscape, flipped") + (cur == 270 ? "  (now)" : ""), this, SLOT(rotateTo270()), false, "rotation.90CCW");
+    // The current orientation is the gray button.
+    m->addAction("Portrait", this, SLOT(rotateTo0()), false, "rotation.0UR")->setDark(cur == 0);
+    m->addAction("Landscape", this, SLOT(rotateTo90()), false, "rotation.90CW")->setDark(cur == 90);
+    m->addAction("Portrait, flipped", this, SLOT(rotateTo180()), false, "rotation.180UD")->setDark(cur == 180);
+    m->addAction("Landscape, flipped", this, SLOT(rotateTo270()), false, "rotation.90CCW")->setDark(cur == 270);
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
     m->popup();
 }
@@ -1582,21 +1598,23 @@ void Browser::showMenu()
     m->addAction("History", this, SLOT(showHistory()), false, "back.top");
     m->addAction("From phone", this, SLOT(showPhoneDialog()), false, "wifi");
     m->addSection("This page");
+    // Pairs: view, then keep, then read/save, then screen. Rows stay full in both columns.
     m->addAction("Reload", this, SLOT(reloadClicked()), false, "cre.render.reload");
     m->addAction("Contents", this, SLOT(showToc()), false, "align.left");
     m->addAction("Text size", this, SLOT(showTextSizeBar()), false, "appbar.textsize");
+    m->addAction("Keyboard", this, SLOT(toggleKeyboard()), false, "edit");
     m->addAction("Add bookmark", this, SLOT(addBookmark()), false, "star.empty");
     m->addAction("Set as home", this, SLOT(setAsHome()), false, "check");
-    if (plugin) m->addAction("Read in KOReader", this, SLOT(readInKoreader()), false, "book.opened");
+    if (plugin) m->addAction("Reader mode", this, SLOT(readInKoreader()), false, "book.opened");
     m->addAction("Save", this, SLOT(saveEpub()), false, "move.down");
     m->addAction("Screenshot", this, SLOT(screenshot()), false, "appbar.crop");
-    m->addAction("Keyboard", this, SLOT(toggleKeyboard()), m->atRowStart() && !plugin, "edit");
+    m->addAction("Clean screen", this, SLOT(fullRefresh()), m->atRowStart(), "appbar.contrast");
     m->addSection("Settings");
     m->addAction(HistoryStore::enabled() ? "History: on" : "History: off", this, SLOT(toggleHistory()), false, "back.top");
     m->addAction(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off", this, SLOT(toggleAdBlock()), false, "cancel");
-    m->addAction("Clean screen", this, SLOT(fullRefresh()), !plugin, "appbar.contrast");
-    if (m_eink && m_eink->canRotate()) m->addAction("Rotate screen", this, SLOT(showRotateMenu()), false, "appbar.rotation");
-    if (plugin) m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()), false, "appbar.settings");
+    const bool rot = m_eink && m_eink->canRotate();
+    if (rot) m->addAction("Rotate screen", this, SLOT(showRotateMenu()), !plugin, "appbar.rotation");
+    if (plugin) m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()), !rot, "appbar.settings");
     m->addSpacer();
     m->addAction("Exit browser", this, SLOT(quit()), true, "exit");
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
