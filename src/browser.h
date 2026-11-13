@@ -20,6 +20,9 @@ class KoboTouchInput;
 class QMouseEvent;
 class NativeTextEntry;
 class PhoneShare;
+class Downloader;
+class QNetworkReply;
+class QNetworkRequest;
 
 #include "epub.h"
 #include "touchwebview.h"
@@ -101,6 +104,9 @@ private slots:
     void saveFinished(bool ok, const QString &msg);
     void readerFinished(bool ok, const QString &msg);
     void imageDownloaded();
+    void downloadUnsupported(QNetworkReply *reply);   // a link to a file WebKit can't show
+    void downloadRequested(const QNetworkRequest &request);
+    void downloadFinished(bool ok, const QString &msg);
     void updateSysInfo();
     void fullRefresh();
     void rotationSettled();
@@ -140,6 +146,7 @@ private:
     QPoint m_tapPress, m_tapRelease;   // last press/release in the page (view coordinates)
     EpubSaver *m_saver;
     PhoneShare *m_phone;
+    Downloader *m_downloader;
     int m_rotTarget;
     QTimer *m_holdTimer;
     bool m_holdFirst;       // draw nothing until the first page has loaded

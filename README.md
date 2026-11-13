@@ -77,6 +77,9 @@ older NXP and Allwinner models are untested.
   comic instead, one picture per page: grayscale, sized for the screen, with tall strips
   (webtoons) cut into screen-sized pages and logos or ads left out. For a list of chapters
   or episodes, Save offers each one as its own comic, all of them as one, or just this page.
+- **Downloads:** tap a link to a book or document (PDF, EPUB, CBZ, DjVu, FB2, MOBI and the
+  other formats KOReader opens) and it is saved to the same library folder, with the
+  progress in the status line. When it is done you can open it in KOReader right away.
 
 <p align="center">
   <img src="docs/screenshots/comic-page.png" width="30%" alt="A web comic in the browser">

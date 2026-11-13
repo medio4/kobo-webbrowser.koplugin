@@ -10,6 +10,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QDateTime>
 #include "epub.h"
+#include "download.h"
 #include "phoneshare.h"
 #include "menupanel.h"
 #include "bookmarks.h"
@@ -229,6 +230,14 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
         setTextZoom(ok ? t : 1.25, false);   // first run: a notch larger than the pages ask for
     }
     m_view->page()->setLinkDelegationPolicy(QWebPage::DontDelegateLinks);
+
+    // Links to books and documents (PDF, EPUB, CBZ, ...) download to the library (download.h).
+    m_downloader = new Downloader(m_view->page()->networkAccessManager(), EpubSaver::defaultOutDir(), this);
+    m_view->page()->setForwardUnsupportedContent(true);
+    connect(m_view->page(), SIGNAL(unsupportedContent(QNetworkReply*)), this, SLOT(downloadUnsupported(QNetworkReply*)));
+    connect(m_view->page(), SIGNAL(downloadRequested(QNetworkRequest)), this, SLOT(downloadRequested(QNetworkRequest)));
+    connect(m_downloader, SIGNAL(progress(QString)), this, SLOT(saveProgress(QString)));
+    connect(m_downloader, SIGNAL(finished(bool,QString)), this, SLOT(downloadFinished(bool,QString)));
 
     // Disk cache + cookies in our own folder (user partition).
     QNetworkDiskCache *cache = new QNetworkDiskCache(this);
@@ -1662,4 +1671,29 @@ void Browser::saveFinished(bool ok, const QString &msg)
     } else {
         m_status->setText("Save failed: " + msg);
     }
+}
+
+// ---- Downloads (download.h): a tapped link to a book or document goes to the library
+
+void Browser::downloadUnsupported(QNetworkReply *reply)
+{
+    QString why;
+    if (!m_downloader->take(reply, &why)) m_status->setText("Not downloaded: " + why);
+}
+
+void Browser::downloadRequested(const QNetworkRequest &request)
+{
+    m_status->setText("Downloading...");
+    m_downloader->fetch(request);
+}
+
+void Browser::downloadFinished(bool ok, const QString &msg)
+{
+    if (!ok) { m_status->setText("Download failed: " + msg); return; }
+    EpubSaver::appendHandoff("saved", msg);   // KOReader adds it to the saved-articles collection
+    QString shown = msg;
+    if (shown.startsWith("/mnt/onboard/")) shown = shown.mid(13);
+    m_status->setText("Saved: " + shown);
+    SavedDialog *d = new SavedDialog(msg, centralWidget());
+    connect(d, SIGNAL(openRequested(QString)), this, SLOT(openSavedEpub(QString)));
 }
