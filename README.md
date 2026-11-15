@@ -34,8 +34,27 @@ repo" or "Source code": the browser program itself is only in the release zip.
 
 **Needs:** a Kobo with firmware 4.x (it uses the Qt and WebKit libraries in Kobo's
 firmware) and KOReader. Developed and tested on a Kobo Clara BW (firmware 4.46) with
-KOReader v2026.07. Other recent MediaTek models (Clara Colour, Libra Colour) should work;
-older NXP and Allwinner models are untested.
+KOReader v2026.07.
+
+### Which Kobos
+
+It has only been developed on one model, so most of this table is expectation, not
+experience. If you try it on another Kobo, please open an issue either way and attach the
+file from Web browser → **Device info for a bug report**.
+
+| Kobo | Status | Notes |
+| --- | --- | --- |
+| Clara BW | **Tested** | The model it is developed on. |
+| Clara Colour | Expected to work | Same board family as the Clara BW. Pages are shown in gray. |
+| Libra Colour | Fix waiting for confirmation | Touch did not work up to v0.4.0 ([#3](../../issues/3)); fixed in the next release, not yet confirmed on a device. Pages are shown in gray. |
+| Elipsa 2E | Untested, may work | MediaTek board like the Clara BW. Buttons and text are sized for a 6" 300 dpi screen. |
+| Clara 2E, Libra 2, Clara HD, Libra H2O, Forma, Nia | Untested | Older NXP boards: the fast screen refresh is not used there, and the picture may come out turned or wrong. |
+| Aura, Aura H2O, Aura One, Aura Edition 2, Glo HD, Touch 2.0 | Untested | As above, with an older touch panel protocol that is supported but untried. |
+| Glo, Aura HD, Mini, Touch | Untested, unlikely | Single-touch panels and low-resolution screens the layout was not made for. |
+| Elipsa, Sage | Not expected to work | Their Allwinner screens are driven in a way the browser cannot draw to yet. |
+
+The plugin passes what KOReader knows about each model (touch panel, screen, light) to
+the browser, so a model KOReader supports starts with the right touch settings.
 
 ## What it can do
 
