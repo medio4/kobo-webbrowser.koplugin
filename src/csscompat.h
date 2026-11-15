@@ -43,7 +43,7 @@ QByteArray rewriteDeclarations(const QByteArray &decls, const Vars *pageVars, St
 // is held back until more arrives. finish() returns everything still held.
 class HtmlRewriter {
 public:
-    explicit HtmlRewriter(Vars *pageVars) : m_vars(pageVars), m_inScript(false), m_off(false) {}
+    explicit HtmlRewriter(Vars *pageVars) : m_vars(pageVars), m_inScript(false), m_off(false), m_styleScan(0) {}
     QByteArray feed(const QByteArray &data);
     QByteArray finish();
     Stats stats;
@@ -53,6 +53,7 @@ private:
     QByteArray m_pending;
     bool m_inScript;
     bool m_off;   // input looked like UTF-16: pass everything through
+    int m_styleScan;   // held <style> element: where the search for its end tag goes on
 };
 
 }

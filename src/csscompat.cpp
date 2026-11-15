@@ -1175,6 +1175,9 @@ static QByteArray rewriteTag(const QByteArray &tag, const Vars *vars, Stats *sta
 }
 
 static const int kMaxHold = 2 * 1024 * 1024;
+// A <style> element is held until its end tag arrives; some sites put their whole style
+// sheet (megabytes) in one. Anything longer than this is passed on as it is.
+static const int kMaxStyleHold = 12 * 1024 * 1024;
 
 QByteArray HtmlRewriter::feed(const QByteArray &data)
 {
@@ -1197,6 +1200,7 @@ QByteArray HtmlRewriter::run(bool final)
 {
     const char *s = m_pending.constData();
     int n = m_pending.size(), i = 0;
+    bool heldStyle = false;   // stopped at a <style> element whose end hasn't arrived
     QByteArray out;
     out.reserve(n + 64);
     while (i < n) {
@@ -1238,8 +1242,14 @@ QByteArray HtmlRewriter::run(bool final)
         bool isStyle = at(s, n, i, "<style") && (isSpace(s[i + 6]) || s[i + 6] == '>' || s[i + 6] == '/');
         bool isScript = at(s, n, i, "<script") && (isSpace(s[i + 7]) || s[i + 7] == '>');
         if (isStyle) {
-            int c = findClose(s, n, e, "style");
-            if (c < 0) break;
+            // A held element starts the buffer: go on where the last search for its end stopped.
+            int c = findClose(s, n, i == 0 && m_styleScan > e ? m_styleScan : e, "style");
+            if (c < 0) {
+                m_styleScan = qMax(e, n - 8) - i;   // "</style" may be split across chunks
+                heldStyle = true;
+                break;
+            }
+            m_styleScan = 0;
             out.append(s + i, e - i);
             out += rewriteSheet(QByteArray(s + e, c - e), m_vars, &stats);
             i = c;
@@ -1251,9 +1261,11 @@ QByteArray HtmlRewriter::run(bool final)
         if (isScript) m_inScript = true;
     }
     m_pending = m_pending.mid(i);
-    if (final || m_pending.size() > kMaxHold) {   // unfinished tag at the end, or far too long: pass on
+    // An unfinished tag at the end, or one that is far too long: pass on.
+    if (final || m_pending.size() > (heldStyle ? kMaxStyleHold : kMaxHold)) {
         out += m_pending;
         m_pending.clear();
+        m_styleScan = 0;
     }
     return out;
 }

@@ -137,6 +137,23 @@ int main(int argc, char **argv)
     check("nth-child kept", sheet("li:nth-child(2n+1):not(.a,.b){x:y}"), "li:nth-child(2n+1):not(.a):not(.b){x:y}");
     check("comment in selectors", sheet("a/*x*/:is(.b){x:y}"), "a :-webkit-any(.b){x:y}");
 
+    // A <style> element of several megabytes, arriving in network-sized chunks
+    {
+        QByteArray rule = ".some-long-class-name-to-fill-space{order:1}\n", big = "<p>a</p><style>";
+        int rules = 0;
+        while (big.size() < 3 * 1024 * 1024) { big += rule; ++rules; }
+        big += "</style><p style=\"order:2\">b</p>";
+        CssCompat::Vars vars;
+        CssCompat::HtmlRewriter r(&vars);
+        QByteArray out;
+        QElapsedTimer t; t.start();
+        for (int p = 0; p < big.size(); p += 1400) out += r.feed(big.mid(p, 1400));
+        out += r.finish();
+        check("big style element rewritten", QByteArray::number(out.count("-webkit-order:1")), QByteArray::number(rules));
+        check("after big style element", out.right(48), "</style><p style=\"-webkit-order:2;order:2\">b</p>");
+        if (t.elapsed() > 2000) { ++failures; printf("FAIL big style element took %d ms\n", (int)t.elapsed()); }
+    }
+
     for (int k = 1; k < argc; ++k) {
         QFile f(argv[k]);
         if (!f.open(QIODevice::ReadOnly)) { printf("can't read %s\n", argv[k]); continue; }
