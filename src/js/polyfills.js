@@ -139,12 +139,19 @@
         mark: function () {}, measure: function () {}, clearMarks: function () {}, clearMeasures: function () {}
     };
     if (perf) {
+        // On the prototype first: in some builds every look at window.performance hands out
+        // a fresh object, and what was added to the last one is gone.
+        var perfProto = (w.Performance && w.Performance.prototype) || Object.getPrototypeOf(perf);
+        if (perfProto && perfProto !== Object.prototype) {
+            def(perfProto, 'now', function () { return Date.now(); });
+            for (var pp in perfStubs) def(perfProto, pp, perfStubs[pp]);
+        }
         def(perf, 'now', function () { return Date.now(); });
         for (var pk in perfStubs) def(perf, pk, perfStubs[pk]);
     }
     // Some builds of the engine don't let anything be added to window.performance (or have
     // none): put a plain object in its place that passes on what the real one has.
-    if (!perf || typeof perf.getEntriesByType !== 'function') {
+    if (!perf || typeof w.performance.getEntriesByType !== 'function') {
         var t0 = Date.now(), real = perf, px = {
             now: function () { return real && real.now ? real.now() : Date.now() - t0; },
             timing: real ? real.timing : { navigationStart: t0 },
@@ -155,6 +162,8 @@
         try { Object.defineProperty(w, 'performance', { value: px, writable: true, configurable: true }); }
         catch (e) { try { w.performance = px; } catch (e2) {} }
     }
+    if (!w.performance || typeof w.performance.getEntriesByType !== 'function')
+        try { console.log('Error: fill-ins could not patch window.performance'); } catch (e) {}
 
     // --- dates and numbers in the user's language. The engine leans on the system's ICU
     // data for these, and where that is incomplete "new Intl.DateTimeFormat()" throws and
