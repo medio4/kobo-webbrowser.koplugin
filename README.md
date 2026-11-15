@@ -181,6 +181,9 @@ In KOReader, under **Tools → Web browser**:
   - **Hold Menu button**: what holding the browser's Menu button does (default: Reader mode).
 - **Close web browser**: closes a browser left open behind KOReader's menu, or ends a minimized one.
 - **Show log**: shows the end of the launcher log.
+- **Device info for a bug report**: saves a text file to your library folder with this Kobo's
+  model, screen, touch panel, lights and the end of the browser's log (web addresses
+  removed). Attach it when you report a problem, above all on a model other than the Clara BW.
 
 In the browser's **Menu**: History on/off and Ad blocking on/off.
 

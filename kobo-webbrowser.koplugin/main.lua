@@ -533,6 +533,17 @@ function KoboWebBrowser:addToMainMenu(menu_items)
                     })
                 end,
             },
+            {
+                text = _("Device info for a bug report"),
+                keep_menu_open = true,
+                callback = function()
+                    local path = self:writeDeviceInfo()
+                    UIManager:show(InfoMessage:new{
+                        text = path and T(_("Saved to %1\n\nIt lists this Kobo's model, screen, touch panel, lights and the end of the browser's log, with web addresses removed. Attach it when you report a problem."), path)
+                            or _("The file could not be written."),
+                    })
+                end,
+            },
         },
     }
 end
@@ -828,6 +839,76 @@ function KoboWebBrowser:trimLog()
     if size and size > LOG_MAX_BYTES then
         os.rename(self.log_file, self.log_file .. ".old")
     end
+end
+
+-- Device info: a text file with what a bug report about another Kobo model needs (model,
+-- screen, touch panel, lights, the firmware's WebKit, the end of the browser's log), so
+-- nobody has to collect it by hand over SSH. No serial number, and web addresses and site
+-- names in the log lines are replaced.
+local function commandOutput(cmd)
+    local f = io.popen(cmd .. " 2>&1", "r")
+    if not f then return "(could not run)\n" end
+    local out = f:read("*a") or ""
+    f:close()
+    if out == "" then out = "(nothing)\n" end
+    return out
+end
+
+function KoboWebBrowser:writeDeviceInfo()
+    local out = {}
+    local function add(title, text)
+        out[#out + 1] = "== " .. title .. "\n" .. tostring(text):gsub("%s+$", "") .. "\n"
+    end
+    local meta_version = "?"
+    local mf = io.open(self.path .. "/_meta.lua", "r")
+    if mf then
+        meta_version = mf:read("*a"):match('version = "([^"]*)"') or "?"
+        mf:close()
+    end
+    local koreader = "?"
+    pcall(function() koreader = require("version"):getCurrentRevision() end)
+    -- .kobo/version: serial,kernel,firmware,...: only the firmware version is taken.
+    local firmware = "?"
+    local vf = io.open("/mnt/onboard/.kobo/version", "r")
+    if vf then
+        local fields = {}
+        for field in (vf:read("*l") or ""):gmatch("[^,]+") do fields[#fields + 1] = field end
+        vf:close()
+        firmware = fields[3] or "?"
+    end
+    local Screen = Device.screen
+    add("Web browser plugin", "version " .. meta_version .. "\nKOReader " .. tostring(koreader))
+    add("Device", table.concat({
+        "model " .. tostring(Device.model),
+        "PRODUCT " .. tostring(os.getenv("PRODUCT")) .. ", PLATFORM " .. tostring(os.getenv("PLATFORM")),
+        "firmware " .. firmware,
+        "screen " .. Screen:getWidth() .. " x " .. Screen:getHeight() .. ", dpi " .. tostring(Device.display_dpi)
+            .. ", rotation " .. tostring(Screen:getRotationMode()),
+        "network interface " .. tostring(os.getenv("INTERFACE")),
+    }, "\n"))
+    local env, names = self:deviceEnv(), {}
+    for k in pairs(env) do names[#names + 1] = k end
+    table.sort(names)
+    for i, k in ipairs(names) do names[i] = k .. "=" .. env[k] end
+    add("What the plugin tells the browser", table.concat(names, "\n"))
+    add("Framebuffer (fbink -e)", commandOutput(shellQuote(koreaderDir() .. "/fbink") .. " -e | tr ';' '\n'"))
+    add("Input devices", commandOutput("grep -E '^(N|H|B: (EV|ABS))' /proc/bus/input/devices"))
+    add("Lights", commandOutput("ls /sys/class/backlight /sys/class/leds"))
+    add("Firmware Qt and WebKit", commandOutput(
+        "ls /usr/local/Kobo/platforms; ls /usr/local/Qt-5.2.1-arm/lib /usr/local/Trolltech/QtEmbedded-4.6.2-arm/lib | grep -i -E 'webkit|^/'"))
+    local log = lastLines(self.bin .. "/browser.log", 120)
+    log = log:gsub("https?://[^%s\"]+", "<address>"):gsub('"[%w%-%.]+%.%a%a+"', '"<site>"')
+    add("End of browser.log (addresses removed)", log ~= "" and log or "(empty)")
+    add("End of launcher.log", lastLines(self.log_file, 15))
+
+    local home = G_reader_settings:readSetting("home_dir")
+    if not home or lfs.attributes(home, "mode") ~= "directory" then home = "/mnt/onboard" end
+    local path = home .. "/web-browser-device-info.txt"
+    local f = io.open(path, "w")
+    if not f then return nil end
+    f:write(table.concat(out, "\n"))
+    f:close()
+    return path
 end
 
 -- What KOReader knows about this Kobo model, for the browser, which otherwise assumes a
