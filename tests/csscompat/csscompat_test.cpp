@@ -112,6 +112,31 @@ int main(int argc, char **argv)
     unq << "<p style=order:1>x</p>";
     check("html unquoted", html(unq), "<p style=\"-webkit-order:1;order:1\">x</p>");
 
+    // Selectors
+    check("is", sheet(".a :is(.b,.c) p{color:red}"), ".a :-webkit-any(.b,.c) p{color:red}");
+    check("where", sheet(":where(h1, h2).t{margin:0}"), ":-webkit-any(h1,h2).t{margin:0}");
+    check("is with declarations", sheet(":is(a,b){order:1}"), ":-webkit-any(a,b){-webkit-order:1;order:1}");
+    check("nested is", sheet(":is(.a,:is(.b,.c)){x:y}"), ":-webkit-any(.a,.b,.c){x:y}");
+    check("is in media", sheet("@media (min-width:1px){:is(a,b){x:y}}"), "@media (min-width:1px){:-webkit-any(a,b){x:y}}");
+    check("is with combinator inside", sheet(".k,:is(.a .b,.c){x:y}"), ".k{x:y}");
+    check("is skips what it can't read", sheet(":is(.a,:has(b)) i{x:y}"), ":-webkit-any(.a) i{x:y}");
+    check("not list", sheet("a:not(.b, .c){x:y}"), "a:not(.b):not(.c){x:y}");
+    check("not is", sheet("a:not(:is(.b,.c)){x:y}"), "a:not(.b):not(.c){x:y}");
+    check("not compound", sheet("body:not(.m.k) p{x:y}"), "body:not(.m) p,body:not(.k) p{x:y}");
+    check("not not", sheet("a:not(.b:not(.c)){x:y}"), "a:not(.b),a.c{x:y}");
+    check("not complex", sheet("a:not(.b .c),i{x:y}"), "i{x:y}");
+    check("simple not untouched", sheet("a:not(.b), i{x:y}"), "a:not(.b), i{x:y}");
+    check("has leaves the list", sheet(".a:has(img),.b{x:y}"), ".b{x:y}");
+    check("only has: untouched", sheet(".a:has(img){x:y}"), ".a:has(img){x:y}");
+    check("focus-visible leaves", sheet("a:focus,a:focus-visible{x:y}"), "a:focus{x:y}");
+    check("placeholder", sheet("input::placeholder{color:#777}"), "input::-webkit-input-placeholder{color:#777}");
+    check("any-link", sheet(":any-link{x:y}"), ":-webkit-any-link{x:y}");
+    check("nesting leaves", sheet(".a{color:red}.b,& .c{x:y}"), ".a{color:red}.b{x:y}");
+    check("attribute text untouched", sheet("a[href*=\":is(\"]{x:y}"), "a[href*=\":is(\"]{x:y}");
+    check("escaped colon", sheet(".md\\:flex:is(.a,.b){x:y}"), ".md\\:flex:-webkit-any(.a,.b){x:y}");
+    check("nth-child kept", sheet("li:nth-child(2n+1):not(.a,.b){x:y}"), "li:nth-child(2n+1):not(.a):not(.b){x:y}");
+    check("comment in selectors", sheet("a/*x*/:is(.b){x:y}"), "a :-webkit-any(.b){x:y}");
+
     for (int k = 1; k < argc; ++k) {
         QFile f(argv[k]);
         if (!f.open(QIODevice::ReadOnly)) { printf("can't read %s\n", argv[k]); continue; }
@@ -122,8 +147,8 @@ int main(int argc, char **argv)
             CssCompat::HtmlRewriter r(&v);
             for (int p = 0; p < in.size(); p += 1400) out += r.feed(in.mid(p, 1400));
             out += r.finish();
-            printf("%-40s %8d -> %8d bytes  %6.2f ms  %d decls, %d vars\n", argv[k], in.size(), out.size(),
-                   t.nsecsElapsed() / 1e6, r.stats.decls, r.stats.vars);
+            printf("%-40s %8d -> %8d bytes  %6.2f ms  %d decls, %d vars, %d selector lists\n", argv[k], in.size(), out.size(),
+                   t.nsecsElapsed() / 1e6, r.stats.decls, r.stats.vars, r.stats.selectors);
             QFile o(QString::fromLocal8Bit(argv[k]) + ".out.html");
             if (o.open(QIODevice::WriteOnly)) o.write(out);
             continue;
@@ -132,8 +157,8 @@ int main(int argc, char **argv)
         CssCompat::Stats st;
         for (int r = 0; r < 20; ++r) { CssCompat::Vars v; st = CssCompat::Stats(); out = CssCompat::rewriteSheet(in, &v, &st); }
         double ms = t.nsecsElapsed() / 1e6 / 20;
-        printf("%-40s %8d -> %8d bytes  %6.2f ms  %5.1f MB/s  %d decls, %d vars\n", argv[k], in.size(), out.size(),
-               ms, in.size() / ms / 1000, st.decls, st.vars);
+        printf("%-40s %8d -> %8d bytes  %6.2f ms  %5.1f MB/s  %d decls, %d vars, %d selector lists\n", argv[k], in.size(), out.size(),
+               ms, in.size() / ms / 1000, st.decls, st.vars, st.selectors);
         QFile o(QString::fromLocal8Bit(argv[k]) + ".out.css");
         if (o.open(QIODevice::WriteOnly)) o.write(out);
     }

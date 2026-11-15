@@ -10,6 +10,9 @@
 //     (collected per page across style sheets), then the fallback
 //   - min()/max()/clamp() -> the argument that wins on a ~540 CSS px wide screen
 //   - inset: -> top/right/bottom/left; @layer blocks unwrapped
+//   - selectors: :is()/:where() -> :-webkit-any(), :not(a, b) -> :not(a):not(b), and a selector
+//     this WebKit can't read (:has(), :focus-visible, ...) is taken out of its list so the
+//     rest of the rule survives
 // The prefixed copy goes before the original declaration, so an engine that understands the
 // standard form still uses it. Declarations whose var() can't be resolved are left alone.
 // Works on bytes: ASCII-compatible encodings (UTF-8, Latin-1); UTF-16 input is passed through.
@@ -25,7 +28,8 @@ typedef QHash<QByteArray, QByteArray> Vars;   // "--name" -> raw value
 struct Stats {
     int decls;     // declarations changed
     int vars;      // var() references resolved
-    Stats() : decls(0), vars(0) {}
+    int selectors; // selector lists changed
+    Stats() : decls(0), vars(0), selectors(0) {}
 };
 
 // A whole style sheet (a .css file or the inside of a <style> element). Custom properties

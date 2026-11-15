@@ -696,6 +696,237 @@ static QByteArray rewriteBlock(const QByteArray &body, const Vars *file, const V
 }
 
 // ---------------------------------------------------------------------------
+// Selectors
+//
+// This WebKit knows :-webkit-any() but not :is() / :where(), takes exactly one simple
+// selector in :not(), and has no :has(), :focus-visible or :focus-within. It drops a whole
+// rule when one selector in its list is unknown to it, so on current sites large parts of a
+// style sheet are lost. Here:
+//   - :is(a, b) / :where(a, b) -> :-webkit-any(a, b)   (arguments without combinators)
+//   - :not(a, b) and :not(:is(a, b)) -> :not(a):not(b)
+//   - :not(.a.b) -> two selectors, one with :not(.a) and one with :not(.b)
+//   - ::placeholder -> ::-webkit-input-placeholder, :any-link -> :-webkit-any-link
+//   - a selector that still needs something unknown is taken out of the list, so the
+//     other selectors of the rule keep working
+
+static const int kMaxAlternatives = 16;
+static const int kMaxSelectorDepth = 6;
+
+// s[i] == '[': index after the matching ']' (or n).
+static int skipBracket(const char *s, int n, int i)
+{
+    for (++i; i < n; ) {
+        if (s[i] == '"' || s[i] == '\'') { i = skipString(s, n, i); continue; }
+        if (s[i] == ']') return i + 1;
+        ++i;
+    }
+    return n;
+}
+
+static bool oneOf(const QByteArray &name, const char *const *list)
+{
+    for (int k = 0; list[k]; ++k) if (name == list[k]) return true;
+    return false;
+}
+
+// One compound selector split into its simple selectors (".a", "#b", "[c]", ":d(e)", "f").
+// False if it has a combinator, a pseudo-element or anything else that isn't one compound.
+static bool splitCompound(const QByteArray &c, QList<QByteArray> *parts)
+{
+    static const char *const oldElements[] = { "before", "after", "first-line", "first-letter", 0 };
+    const char *s = c.constData();
+    int n = c.size(), i = 0;
+    while (i < n) {
+        int start = i;
+        char ch = s[i];
+        if (ch == '*') {
+            ++i;
+        } else if (ch == '[') {
+            i = skipBracket(s, n, i);
+        } else if (ch == ':') {
+            if (i + 1 < n && s[i + 1] == ':') return false;
+            int e = ++i;
+            while (e < n && isIdent(s[e])) ++e;
+            if (e == i || oneOf(QByteArray(s + i, e - i).toLower(), oldElements)) return false;
+            i = e;
+            if (i < n && s[i] == '(') {
+                int m = matchParen(s, n, i);
+                if (m < 0) return false;
+                i = m + 1;
+            }
+        } else if (ch == '.' || ch == '#' || isIdent(ch) || ch == '\\') {
+            if (ch == '.' || ch == '#') ++i;
+            int e = i;
+            while (e < n && (isIdent(s[e]) || s[e] == '\\')) e += s[e] == '\\' ? 2 : 1;
+            if (e == i) return false;
+            i = qMin(e, n);
+        } else {
+            return false;   // white space, a combinator, '&', ...
+        }
+        parts->append(c.mid(start, i - start));
+    }
+    return !parts->isEmpty();
+}
+
+// ":-webkit-any(a,b)" and nothing else: its arguments.
+static bool wholeAny(const QByteArray &a, QList<QByteArray> *args)
+{
+    if (!a.startsWith(":-webkit-any(")) return false;
+    if (matchParen(a.constData(), a.size(), 12) != a.size() - 1) return false;
+    foreach (const QByteArray &x, splitArgs(a.mid(13, a.size() - 14))) args->append(trimmed(x));
+    return true;
+}
+
+// What ":not(part)" is for one simple selector; empty if this WebKit can't say it.
+static QByteArray negate(const QByteArray &part)
+{
+    QList<QByteArray> inner, parts;
+    if (part.startsWith(":not(") && part.endsWith(')')) {   // not not x = x
+        QByteArray x = trimmed(part.mid(5, part.size() - 6));
+        if (x.isEmpty() || isIdent(x[0]) || x[0] == '*' || !splitCompound(x, &parts) || parts.size() != 1)
+            return QByteArray();   // a tag name can't follow the rest of a compound
+        return x;
+    }
+    if (wholeAny(part, &inner)) {   // not (a or b) = not a and not b
+        QByteArray out;
+        foreach (const QByteArray &x, inner) {
+            parts.clear();
+            if (!splitCompound(x, &parts) || parts.size() != 1 || x.startsWith(":not(") || x.startsWith(":-webkit-any("))
+                return QByteArray();
+            out += ":not(" + x + ")";
+        }
+        return out;
+    }
+    return ":not(" + part + ")";
+}
+
+// The selectors one selector turns into (nearly always one); none if it can't be expressed.
+static QList<QByteArray> rewriteSelector(const QByteArray &sel, int depth)
+{
+    static const char *const unknownClasses[] = { "focus-visible", "focus-within", "target-within", "popover-open",
+        "modal", "user-valid", "user-invalid", "placeholder-shown", "host", "defined", "autofill", "picture-in-picture",
+        "open", "has-slotted", 0 };
+    static const char *const unknownElements[] = { "part", "slotted", "marker", "backdrop", "file-selector-button",
+        "target-text", "details-content", "highlight", "view-transition", "spelling-error", "grammar-error", 0 };
+    static const char *const unknownFns[] = { "has", "host", "host-context", "dir", "state", "nth-col",
+        "nth-last-col", "current", "past", "future", 0 };
+    static const char *const anyFns[] = { "is", "where", "matches", "-moz-any", 0 };
+    const QList<QByteArray> none;
+    QList<QByteArray> outs;
+    outs << QByteArray();
+    if (depth > kMaxSelectorDepth) return none;
+    const char *s = sel.constData();
+    int n = sel.size(), i = 0, lit = 0;
+#define KB_FLUSH(upto) do { for (int o_ = 0; o_ < outs.size(); ++o_) outs[o_].append(s + lit, (upto) - lit); } while (0)
+#define KB_PUT(text) do { for (int o_ = 0; o_ < outs.size(); ++o_) outs[o_] += (text); } while (0)
+    while (i < n) {
+        char c = s[i];
+        if (c == '"' || c == '\'') { i = skipString(s, n, i); continue; }
+        if (c == '[') { i = skipBracket(s, n, i); continue; }
+        if (c == '\\') { i += 2; continue; }
+        if (c == '&') return none;   // nesting
+        if (c != ':') { ++i; continue; }
+        const int colon = i;
+        const bool element = i + 1 < n && s[i + 1] == ':';
+        const int ns = i + (element ? 2 : 1);
+        int e = ns;
+        while (e < n && isIdent(s[e])) ++e;
+        const QByteArray name = QByteArray(s + ns, e - ns).toLower();
+        const bool fn = e < n && s[e] == '(';
+        const int close = fn ? matchParen(s, n, e) : -1;
+        if (fn && close < 0) return none;
+        const int end = fn ? close + 1 : e;
+        i = end;
+        if (element) {
+            if (oneOf(name, unknownElements)) return none;
+            if (name == "placeholder") { KB_FLUSH(colon); KB_PUT("::-webkit-input-placeholder"); lit = end; }
+            continue;
+        }
+        if (!fn) {
+            if (oneOf(name, unknownClasses)) return none;
+            if (name == "any-link") { KB_FLUSH(colon); KB_PUT(":-webkit-any-link"); lit = end; }
+            continue;
+        }
+        if (oneOf(name, unknownFns)) return none;
+        const QByteArray inner(s + e + 1, close - e - 1);
+        if ((name == "nth-child" || name == "nth-last-child") && inner.contains(" of ")) return none;
+        if (oneOf(name, anyFns)) {
+            // Each argument must be one compound selector; :is() skips arguments it can't read.
+            QByteArray joined;
+            foreach (const QByteArray &raw, splitArgs(inner)) {
+                foreach (const QByteArray &alt, rewriteSelector(trimmed(raw), depth + 1)) {
+                    QList<QByteArray> flat, parts;
+                    if (!wholeAny(alt, &flat)) {
+                        if (!splitCompound(alt, &parts)) return none;
+                        flat << alt;
+                    }
+                    foreach (const QByteArray &x, flat) { if (!joined.isEmpty()) joined += ','; joined += x; }
+                }
+            }
+            if (joined.isEmpty()) return none;
+            KB_FLUSH(colon);
+            KB_PUT(":-webkit-any(" + joined + ")");
+            lit = end;
+        } else if (name == "not") {
+            QList<QByteArray> args;   // compounds, each to be negated
+            foreach (const QByteArray &raw, splitArgs(inner)) {
+                QList<QByteArray> alts = rewriteSelector(trimmed(raw), depth + 1);
+                if (alts.isEmpty()) return none;
+                foreach (const QByteArray &alt, alts) {
+                    QList<QByteArray> parts;
+                    if (!wholeAny(alt, &args)) {
+                        if (!splitCompound(alt, &parts)) return none;
+                        args << alt;
+                    }
+                }
+            }
+            KB_FLUSH(colon);
+            lit = end;
+            foreach (const QByteArray &arg, args) {
+                QList<QByteArray> parts;
+                if (!splitCompound(arg, &parts)) return none;
+                // not (a and b) = not a, or not b: one selector for each.
+                QList<QByteArray> next;
+                foreach (const QByteArray &part, parts) {
+                    QByteArray neg = negate(part);
+                    if (neg.isEmpty()) return none;
+                    foreach (const QByteArray &o, outs) next << o + neg;
+                }
+                if (next.size() > kMaxAlternatives) return none;
+                outs = next;
+            }
+        }
+    }
+    KB_FLUSH(n);
+#undef KB_FLUSH
+#undef KB_PUT
+    return outs;
+}
+
+// A rule's selector list for this WebKit; an empty array when nothing needs to change.
+static QByteArray rewriteSelectorList(const QByteArray &prelude)
+{
+    static const char *const keys[] = { ":is(", ":where(", ":not(", ":has(", ":focus-", ":matches(", ":-moz-any(",
+        "placeholder", ":any-link", ":host", "::part", "::slotted", "::marker", "::backdrop", "&", 0 };
+    const char *p = prelude.constData();
+    int n = prelude.size(), k = 0;
+    while (keys[k] && !has(p, n, keys[k])) ++k;
+    if (!keys[k]) return QByteArray();
+    QByteArray out;
+    bool changed = false;
+    foreach (const QByteArray &raw, splitArgs(stripComments(prelude))) {
+        QByteArray sel = trimmed(raw);
+        QList<QByteArray> alts = rewriteSelector(sel, 0);
+        if (alts.size() != 1 || alts[0] != sel) changed = true;
+        foreach (const QByteArray &alt, alts) {
+            if (!out.isEmpty()) out += ',';
+            out += alt;
+        }
+    }
+    return changed ? out : QByteArray();   // nothing left: the rule stays as it is (and is dropped)
+}
+
+// ---------------------------------------------------------------------------
 // Style sheets
 
 static bool isRootSelector(const QByteArray &prelude)
@@ -813,23 +1044,27 @@ struct Sheet {
             if (nest || k >= n) { emit(start, k < n ? k + 1 : n); i = k < n ? k + 1 : n; continue; }
             Vars *target = 0;
             if (collectOnly && scope < 2 && isRootSelector(prelude)) target = scope == 0 ? top : media;
-            declBlock(start, j, k, target);
+            declBlock(start, j, k, target, collectOnly ? QByteArray() : rewriteSelectorList(prelude));
             i = k + 1;
         }
     }
 
-    void declBlock(int start, int open, int close, Vars *target)
+    // selectors: the rewritten selector list, empty to keep the rule's own
+    void declBlock(int start, int open, int close, Vars *target, const QByteArray &selectors = QByteArray())
     {
         const char *b = s + open + 1;
         int bn = close - open - 1;
+        if (!selectors.isEmpty() && stats) ++stats->selectors;
         if (collectOnly ? !target || !has(b, bn, "--") : !maybeInteresting(b, bn)) {
-            emit(start, close + 1);
+            if (selectors.isEmpty()) emit(start, close + 1);
+            else { emit(selectors); emit(open, close + 1); }
             return;
         }
         QByteArray body = QByteArray::fromRawData(b, bn);
         QByteArray r = rewriteBlock(body, file, page, target, collectOnly, stats);
         if (collectOnly) return;
-        emit(start, open + 1);
+        if (selectors.isEmpty()) emit(start, open + 1);
+        else { emit(selectors); out += '{'; }
         out += r;
         out += '}';
     }
