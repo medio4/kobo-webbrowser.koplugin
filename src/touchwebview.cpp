@@ -173,11 +173,28 @@ void TouchWebView::mouseMoveEvent(QMouseEvent *e)
             if (m_pressPos.x() < m_lightEdge) { m_light = LightBrightness; m_lightStart = fl->brightness(); }
             else if (m_pressPos.x() >= width() - m_lightEdge && fl->hasWarmth()) { m_light = LightWarmth; m_lightStart = fl->warmth(); }
         }
-        // Horizontal drag in from the very left / right edge = history back / forward.
-        const int ep = m_pager->edgePx();
-        if (m_horizontal && ep > 0) {
-            if (m_pressPos.x() < ep && fromPress.x() > 0) m_edge = EdgeBack;
-            else if (m_pressPos.x() >= width() - ep && fromPress.x() < 0) m_edge = EdgeForward;
+        // Horizontal drag in from the left / right edge = history back / forward.
+        const int zone = edgeZone();
+        if (m_horizontal && zone > 0) {
+            if (m_pressPos.x() < zone && fromPress.x() > 0) m_edge = EdgeBack;
+            else if (m_pressPos.x() >= width() - zone && fromPress.x() < 0) m_edge = EdgeForward;
+        }
+    }
+    // A swipe in from the edge rarely starts out level: the first few millimetres often go
+    // up or down, and the drag was taken for a scroll (or a light swipe) and the back gesture
+    // was lost. So it is caught whenever it becomes clear: the finger started at the edge and
+    // is now a swipe's length in, mostly sideways. Whatever the page scrolled meanwhile stays.
+    if (m_edge == NoEdge && m_dragging) {
+        const int zone = edgeZone();
+        const bool left = m_pressPos.x() < zone, right = m_pressPos.x() >= width() - zone;
+        const int along = left ? fromPress.x() : right ? -fromPress.x() : 0;
+        if (zone > 0 && along >= m_pager->swipeMin() && along * 3 >= qAbs(fromPress.y()) * 2) {
+            m_edge = left ? EdgeBack : EdgeForward;
+            if (m_light != NoLight) {   // not a light swipe after all: put the light back
+                KoboFrontlight *fl = KoboFrontlight::instance();
+                if (m_light == LightBrightness) fl->setBrightness(m_lightStart); else fl->setWarmth(m_lightStart);
+                m_light = NoLight;
+            }
         }
     }
     if (m_light != NoLight) {
@@ -249,6 +266,8 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
             const EdgeDrag edge = m_edge;
             const bool go = m_edgeArmed;
             endEdgeDrag();
+            qDebug() << "edge swipe:" << (edge == EdgeBack ? "back" : "forward") << "from x" << m_pressPos.x()
+                     << "moved" << (e->pos() - m_pressPos) << "after" << m_pressTime.elapsed() << "ms:" << (go ? "go" : "cancelled");
             if (go) { if (edge == EdgeBack) back(); else forward(); }
             e->accept();
             return;
@@ -261,6 +280,7 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
             else if (delta.y() != 0) page()->mainFrame()->scroll(0, -delta.y());
         } else if (m_horizontal) {
             // Quick horizontal flick: page turn, or history from the edges.
+            qDebug() << "swipe: sideways from x" << m_pressPos.x() << "moved" << d << "(not at an edge: page turn)";
             m_pager->handleHorizontalSwipe(m_pressPos, e->pos());
         } else if (qAbs(d.y()) >= m_pager->swipeMin()) {
             // Flick: released quickly after a decent move. Up = next page, down = previous.
@@ -298,4 +318,13 @@ void TouchWebView::endEdgeDrag()
     m_edgeArmed = false;
     m_badgeTimer.stop();
     if (m_badge->isVisible()) m_badge->hide();
+}
+
+// How far in from the left / right edge a back / forward swipe may start. A finger coming
+// in over the bezel is often first seen a centimetre inside the screen, so this is wider
+// than the strip for quick page-turn flicks (KB_EDGE_SWIPE, 0 = no edge swipes).
+int TouchWebView::edgeZone() const
+{
+    const int ep = m_pager->edgePx();
+    return ep > 0 ? qMax(ep, kbPx(110)) : 0;
 }

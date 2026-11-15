@@ -61,6 +61,7 @@ private:
     QWidget *m_badge;
     QTimer m_badgeTimer;
     void endEdgeDrag();
+    int edgeZone() const;
     QElapsedTimer m_pressTime;
     PageScroller *m_pager;
 };
