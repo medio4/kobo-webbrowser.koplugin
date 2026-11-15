@@ -801,6 +801,12 @@ function KoboWebBrowser:launch(extra)
         UIManager:show(InfoMessage:new{ text = _("The web browser only runs on Kobo e-readers.") })
         return
     end
+    -- Elipsa and Sage (Allwinner): the screen is not a plain framebuffer there, so the browser
+    -- would start, take the touchscreen and show nothing. Say so instead.
+    if Device:isSunxi() then
+        UIManager:show(InfoMessage:new{ text = _("The web browser can't draw on this Kobo's screen yet (Elipsa and Sage use a different display system).") })
+        return
+    end
     if active and active.job then
         logger.warn("KoboWebBrowser: already running")
         return
