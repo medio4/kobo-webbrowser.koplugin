@@ -270,6 +270,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     connect(m_kbd, SIGNAL(goPressed()), this, SLOT(keyboardGo()));
     connect(m_kbd, SIGNAL(hidePressed()), this, SLOT(hideKeyboard()));
     connect(m_kbd, SIGNAL(backspacePressed()), this, SLOT(flashUrlBar()));
+    connect(m_url, SIGNAL(textChanged(QString)), this, SLOT(urlTextChanged(QString)));
     // KOReader's own keyboard (when launched by the plugin with KB_KBD_FILE set).
     m_touch = 0;
     m_native = new NativeTextEntry("KB_KBD_FILE", "KB_KBD_REPLY", this);
@@ -1734,4 +1735,21 @@ void Browser::showSiteMenu()
     m_status->setText("Site menu: the site's own menu can't open here");
     BookmarksOverlay *b = new BookmarksOverlay(centralWidget(), links, "Site menu");
     connect(b, SIGNAL(openUrl(QString)), this, SLOT(phoneUrl(QString)));
+}
+
+// ---- Address bar emptied while typing: the deleted characters leave a gray shadow on
+// e-ink under the "Search or address" hint. Once the empty field has been drawn, refresh
+// its area cleanly (a short flash of just the field).
+
+void Browser::urlTextChanged(const QString &text)
+{
+    if (!text.isEmpty() || !m_eink || QApplication::focusWidget() != m_url) return;
+    QTimer::singleShot(250, this, SLOT(cleanUrlBar()));
+}
+
+void Browser::cleanUrlBar()
+{
+    if (!m_eink || !m_url->text().isEmpty()) return;   // typing went on meanwhile
+    QRect r(m_url->mapTo(this, QPoint(0, 0)), m_url->size());
+    m_eink->cleanRect(r.adjusted(-4, -4, 4, 4));
 }

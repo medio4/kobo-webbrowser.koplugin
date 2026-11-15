@@ -117,6 +117,8 @@ private slots:
     void showSiteMenu();
     void showNavigator();        // page overview (experimental, navigator.h)
     void flashUrlBar();          // Clear / Del: redraw the address bar with a flashing refresh
+    void urlTextChanged(const QString &text);   // emptied while typing: clean refresh, see cleanUrlBar
+    void cleanUrlBar();
     void nativeStarted();        // KOReader keyboard: hand over screen + touch
     void nativeReplied(const QString &action, const QString &text);
     void nativeUnavailable();
