@@ -255,6 +255,9 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     cache->setCacheDirectory(cacheDir);
     cache->setMaximumCacheSize(MemTune::diskCacheBytes());
     m_view->page()->networkAccessManager()->setCache(cache);
+    // Sites keep their settings in local storage, and many scripts stop without it.
+    QWebSettings::globalSettings()->setLocalStoragePath(cacheDir + "/localstorage");
+    QWebSettings::globalSettings()->setAttribute(QWebSettings::LocalStorageEnabled, true);
 
     connect(back, SIGNAL(clicked()), m_view, SLOT(back()));
     connect(fwd, SIGNAL(clicked()), m_view, SLOT(forward()));
