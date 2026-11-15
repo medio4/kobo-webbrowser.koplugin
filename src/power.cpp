@@ -1,3 +1,4 @@
+#include "uiscale.h"
 #include "power.h"
 #include "eink.h"
 #include <QtCore/QSocketNotifier>
@@ -152,8 +153,8 @@ protected:
         p.setPen(QPen(Qt::black, 4));
         p.setBrush(Qt::white);
         p.drawRoundedRect(box, 16, 16);
-        QFont big; big.setPixelSize(96); big.setBold(true);
-        QFont small; small.setPixelSize(40);
+        QFont big; big.setPixelSize(kbPx(96)); big.setBold(true);
+        QFont small; small.setPixelSize(kbPx(40));
         p.setPen(Qt::black);
         p.setFont(big);
         p.drawText(box.adjusted(0, 0, 0, -box.height() / 3), Qt::AlignCenter, "Sleeping");

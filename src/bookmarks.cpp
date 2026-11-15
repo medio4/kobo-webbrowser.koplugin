@@ -1,3 +1,4 @@
+#include "uiscale.h"
 #include "icons.h"
 #include "bookmarks.h"
 #include <QtCore/QCoreApplication>
@@ -159,7 +160,7 @@ void BookmarksOverlay::init(const QString &heading)
     QFrame *box = new QFrame(this);
     m_box = box;
     box->setFrameStyle(QFrame::Box | QFrame::Plain);
-    box->setLineWidth(3);
+    box->setLineWidth(kbPx(3));
     box->setAutoFillBackground(true);
     QPalette pal = box->palette();
     pal.setColor(QPalette::Window, Qt::white);
@@ -167,14 +168,14 @@ void BookmarksOverlay::init(const QString &heading)
     box->setPalette(pal);
 
     QVBoxLayout *v = new QVBoxLayout(box);
-    v->setContentsMargins(20, 20, 20, 20);
-    v->setSpacing(12);
-    QFont f; f.setPixelSize(38);
+    v->setContentsMargins(kbPx(20), kbPx(20), kbPx(20), kbPx(20));
+    v->setSpacing(kbPx(12));
+    QFont f; f.setPixelSize(kbPx(38));
     QLabel *head = new QLabel(heading);
     head->setFont(f); head->setAlignment(Qt::AlignCenter);
     v->addWidget(head);
     m_list = new QVBoxLayout;
-    m_list->setSpacing(10);
+    m_list->setSpacing(kbPx(10));
     v->addLayout(m_list);
     v->addStretch(1);
 
@@ -184,10 +185,10 @@ void BookmarksOverlay::init(const QString &heading)
     QPushButton *close = new QPushButton("Close");
     m_pageLabel = new QLabel;
     m_pageLabel->setAlignment(Qt::AlignCenter);
-    QFont fs; fs.setPixelSize(32);
+    QFont fs; fs.setPixelSize(kbPx(32));
     m_pageLabel->setFont(fs);
     foreach (QPushButton *b, QList<QPushButton *>() << m_prev << m_next << close) {
-        b->setFont(f); b->setMinimumHeight(96); b->setFocusPolicy(Qt::NoFocus);
+        b->setFont(f); b->setMinimumHeight(kbPx(96)); b->setFocusPolicy(Qt::NoFocus);
     }
     KbIcons::setOn(m_prev, "chevron.left");
     KbIcons::setOn(m_next, "chevron.right");
@@ -195,7 +196,7 @@ void BookmarksOverlay::init(const QString &heading)
     nav->addWidget(m_prev); nav->addWidget(m_pageLabel, 1); nav->addWidget(m_next);
     if (history) {
         QPushButton *clear = new QPushButton("Clear all");
-        clear->setFont(f); clear->setMinimumHeight(96); clear->setFocusPolicy(Qt::NoFocus);
+        clear->setFont(f); clear->setMinimumHeight(kbPx(96)); clear->setFocusPolicy(Qt::NoFocus);
         KbIcons::setOn(clear, "cancel");
         connect(clear, SIGNAL(clicked()), this, SLOT(clearClicked()));
         nav->addWidget(clear);
@@ -225,7 +226,7 @@ void BookmarksOverlay::showPage(int page)
     }
     int pages = qMax(1, (m_items.size() + m_perPage - 1) / m_perPage);
     m_page = qBound(0, page, pages - 1);
-    QFont f; f.setPixelSize(32);
+    QFont f; f.setPixelSize(kbPx(32));
     if (m_items.isEmpty()) {
         QLabel *e = new QLabel(m_links ? "No links found." : m_history
             ? (HistoryStore::enabled() ? "No history yet." : "History is off. Turn it on in the Menu.")
@@ -235,15 +236,15 @@ void BookmarksOverlay::showPage(int page)
     }
     for (int i = m_page * m_perPage; i < m_items.size() && i < (m_page + 1) * m_perPage; ++i) {
         QHBoxLayout *row = new QHBoxLayout;
-        row->setSpacing(10);
+        row->setSpacing(kbPx(10));
         QString t = m_items[i].title;
         QFontMetrics fm(f);
         QPushButton *open = new QPushButton(fm.elidedText(t, Qt::ElideRight, qMax(200, width() - (m_links ? 150 : 380))));
-        open->setFont(f); open->setMinimumHeight(96); open->setFocusPolicy(Qt::NoFocus);
+        open->setFont(f); open->setMinimumHeight(kbPx(96)); open->setFocusPolicy(Qt::NoFocus);
         open->setStyleSheet("QPushButton { text-align: left; padding-left: 16px; border: 2px solid black; border-radius: 8px; background: white; color: black; }");
         open->setProperty("idx", i);
         QPushButton *del = new QPushButton("Remove");
-        del->setFont(f); del->setFixedSize(210, 96); del->setFocusPolicy(Qt::NoFocus);
+        del->setFont(f); del->setFixedSize(kbPx(210), kbPx(96)); del->setFocusPolicy(Qt::NoFocus);
         KbIcons::setOn(del, "cancel", 40);
         del->setProperty("idx", i);
         connect(open, SIGNAL(clicked()), this, SLOT(entryClicked()));

@@ -1,3 +1,4 @@
+#include "uiscale.h"
 #include "icons.h"
 #include "navigator.h"
 
@@ -25,7 +26,7 @@
 #include <QtWebKitWidgets/QWebView>
 
 namespace {
-const int kGap = 14;
+#define kGap kbPx(14)
 const int kMaxScreens = 400;   // a pathological page: overview of the first 400 screens only
 
 // Hides pictures while the thumbnails are drawn: they are the slow part to scale and
@@ -93,7 +94,7 @@ void NavGrid::paintEvent(QPaintEvent *)
     p.fillRect(rect(), Qt::white);
     const PageNavigator *n = m_nav;
     int per = n->m_cols * n->m_rows;
-    QFont f; f.setPixelSize(26); f.setBold(true);
+    QFont f; f.setPixelSize(kbPx(26)); f.setBold(true);
     p.setFont(f);
     for (int s = 0; s < per; ++s) {
         int i = n->m_page * per + s;
@@ -145,11 +146,11 @@ QPushButton *PageNavigator::navButton(const QString &text, const QString &icon, 
     QPixmap pm = KbIcons::get(icon, 52);
     if (pm.isNull()) {
         b->setText(text);
-        b->setMinimumSize(110, 84);
+        b->setMinimumSize(kbPx(110), kbPx(84));
     } else {
         b->setIcon(QIcon(pm));
         b->setIconSize(pm.size());
-        b->setMinimumSize(100, 84);
+        b->setMinimumSize(kbPx(100), kbPx(84));
     }
     return b;
 }
@@ -169,7 +170,7 @@ PageNavigator::PageNavigator(QWebView *view, QWidget *parent)
 
     m_box = new QFrame(this);
     static_cast<QFrame *>(m_box)->setFrameStyle(QFrame::Box | QFrame::Plain);
-    static_cast<QFrame *>(m_box)->setLineWidth(3);
+    static_cast<QFrame *>(m_box)->setLineWidth(kbPx(3));
     m_box->setAutoFillBackground(true);
     QPalette pal = m_box->palette();
     pal.setColor(QPalette::Window, Qt::white);
@@ -177,9 +178,9 @@ PageNavigator::PageNavigator(QWebView *view, QWidget *parent)
     m_box->setPalette(pal);
 
     QVBoxLayout *v = new QVBoxLayout(m_box);
-    v->setContentsMargins(16, 12, 16, 16);
-    v->setSpacing(10);
-    QFont fh; fh.setPixelSize(32); fh.setBold(true);
+    v->setContentsMargins(kbPx(16), kbPx(12), kbPx(16), kbPx(16));
+    v->setSpacing(kbPx(10));
+    QFont fh; fh.setPixelSize(kbPx(32)); fh.setBold(true);
     m_head = new QLabel;
     m_head->setFont(fh);
     m_head->setAlignment(Qt::AlignCenter);
@@ -190,8 +191,8 @@ PageNavigator::PageNavigator(QWebView *view, QWidget *parent)
     v->addWidget(m_grid, 1);
 
     QHBoxLayout *row = new QHBoxLayout;
-    row->setSpacing(12);
-    QFont fb; fb.setPixelSize(34);
+    row->setSpacing(kbPx(12));
+    QFont fb; fb.setPixelSize(kbPx(34));
     // Paging buttons are icon-only when KOReader's icons are there (six buttons don't fit a
     // portrait row with labels), else short words. No "<": the Kobo UI font draws a clock glyph.
     m_first = navButton("First", "chevron.first", fb);
@@ -200,7 +201,7 @@ PageNavigator::PageNavigator(QWebView *view, QWidget *parent)
     m_last = navButton("Last", "chevron.last", fb);
     QPushButton *close = new QPushButton("Close");
     close->setFont(fb);
-    close->setMinimumSize(190, 84);
+    close->setMinimumSize(kbPx(190), kbPx(84));
     close->setFocusPolicy(Qt::NoFocus);
     KbIcons::setOn(close, "close", 44);
     m_pageLabel = new QLabel;

@@ -1,3 +1,4 @@
+#include "uiscale.h"
 #include "icons.h"
 #include "epub.h"
 
@@ -707,7 +708,7 @@ SavedDialog::SavedDialog(const QString &epubPath, QWidget *parent, int count)
 
     m_box = new QFrame(this);
     static_cast<QFrame *>(m_box)->setFrameStyle(QFrame::Box | QFrame::Plain);
-    static_cast<QFrame *>(m_box)->setLineWidth(3);
+    static_cast<QFrame *>(m_box)->setLineWidth(kbPx(3));
     m_box->setAutoFillBackground(true);
     QPalette pal = m_box->palette();
     pal.setColor(QPalette::Window, Qt::white);
@@ -715,10 +716,10 @@ SavedDialog::SavedDialog(const QString &epubPath, QWidget *parent, int count)
     m_box->setPalette(pal);
 
     QVBoxLayout *v = new QVBoxLayout(m_box);
-    v->setContentsMargins(30, 30, 30, 30);
-    v->setSpacing(24);
-    QFont f; f.setPixelSize(38);
-    QFont fs; fs.setPixelSize(30);
+    v->setContentsMargins(kbPx(30), kbPx(30), kbPx(30), kbPx(30));
+    v->setSpacing(kbPx(24));
+    QFont f; f.setPixelSize(kbPx(38));
+    QFont fs; fs.setPixelSize(kbPx(30));
 
     QLabel *head = new QLabel(count > 1 ? QString("Saved %1 files to the library").arg(count) : QString("Saved to the library"));
     head->setFont(f);
@@ -741,12 +742,12 @@ SavedDialog::SavedDialog(const QString &epubPath, QWidget *parent, int count)
     v->addWidget(q);
 
     QHBoxLayout *row = new QHBoxLayout;
-    row->setSpacing(20);
+    row->setSpacing(kbPx(20));
     QPushButton *later = new QPushButton("Keep browsing");
     QPushButton *open = new QPushButton("Open now");
     foreach (QPushButton *b, QList<QPushButton *>() << later << open) {
         b->setFont(f);
-        b->setMinimumSize(300, 100);
+        b->setMinimumSize(kbPx(300), kbPx(100));
         b->setFocusPolicy(Qt::NoFocus);
         b->setProperty("kb_fast", true);
     }
@@ -767,7 +768,7 @@ SavedDialog::SavedDialog(const QString &epubPath, QWidget *parent, int count)
 
 void SavedDialog::place()
 {
-    int w = qMin(width() - 40, 900);
+    int w = qMin(width() - 40, kbPx(900));
     m_box->setFixedWidth(w);
     m_box->adjustSize();
     m_box->move((width() - m_box->width()) / 2, (height() - m_box->height()) / 2);
@@ -807,7 +808,7 @@ SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle,
     setAutoFillBackground(false);
     m_box = new QFrame(this);
     static_cast<QFrame *>(m_box)->setFrameStyle(QFrame::Box | QFrame::Plain);
-    static_cast<QFrame *>(m_box)->setLineWidth(3);
+    static_cast<QFrame *>(m_box)->setLineWidth(kbPx(3));
     m_box->setAutoFillBackground(true);
     QPalette pal = m_box->palette();
     pal.setColor(QPalette::Window, Qt::white);
@@ -815,10 +816,10 @@ SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle,
     m_box->setPalette(pal);
 
     QVBoxLayout *v = new QVBoxLayout(m_box);
-    v->setContentsMargins(30, 30, 30, 30);
-    v->setSpacing(24);
-    QFont f; f.setPixelSize(38);
-    QFont fs; fs.setPixelSize(30);
+    v->setContentsMargins(kbPx(30), kbPx(30), kbPx(30), kbPx(30));
+    v->setSpacing(kbPx(24));
+    QFont f; f.setPixelSize(kbPx(38));
+    QFont fs; fs.setPixelSize(kbPx(30));
 
     QLabel *head = new QLabel(reading ? "Reader mode" : "Save to the library");
     head->setFont(f); head->setAlignment(Qt::AlignCenter);
@@ -851,7 +852,7 @@ SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle,
     buttons << series << page << cancel;
     foreach (QPushButton *b, buttons) {
         b->setFont(f);
-        b->setMinimumSize(300, 100);
+        b->setMinimumSize(kbPx(300), kbPx(100));
         b->setFocusPolicy(Qt::NoFocus);
         b->setProperty("kb_fast", true);
         v->addWidget(b);
@@ -874,7 +875,7 @@ SaveChoiceDialog::SaveChoiceDialog(int chapterCount, const QString &seriesTitle,
 
 void SaveChoiceDialog::place()
 {
-    int w = qMin(width() - 40, 900);
+    int w = qMin(width() - 40, kbPx(900));
     m_box->setFixedWidth(w);
     m_box->adjustSize();
     m_box->move((width() - m_box->width()) / 2, (height() - m_box->height()) / 2);

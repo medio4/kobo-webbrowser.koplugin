@@ -1,3 +1,4 @@
+#include "uiscale.h"
 #include "icons.h"
 #include "phoneshare.h"
 #include <QtCore/QDebug>
@@ -205,7 +206,7 @@ PhoneDialog::PhoneDialog(const QString &url, QWidget *parent) : QWidget(parent)
     QFrame *box = new QFrame(this);
     m_box = box;
     box->setFrameStyle(QFrame::Box | QFrame::Plain);
-    box->setLineWidth(3);
+    box->setLineWidth(kbPx(3));
     box->setAutoFillBackground(true);
     QPalette pal = box->palette();
     pal.setColor(QPalette::Window, Qt::white);
@@ -213,10 +214,10 @@ PhoneDialog::PhoneDialog(const QString &url, QWidget *parent) : QWidget(parent)
     box->setPalette(pal);
 
     QVBoxLayout *v = new QVBoxLayout(box);
-    v->setContentsMargins(30, 30, 30, 30);
-    v->setSpacing(20);
-    QFont f; f.setPixelSize(38);
-    QFont fs; fs.setPixelSize(28);
+    v->setContentsMargins(kbPx(30), kbPx(30), kbPx(30), kbPx(30));
+    v->setSpacing(kbPx(20));
+    QFont f; f.setPixelSize(kbPx(38));
+    QFont fs; fs.setPixelSize(kbPx(28));
 
     QLabel *head = new QLabel("Send to Kobo from your phone");
     head->setFont(f); head->setAlignment(Qt::AlignCenter); head->setWordWrap(true);
@@ -239,11 +240,11 @@ PhoneDialog::PhoneDialog(const QString &url, QWidget *parent) : QWidget(parent)
     v->addWidget(txt);
 
     QHBoxLayout *row = new QHBoxLayout;
-    row->setSpacing(20);
+    row->setSpacing(kbPx(20));
     QPushButton *mini = new QPushButton("Minimize");
     QPushButton *stop = new QPushButton("Stop");
     foreach (QPushButton *b, QList<QPushButton *>() << mini << stop) {
-        b->setFont(f); b->setMinimumSize(300, 100); b->setFocusPolicy(Qt::NoFocus);
+        b->setFont(f); b->setMinimumSize(kbPx(300), kbPx(100)); b->setFocusPolicy(Qt::NoFocus);
         b->setProperty("kb_fast", true);
         row->addWidget(b);
     }
@@ -265,7 +266,7 @@ PhoneDialog::PhoneDialog(const QString &url, QWidget *parent) : QWidget(parent)
 
 void PhoneDialog::place()
 {
-    int w = qMin(width() - 40, 900);
+    int w = qMin(width() - 40, kbPx(900));
     m_box->setFixedWidth(w);
     m_box->adjustSize();
     m_box->move((width() - m_box->width()) / 2, (height() - m_box->height()) / 2);
@@ -285,17 +286,17 @@ PhoneDialog *PhoneDialog::share(const QString &title, const QString &pageUrl, QW
     QFrame *box = new QFrame(d);
     d->m_box = box;
     box->setFrameStyle(QFrame::Box | QFrame::Plain);
-    box->setLineWidth(3);
+    box->setLineWidth(kbPx(3));
     box->setAutoFillBackground(true);
     QPalette pal = box->palette();
     pal.setColor(QPalette::Window, Qt::white);
     pal.setColor(QPalette::WindowText, Qt::black);
     box->setPalette(pal);
     QVBoxLayout *v = new QVBoxLayout(box);
-    v->setContentsMargins(30, 30, 30, 30);
-    v->setSpacing(20);
-    QFont f; f.setPixelSize(38);
-    QFont fs; fs.setPixelSize(28);
+    v->setContentsMargins(kbPx(30), kbPx(30), kbPx(30), kbPx(30));
+    v->setSpacing(kbPx(20));
+    QFont f; f.setPixelSize(kbPx(38));
+    QFont fs; fs.setPixelSize(kbPx(28));
     QLabel *head = new QLabel(title.isEmpty() ? QString("Share this page") : title);
     head->setFont(f); head->setAlignment(Qt::AlignCenter); head->setWordWrap(true);
     v->addWidget(head);
@@ -309,7 +310,7 @@ PhoneDialog *PhoneDialog::share(const QString &title, const QString &pageUrl, QW
     txt->setFont(fs); txt->setWordWrap(true); txt->setAlignment(Qt::AlignCenter);
     v->addWidget(txt);
     QPushButton *close = new QPushButton("Close");
-    close->setFont(f); close->setMinimumSize(300, 100); close->setFocusPolicy(Qt::NoFocus);
+    close->setFont(f); close->setMinimumSize(kbPx(300), kbPx(100)); close->setFocusPolicy(Qt::NoFocus);
     close->setProperty("kb_fast", true);
     KbIcons::setOn(close, "close");
     v->addWidget(close);

@@ -1,3 +1,4 @@
+#include "uiscale.h"
 // OnScreenKeyboard: the browser's built-in keys (fallback when KOReader's keyboard isn't used).
 #include "browser.h"
 #include "crashhandler.h"
@@ -78,8 +79,8 @@ static const char *kUpper[] = { "1234567890", "QWERTYUIOP", "ASDFGHJKL",  "ZXCVB
 static const char *kSym[]   = { "!@#$%^&*()", "-_=+[]{}\\|", ";:'\",<>?",  "~`/.",     0 };
 
 // Key size: taller keys are easier to hit; 5 rows of 108 px take ~40% of the screen.
-static const int kKeyH = 108;
-static const int kKeyGap = 6;
+#define kKeyH kbPx(108)
+#define kKeyGap kbPx(6)
 
 OnScreenKeyboard::OnScreenKeyboard(QWidget *parent)
     : QWidget(parent), m_shift(0), m_sym(0), m_shift_on(false), m_symbols(false), m_rows(0),
@@ -98,7 +99,7 @@ static FlatButton *key(const QString &label, int w, int h, bool dark = false, in
     FlatButton *b = new FlatButton(label);
     b->setFixedSize(w, h);
     b->setDark(dark);
-    b->setPixelSize(px);
+    b->setPixelSize(kbPx(px));
     return b;
 }
 
@@ -183,7 +184,7 @@ void OnScreenKeyboard::fitWidth(int w)
     const int baseKeyW = (1072 - 11 * kKeyGap) / 10;
     const int keyW = (w - 11 * kKeyGap) / 10;
     // Landscape: same row count but much less height to spare, so flatter keys.
-    m_keyH = w > 1200 ? 84 : kKeyH;
+    m_keyH = w > kbPx(1200) ? kbPx(84) : kKeyH;
     foreach (FlatButton *b, findChildren<FlatButton *>()) {
         int bw = b->property("baseW").toInt();
         if (bw > 0) b->setFixedSize(bw * keyW / baseKeyW, m_keyH);

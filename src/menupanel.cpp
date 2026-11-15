@@ -1,3 +1,4 @@
+#include "uiscale.h"
 #include "menupanel.h"
 #include "browser.h"
 #include <QtCore/QTimer>
@@ -20,14 +21,14 @@ MenuPanel::MenuPanel(QWidget *parent, int top)
     QFrame *box = new QFrame(this);
     m_box = box;
     box->setFrameStyle(QFrame::Box | QFrame::Plain);
-    box->setLineWidth(3);
+    box->setLineWidth(kbPx(3));
     box->setAutoFillBackground(true);
     QPalette pal = box->palette();
     pal.setColor(QPalette::Window, Qt::white);
     pal.setColor(QPalette::WindowText, Qt::black);
     box->setPalette(pal);
     m_grid = new QGridLayout(box);
-    m_grid->setContentsMargins(16, 16, 16, 16);
+    m_grid->setContentsMargins(kbPx(16), kbPx(16), kbPx(16), kbPx(16));
     m_grid->setHorizontalSpacing(12);
     m_grid->setVerticalSpacing(10);
 }
@@ -36,10 +37,10 @@ FlatButton *MenuPanel::addAction(const QString &label, QObject *receiver, const 
 {
     FlatButton *b = new FlatButton(label);
     if (!icon.isEmpty()) b->setIconName(icon);
-    b->setPixelSize(38);
-    b->setMinimumHeight(88);
+    b->setPixelSize(kbPx(38));
+    b->setMinimumHeight(kbPx(88));
     b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    b->setFixedHeight(88);
+    b->setFixedHeight(kbPx(88));
     if (wide && m_col != 0) { m_row++; m_col = 0; }
     m_grid->addWidget(b, m_row, m_col, 1, wide ? m_cols : 1);
     if (wide || m_col == m_cols - 1) { m_row++; m_col = 0; } else m_col++;
@@ -59,9 +60,9 @@ void MenuPanel::addSection(const QString &title)
 {
     if (m_col != 0) { m_row++; m_col = 0; }
     QLabel *l = new QLabel(title);
-    QFont f; f.setPixelSize(28); f.setBold(true);
+    QFont f; f.setPixelSize(kbPx(28)); f.setBold(true);
     l->setFont(f);
-    l->setContentsMargins(6, m_row ? 10 : 0, 0, 0);
+    l->setContentsMargins(kbPx(6), m_row ? kbPx(10) : 0, 0, 0);
     m_grid->addWidget(l, m_row, 0, 1, m_cols);
     m_row++;
 }
@@ -98,16 +99,16 @@ void MenuPanel::picked()
 
 void MenuPanel::place()
 {
-    int w = qMin(width() - 24, m_cols > 2 ? 1400 : 820);
+    int w = qMin(width() - 24, m_cols > 2 ? kbPx(1400) : kbPx(820));
     m_box->setFixedWidth(w);
     m_box->adjustSize();
     // One text size for every button, the largest at which all labels fit, so the panel
     // looks even instead of having one squeezed label.
     m_grid->activate();
-    int px = 38;
+    int px = kbPx(38);
     for (int i = 0; i < m_targets.size(); ++i) {
         FlatButton *b = static_cast<FlatButton *>(m_targets[i].first);
-        px = qMin(px, b->fitPixelSize(38));
+        px = qMin(px, b->fitPixelSize(kbPx(38)));
     }
     for (int i = 0; i < m_targets.size(); ++i)
         static_cast<FlatButton *>(m_targets[i].first)->setPixelSize(px);

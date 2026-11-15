@@ -1,3 +1,4 @@
+#include "uiscale.h"
 #include "icons.h"
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -41,6 +42,7 @@ QPixmap KbIcons::get(const QString &name, int size)
 
 void KbIcons::setOn(QAbstractButton *b, const QString &name, int size)
 {
+    size = kbPx(size);
     QPixmap pm = get(name, size);
     if (pm.isNull() || !b) return;
     b->setIcon(QIcon(pm));

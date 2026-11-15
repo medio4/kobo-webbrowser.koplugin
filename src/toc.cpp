@@ -1,3 +1,4 @@
+#include "uiscale.h"
 #include "icons.h"
 #include "toc.h"
 
@@ -19,7 +20,7 @@
 #include <QtWebKitWidgets/QWebFrame>
 
 namespace {
-const int kRowH = 74;
+#define kRowH kbPx(74)
 const int kMaxText = 70;
 
 // Headings in document order with their position in page (CSS) pixels. Hidden
@@ -51,7 +52,7 @@ TocOverlay::TocOverlay(QWebView *view, QWidget *parent)
 
     m_box = new QFrame(this);
     static_cast<QFrame *>(m_box)->setFrameStyle(QFrame::Box | QFrame::Plain);
-    static_cast<QFrame *>(m_box)->setLineWidth(3);
+    static_cast<QFrame *>(m_box)->setLineWidth(kbPx(3));
     m_box->setAutoFillBackground(true);
     QPalette pal = m_box->palette();
     pal.setColor(QPalette::Window, Qt::white);
@@ -59,22 +60,22 @@ TocOverlay::TocOverlay(QWebView *view, QWidget *parent)
     m_box->setPalette(pal);
 
     QVBoxLayout *v = new QVBoxLayout(m_box);
-    v->setContentsMargins(16, 16, 16, 16);
-    v->setSpacing(8);
-    QFont fh; fh.setPixelSize(36); fh.setBold(true);
+    v->setContentsMargins(kbPx(16), kbPx(16), kbPx(16), kbPx(16));
+    v->setSpacing(kbPx(8));
+    QFont fh; fh.setPixelSize(kbPx(36)); fh.setBold(true);
     QLabel *head = new QLabel("Contents");
     head->setFont(fh);
     head->setAlignment(Qt::AlignCenter);
     v->addWidget(head);
 
     m_list = new QVBoxLayout;
-    m_list->setSpacing(6);
+    m_list->setSpacing(kbPx(6));
     v->addLayout(m_list);
     v->addStretch(1);
 
     QHBoxLayout *row = new QHBoxLayout;
-    row->setSpacing(12);
-    QFont fb; fb.setPixelSize(34);
+    row->setSpacing(kbPx(12));
+    QFont fb; fb.setPixelSize(kbPx(34));
     m_prev = new QPushButton("Prev");   // no "<": the Kobo UI font renders it as a clock glyph
     m_next = new QPushButton("Next");
     QPushButton *close = new QPushButton("Close");
@@ -83,7 +84,7 @@ TocOverlay::TocOverlay(QWebView *view, QWidget *parent)
     m_pageLabel->setAlignment(Qt::AlignCenter);
     foreach (QPushButton *b, QList<QPushButton *>() << m_prev << m_next << close) {
         b->setFont(fb);
-        b->setMinimumSize(190, 84);
+        b->setMinimumSize(kbPx(190), kbPx(84));
         b->setFocusPolicy(Qt::NoFocus);
     }
     KbIcons::setOn(m_prev, "chevron.left", 44);
@@ -141,7 +142,7 @@ void TocOverlay::showPage(int page)
         if (li->widget()) li->widget()->deleteLater();
         delete li;
     }
-    QFont f; f.setPixelSize(32);
+    QFont f; f.setPixelSize(kbPx(32));
     int start = m_page * m_perPage;
     for (int i = start; i < m_items.size() && i < start + m_perPage; ++i) {
         const Item &it = m_items[i];
@@ -171,7 +172,7 @@ void TocOverlay::showPage(int page)
 
 void TocOverlay::place()
 {
-    int w = qMin(width() - 24, 1040);
+    int w = qMin(width() - 24, kbPx(1040));
     int h = height() - 24;
     m_box->setGeometry((width() - w) / 2, (height() - h) / 2, w, h);
 }

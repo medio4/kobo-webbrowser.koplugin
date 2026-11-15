@@ -1,4 +1,5 @@
 // FlatButton: the flat, KOReader-style button used across the browser.
+#include "uiscale.h"
 #include "browser.h"
 #include "crashhandler.h"
 #include "touchinput.h"
@@ -78,7 +79,7 @@ FlatButton::FlatButton(const QString &text, QWidget *parent)
     setText(text);
     setFocusPolicy(Qt::NoFocus);
     setAttribute(Qt::WA_OpaquePaintEvent);
-    setPixelSize(40);
+    setPixelSize(kbPx(40));
 }
 
 void FlatButton::setBold(bool b) { QFont f = font(); f.setBold(b); setFont(f); }

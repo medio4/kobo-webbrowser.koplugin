@@ -1,4 +1,5 @@
 // Browser: the main window - toolbar, page, Menu and everything it opens.
+#include "uiscale.h"
 #include "browser.h"
 #include "crashhandler.h"
 #include "touchinput.h"
@@ -79,7 +80,7 @@ static FlatButton *toolButton(const QString &text, int w, int h)
 {
     FlatButton *b = new FlatButton(text);
     b->setFixedSize(w, h);
-    b->setPixelSize(38);
+    b->setPixelSize(kbPx(38));
     return b;
 }
 
@@ -136,23 +137,23 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     m_bar->setAutoFillBackground(true);
     QPalette pal = m_bar->palette(); pal.setColor(QPalette::Window, Qt::white); m_bar->setPalette(pal);
     QVBoxLayout *barBox = new QVBoxLayout(m_bar);
-    barBox->setContentsMargins(6, 6, 6, 6);
-    barBox->setSpacing(6);
-    const int bh = 84;
-    QFont bf; bf.setPixelSize(36);
+    barBox->setContentsMargins(kbPx(6), kbPx(6), kbPx(6), kbPx(6));
+    barBox->setSpacing(kbPx(6));
+    const int bh = kbPx(84);
+    QFont bf; bf.setPixelSize(kbPx(36));
 
     m_url = new QLineEdit; m_url->setFixedHeight(bh); m_url->setFont(bf);
     m_url->setPlaceholderText("Search or address");
     m_url->setStyleSheet("QLineEdit { border: 2px solid black; border-radius: 8px; background: white; color: black;"
                          " padding: 0 12px; selection-background-color: black; selection-color: white; }");
-    FlatButton *back = toolButton("Back", 110, bh);   // NB: "<" renders as a clock in the Kobo UI font
-    FlatButton *fwd  = toolButton("Fwd", 96, bh);
-    FlatButton *menu = toolButton("Menu", 130, bh); menu->setBold(true);
+    FlatButton *back = toolButton("Back", kbPx(110), bh);   // NB: "<" renders as a clock in the Kobo UI font
+    FlatButton *fwd  = toolButton("Fwd", kbPx(96), bh);
+    FlatButton *menu = toolButton("Menu", kbPx(130), bh); menu->setBold(true);
     // KOReader's icons when its icon set is there (text otherwise).
     back->setIconName("chevron.left", true);
     fwd->setIconName("chevron.right", true);
     menu->setIconName("appbar.menu", true);
-    QHBoxLayout *row1 = new QHBoxLayout; row1->setSpacing(6);
+    QHBoxLayout *row1 = new QHBoxLayout; row1->setSpacing(kbPx(6));
     row1->addWidget(back); row1->addWidget(fwd); row1->addWidget(m_url, 1); row1->addWidget(menu);
     barBox->addLayout(row1);
     vbox->addWidget(m_bar);
@@ -162,11 +163,11 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     QWidget *statusRow = new QWidget;
     QHBoxLayout *statusBox = new QHBoxLayout(statusRow);
     statusBox->setContentsMargins(0, 0, 0, 0);
-    statusBox->setSpacing(6);
+    statusBox->setSpacing(kbPx(6));
     m_status = new QLabel;
-    QFont sf; sf.setPixelSize(30);
+    QFont sf; sf.setPixelSize(kbPx(30));
     m_status->setFont(sf);
-    m_status->setContentsMargins(6, 0, 6, 0);
+    m_status->setContentsMargins(kbPx(6), 0, kbPx(6), 0);
     // A long page title must never widen the window past the screen (it pushed the
     // right-hand toolbar buttons off-screen): the label clips instead of demanding width.
     m_status->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
@@ -174,7 +175,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     statusBox->addWidget(m_status, 1);
     m_sysInfo = new QLabel;
     m_sysInfo->setFont(sf);
-    m_sysInfo->setContentsMargins(6, 0, 6, 0);
+    m_sysInfo->setContentsMargins(kbPx(6), 0, kbPx(6), 0);
     m_sysInfo->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_sysInfo->setProperty("kb_fast", true);
     statusBox->addWidget(m_sysInfo, 0);
@@ -203,7 +204,7 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     // Readable on a 300 dpi e-ink panel: pages may not shrink text below this.
     ws->setFontSize(QWebSettings::DefaultFontSize, 22);
     ws->setFontSize(QWebSettings::MinimumFontSize, 20);
-    m_view->setZoomFactor(2.0);
+    m_view->setZoomFactor(2.0 * kbUiScale());   // 2.0 at 300 dpi: the same physical size at other densities
     // A+/A- scale the text only (saved in bin/text-size.txt), so the page keeps its layout
     // width; pinch still zooms the whole page.
     // "Send to Kobo" page for a phone on the same Wi-Fi (KB_PHONE_PORT, 0 = off). It only
@@ -401,19 +402,19 @@ void Browser::showTextSizeBar()
     hideKeyboard();
     QFrame *bar = new QFrame(m_central);
     bar->setFrameStyle(QFrame::Box | QFrame::Plain);
-    bar->setLineWidth(3);
+    bar->setLineWidth(kbPx(3));
     bar->setAutoFillBackground(true);
     QPalette pal = bar->palette(); pal.setColor(QPalette::Window, Qt::white); bar->setPalette(pal);
     bar->setProperty("kb_overlay", true);   // one clean flash when it opens and closes
     QHBoxLayout *row = new QHBoxLayout(bar);
-    row->setContentsMargins(12, 10, 12, 10);
-    row->setSpacing(10);
+    row->setContentsMargins(kbPx(12), kbPx(10), kbPx(12), kbPx(10));
+    row->setSpacing(kbPx(10));
     FlatButton *smaller = toolButton(QString::fromUtf8("A\xe2\x88\x92"), 150, 96);
     FlatButton *bigger = toolButton("A+", 150, 96);
     FlatButton *done = toolButton("Done", 230, 96); done->setBold(true);
     done->setIconName("check");
     QLabel *lbl = new QLabel(QString("Text %1%").arg(qRound(m_textZoom * 100)));
-    QFont lf; lf.setPixelSize(36); lbl->setFont(lf);
+    QFont lf; lf.setPixelSize(kbPx(36)); lbl->setFont(lf);
     lbl->setAlignment(Qt::AlignCenter);
     row->addWidget(smaller); row->addWidget(lbl, 1); row->addWidget(bigger); row->addWidget(done);
     connect(smaller, SIGNAL(clicked()), this, SLOT(zoomOut()));
