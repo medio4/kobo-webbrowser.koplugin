@@ -53,7 +53,7 @@ KoboEink::KoboEink(QObject *parent)
     : QObject(parent), m_repaint(0), m_dl(0), m_grab(false), m_ready(false), m_fb(0), m_hw(0)
 {
     s_instance = this;
-    m_nextFlags = 0; m_fullEvery = 0; m_turnsSinceFull = 0; m_holdWidget = 0; m_suspended = false;
+    m_nextFlags = 0; m_fullEvery = 0; m_turnsSinceFull = 0; m_holdWidget = 0; m_quietWidget = 0; m_suspended = false;
     m_flagsPartial = envFlags("KB_FLAGS_PARTIAL", 0);
     m_flagsFull = envFlags("KB_FLAGS_FULL", 16);
     // Pseudo-flags for the fbink backend: they only select a waveform (refreshpolicy).
@@ -175,6 +175,12 @@ bool KoboEink::eventFilter(QObject *obj, QEvent *e)
     if ((e->type() == QEvent::Hide || e->type() == QEvent::Show) && obj->isWidgetType()
             && obj->property("kb_overlay").toBool()) {
         QWidget *w = static_cast<QWidget *>(obj);
+        // The browser's Menu (kb_quick) is opened all the time and has to feel instant: it
+        // is drawn at once with the fast waveform by its own repaint, without waiting for a
+        // batch or flashing; the usual clean-up pass after fast updates tidies it. When it
+        // closes, the area is refreshed without a flash.
+        const bool quick = w->property("kb_quick").toBool();
+        if (quick && e->type() == QEvent::Show) return false;
         if (e->type() == QEvent::Show) {
             m_shownOverlays << QPointer<QWidget>(w);   // its box is measured once laid out
         } else {
@@ -188,7 +194,7 @@ bool KoboEink::eventFilter(QObject *obj, QEvent *e)
         // Start (or extend) a batch: the pop-up, whatever it covers or uncovers, and a
         // pop-up opened right after it (Menu > Bookmarks) all appear in one refresh.
         if (!m_batching) { m_batching = true; m_batchSince.start(); }
-        m_batchOverlay = true;
+        if (!quick) m_batchOverlay = true;
         m_batchTimer.start();
     }
     // A tap inside a pop-up often closes it or opens another: hold the button's own repaint
@@ -197,6 +203,7 @@ bool KoboEink::eventFilter(QObject *obj, QEvent *e)
     if (e->type() == QEvent::MouseButtonPress && obj->isWidgetType()) {
         for (QWidget *p = static_cast<QWidget *>(obj); p; p = p->parentWidget())
             if (p->property("kb_overlay").toBool() && p->isVisible()) {
+                if (p->property("kb_quick").toBool()) break;   // the Menu: show the press at once
                 if (!m_batching) { m_batching = true; m_batchSince.start(); }
                 m_batchTimer.start();
                 break;
@@ -213,7 +220,10 @@ bool KoboEink::eventFilter(QObject *obj, QEvent *e)
             quint64 flags = m_flagsPartial;
             for (QWidget *p = w; p && p != top; p = p->parentWidget())
                 if (p->property("kb_fast").toBool()) { flags = m_flagsFast; break; }
-            if (m_holdWidget && (w == m_holdWidget || m_holdWidget->isAncestorOf(w))) {
+            if (m_quietWidget && (w == m_quietWidget || m_quietWidget->isAncestorOf(w))) {
+                // The Menu is open over the page: the page's repaints wait (setQuiet).
+                m_quietRect |= tr;
+            } else if (m_holdWidget && (w == m_holdWidget || m_holdWidget->isAncestorOf(w))) {
                 // Load hold: Qt still paints into the backing store, we just don't
                 // push it to the screen yet. Remember the area for the release.
                 m_held |= tr;
@@ -515,7 +525,8 @@ void KoboEink::releaseHold(bool fullFlash)
     QWidget *top = w->window();
     QRect r = (fullFlash && top) ? QRect(w->mapTo(top, QPoint(0, 0)), w->size()) : m_held;
     m_held = QRect();
-    if (!r.isEmpty()) markDirty(r, fullFlash ? m_flagsFull : m_flagsPartial);
+    if (m_quietWidget == w) m_quietRect |= r;   // the Menu is up: later (setQuiet)
+    else if (!r.isEmpty()) markDirty(r, fullFlash ? m_flagsFull : m_flagsPartial);
     if (fullFlash) {
         // Watch for late repaints (lazy images, scripts) and flash once more when they stop.
         m_loadSettleWidget = w;
@@ -654,4 +665,13 @@ void KoboEink::flashOverlays()
     m_overlayRect = QRect();
     if (flash) { m_shrinkFull = true; markDirty(r, m_flagsFull); }
     else markDirty(r, m_flagsPartial);
+}
+
+void KoboEink::setQuiet(QWidget *w)
+{
+    if (w == m_quietWidget) return;
+    m_quietWidget = w;
+    QRect r = m_quietRect;
+    m_quietRect = QRect();
+    if (!w && !r.isEmpty()) markDirty(r, m_flagsPartial);
 }

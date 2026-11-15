@@ -74,7 +74,8 @@ void MenuPanel::addSpacer()
     m_row++;
 }
 
-void MenuPanel::setKeep(bool keep) { setAttribute(Qt::WA_DeleteOnClose, !keep); }
+// The kept Menu is also the quick one: drawn at once with the fast waveform (see KoboEink).
+void MenuPanel::setKeep(bool keep) { setAttribute(Qt::WA_DeleteOnClose, !keep); setProperty("kb_quick", keep); }
 
 void MenuPanel::prepare()
 {

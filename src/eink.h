@@ -60,6 +60,10 @@ public:
     void setSuspended(bool on, bool refresh = true);
     // While KOReader's keyboard covers the bottom: only refresh inside clip (window coords).
     void setClip(const QRect &clip) { m_clip = clip; }
+    // While the Menu is open over the page: repaints of w (the page view) are not pushed to
+    // the screen, so they can't get in the way of the Menu's own. setQuiet(0) ends it and
+    // refreshes what the page painted meanwhile.
+    void setQuiet(QWidget *w);
     bool suspended() const { return m_suspended; }
 protected:
     bool eventFilter(QObject *obj, QEvent *e);
@@ -90,6 +94,8 @@ private:
     QString m_wfPartial, m_wfFast, m_wfPage, m_wfFull;
     int m_fullEvery, m_turnsSinceFull;
     QWidget *m_holdWidget;
+    QWidget *m_quietWidget;
+    QRect m_quietRect;
     QRect m_held;               // bounding rect of repaints swallowed during a hold
     QTimer m_holdTimer;
     QTimer m_settleTimer;

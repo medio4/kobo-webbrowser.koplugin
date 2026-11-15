@@ -1497,10 +1497,10 @@ void Browser::showMenu()
     MenuPanel *m = m_menuPanel;
     m_menuHistory->setText(HistoryStore::enabled() ? "History: on" : "History: off");
     m_menuAdBlock->setText(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off");
-    // While the Menu is up it comes first: the page behind it is not repainted (a page that
-    // is still loading repaints over and over, and every repaint costs processor time and
+    // While the Menu is up it comes first: the page behind it is not refreshed (a page that
+    // is still loading repaints over and over, and every repaint means
     // an e-ink update that the Menu's own taps then have to wait behind).
-    m_view->setUpdatesEnabled(false);
+    if (m_eink) m_eink->setQuiet(m_view);
     m->popup();
     // No full-screen flash: the panel's own repaint is a plain partial update of its area.
     m_menuRect = QRect(m->mapTo(this, QPoint(0, 0)), m->size());
@@ -1515,7 +1515,7 @@ void Browser::menuClosed()
 {
     // KoboEink flashes the area the panel covered once it is gone (kb_overlay).
     m_menuRect = QRect();
-    m_view->setUpdatesEnabled(true);   // the page catches up with whatever loaded meanwhile
+    if (m_eink) m_eink->setQuiet(0);   // the page catches up with whatever it painted meanwhile
 }
 
 void Browser::toggleAdBlock()
