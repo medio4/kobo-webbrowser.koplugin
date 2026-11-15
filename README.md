@@ -46,7 +46,7 @@ file from Web browser → **Device info for a bug report**.
 | --- | --- | --- |
 | Clara BW | **Tested** | The model it is developed on. |
 | Clara Colour | Expected to work | Same board family as the Clara BW. Pages are shown in gray. |
-| Libra Colour | Fix waiting for confirmation | Touch did not work up to v0.4.0 ([#3](../../issues/3)); fixed in the next release, not yet confirmed on a device. Pages are shown in gray. |
+| Libra Colour | Reported working | Touch did not work up to v0.4.0 ([#3](../../issues/3)); fixed in v0.4.1 and confirmed by an owner. Pages are shown in gray. |
 | Elipsa 2E | Untested, may work | MediaTek board like the Clara BW. Buttons and text are sized for a 6" 300 dpi screen. |
 | Clara 2E, Libra 2, Clara HD, Libra H2O, Forma, Nia | Untested | Older NXP boards: the fast screen refresh is not used there, and the picture may come out turned or wrong. |
 | Aura, Aura H2O, Aura One, Aura Edition 2, Glo HD, Touch 2.0 | Untested | As above, with an older touch panel protocol that is supported but untried. |
