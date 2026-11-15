@@ -132,15 +132,102 @@
 
     // --- timing
     var perf = w.performance;
+    var perfStubs = {
+        getEntries: function () { return []; },
+        getEntriesByType: function () { return []; },
+        getEntriesByName: function () { return []; },
+        mark: function () {}, measure: function () {}, clearMarks: function () {}, clearMeasures: function () {}
+    };
     if (perf) {
         def(perf, 'now', function () { return Date.now(); });
-        def(perf, 'getEntries', function () { return []; });
-        def(perf, 'getEntriesByType', function () { return []; });
-        def(perf, 'getEntriesByName', function () { return []; });
-        def(perf, 'mark', function () {});
-        def(perf, 'measure', function () {});
-        def(perf, 'clearMarks', function () {});
-        def(perf, 'clearMeasures', function () {});
+        for (var pk in perfStubs) def(perf, pk, perfStubs[pk]);
+    }
+    // Some builds of the engine don't let anything be added to window.performance (or have
+    // none): put a plain object in its place that passes on what the real one has.
+    if (!perf || typeof perf.getEntriesByType !== 'function') {
+        var t0 = Date.now(), real = perf, px = {
+            now: function () { return real && real.now ? real.now() : Date.now() - t0; },
+            timing: real ? real.timing : { navigationStart: t0 },
+            navigation: real ? real.navigation : { type: 0, redirectCount: 0 },
+            timeOrigin: t0
+        };
+        for (var sk in perfStubs) px[sk] = perfStubs[sk];
+        try { Object.defineProperty(w, 'performance', { value: px, writable: true, configurable: true }); }
+        catch (e) { try { w.performance = px; } catch (e2) {} }
+    }
+
+    // --- dates and numbers in the user's language. The engine leans on the system's ICU
+    // data for these, and where that is incomplete "new Intl.DateTimeFormat()" throws and
+    // takes the page's script with it. Plain English stand-ins are better than that.
+    var pad2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
+                  'October', 'November', 'December'];
+    var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    var plainDate = function (d, o) {
+        o = o || {};
+        var wantDate = o.year || o.month || o.day || o.weekday || o.dateStyle, out = [];
+        var wantTime = o.hour || o.minute || o.second || o.timeStyle;
+        if (!wantDate && !wantTime) wantDate = true;
+        if (wantDate) {
+            var m = o.month === 'long' ? MONTHS[d.getMonth()] : o.month === 'short' ? MONTHS[d.getMonth()].substr(0, 3) : null;
+            var s = '';
+            if (o.weekday) s += (o.weekday === 'long' ? DAYS[d.getDay()] : DAYS[d.getDay()].substr(0, 3)) + ', ';
+            if (m) s += m + ' ' + d.getDate() + (o.year === undefined && o.dateStyle === undefined && !o.day ? '' : ', ' + d.getFullYear());
+            else s += (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear();
+            out.push(s);
+        }
+        if (wantTime) {
+            var h = d.getHours(), t = (h % 12 || 12) + ':' + pad2(d.getMinutes());
+            if (o.second) t += ':' + pad2(d.getSeconds());
+            out.push(t + (h < 12 ? ' AM' : ' PM'));
+        }
+        return out.join(', ');
+    };
+    var works = function (f) { try { f(); return true; } catch (e) { return false; } };
+    if (!w.Intl) { try { w.Intl = {}; } catch (e) {} }
+    if (w.Intl && !works(function () { new Intl.DateTimeFormat('en-US').format(new Date()); })) {
+        var DTF = function (locales, options) {
+            if (!(this instanceof DTF)) return new DTF(locales, options);
+            this._o = options || {};
+        };
+        DTF.prototype.format = function (d) { return plainDate(d === undefined ? new Date() : new Date(d), this._o); };
+        DTF.prototype.formatToParts = function (d) { return [{ type: 'literal', value: this.format(d) }]; };
+        DTF.prototype.resolvedOptions = function () {
+            return { locale: 'en-US', calendar: 'gregory', numberingSystem: 'latn', timeZone: 'UTC' };
+        };
+        DTF.supportedLocalesOf = function () { return ['en-US']; };
+        Intl.DateTimeFormat = DTF;
+        Date.prototype.toLocaleString = function (l, o) {
+            return plainDate(this, o || { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+        };
+        Date.prototype.toLocaleDateString = function (l, o) { return plainDate(this, o || { year: 'numeric', month: 'numeric', day: 'numeric' }); };
+        Date.prototype.toLocaleTimeString = function (l, o) { return plainDate(this, o || { hour: 'numeric', minute: 'numeric', second: 'numeric' }); };
+    }
+    if (w.Intl && !works(function () { new Intl.NumberFormat('en-US').format(1234.5); })) {
+        var plainNumber = function (n, o) {
+            o = o || {};
+            if (typeof n !== 'number' || !isFinite(n)) return String(n);
+            var max = o.maximumFractionDigits === undefined ? 3 : o.maximumFractionDigits;
+            var min = o.minimumFractionDigits || 0;
+            if (o.style === 'percent') n *= 100;
+            var s = Math.abs(n).toFixed(Math.max(min, Math.min(max, 20)));
+            if (s.indexOf('.') >= 0) {
+                var parts = s.split('.'), frac = parts[1].replace(/0+$/, '');
+                while (frac.length < min) frac += '0';
+                s = parts[0] + (frac ? '.' + frac : '');
+            }
+            if (o.useGrouping !== false) s = s.replace(/^\d+/, function (i) { return i.replace(/\B(?=(\d{3})+$)/g, ','); });
+            return (n < 0 ? '-' : '') + s + (o.style === 'percent' ? '%' : '');
+        };
+        var NF = function (locales, options) {
+            if (!(this instanceof NF)) return new NF(locales, options);
+            this._o = options || {};
+        };
+        NF.prototype.format = function (n) { return plainNumber(Number(n), this._o); };
+        NF.prototype.resolvedOptions = function () { return { locale: 'en-US', numberingSystem: 'latn' }; };
+        NF.supportedLocalesOf = function () { return ['en-US']; };
+        Intl.NumberFormat = NF;
+        Number.prototype.toLocaleString = function (l, o) { return plainNumber(Number(this), o); };
     }
     def(w, 'requestAnimationFrame', w.webkitRequestAnimationFrame || function (f) {
         return setTimeout(function () { f(Date.now()); }, 16);
