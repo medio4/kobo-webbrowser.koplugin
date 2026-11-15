@@ -10,7 +10,7 @@
 #include <QtWidgets/QLabel>
 
 MenuPanel::MenuPanel(QWidget *parent, int top)
-    : QWidget(parent), m_top(top), m_row(0), m_col(0), m_cols(2)
+    : QWidget(parent), m_top(top), m_row(0), m_col(0), m_cols(2), m_placedW(0)
 {
     // A landscape screen is too short for two columns of buttons: use four.
     if (parent && parent->width() > parent->height()) m_cols = 4;
@@ -74,6 +74,15 @@ void MenuPanel::addSpacer()
     m_row++;
 }
 
+void MenuPanel::setKeep(bool keep) { setAttribute(Qt::WA_DeleteOnClose, !keep); }
+
+void MenuPanel::prepare()
+{
+    if (parentWidget()) resize(parentWidget()->size());
+    place();
+    m_box->grab();   // paints every button once: fonts and icons are loaded and cached
+}
+
 void MenuPanel::popup()
 {
     if (parentWidget()) resize(parentWidget()->size());
@@ -99,6 +108,8 @@ void MenuPanel::picked()
 
 void MenuPanel::place()
 {
+    if (m_placedW == width() && !m_targets.isEmpty()) return;   // same size as last time: nothing to redo
+    m_placedW = width();
     int w = qMin(width() - 24, m_cols > 2 ? kbPx(1400) : kbPx(820));
     m_box->setFixedWidth(w);
     m_box->adjustSize();

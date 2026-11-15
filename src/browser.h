@@ -28,6 +28,8 @@ class QNetworkRequest;
 #include "touchwebview.h"
 #include "flatbutton.h"
 #include "keyboard.h"
+#include "menupanel.h"
+#include <QtCore/QPointer>
 
 class Browser : public QMainWindow {
     Q_OBJECT
@@ -112,6 +114,7 @@ private slots:
     void rotationSettled();
     void pinchZoom(double ratio);   // two-finger pinch: ratio > 1 zooms in
     void openSavedEpub(const QString &path);
+    void buildMenu();
     void showToc();
     void checkSiteMenu();        // after a tap: did a site's menu button do nothing? (sitemenu.h)
     void showSiteMenu();
@@ -163,6 +166,9 @@ private:
     void placeTextSizeBar();
     void rotateTo(int angle);
     QRect m_menuRect;
+    QPointer<MenuPanel> m_menuPanel;   // the Menu, built once and kept (buildMenu)
+    QString m_menuSig;                 // what it was built for: rebuilt when that changes
+    FlatButton *m_menuHistory, *m_menuAdBlock;   // buttons whose label changes
     QList<EpubSaver::ChapterLink> m_seriesLinks;
     QString m_seriesTitle;
     QWebPage *m_probe;

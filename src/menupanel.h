@@ -21,6 +21,10 @@ public:
     FlatButton *addAction(const QString &label, QObject *receiver, const char *slot, bool wide = false,
                           const QString &icon = QString());   // icon: KOReader icon name (icons.h)
     void popup();
+    // Kept and shown again (the browser's Menu) instead of deleted when it closes.
+    void setKeep(bool keep);
+    // Lay out and paint once off screen, so the first popup() has nothing left to prepare.
+    void prepare();
     bool atRowStart() const { return m_col == 0; }
     void addSection(const QString &title);   // small heading across both columns
     void addSpacer();
@@ -37,6 +41,7 @@ private:
     QWidget *m_box;
     QGridLayout *m_grid;
     int m_top, m_row, m_col, m_cols;
+    int m_placedW;   // width place() last fitted the buttons for (0 = not yet)
     struct Target { QObject *receiver; QByteArray slot; };
     QList<QPair<QAbstractButton *, Target> > m_targets;
 };

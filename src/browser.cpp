@@ -275,6 +275,9 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     connect(m_kbd, SIGNAL(hidePressed()), this, SLOT(hideKeyboard()));
     connect(m_kbd, SIGNAL(backspacePressed()), this, SLOT(flashUrlBar()));
     connect(m_url, SIGNAL(textChanged(QString)), this, SLOT(urlTextChanged(QString)));
+    // Build the Menu a few seconds in, while nothing else is going on, so its first opening is quick.
+    m_menuHistory = m_menuAdBlock = 0;
+    QTimer::singleShot(4000, this, SLOT(buildMenu()));
     // KOReader's own keyboard (when launched by the plugin with KB_KBD_FILE set).
     m_touch = 0;
     m_native = new NativeTextEntry("KB_KBD_FILE", "KB_KBD_REPLY", this);
@@ -1432,12 +1435,23 @@ void Browser::runQuickAction(const QString &key)
     QMetaObject::invokeMethod(this, slot, Qt::QueuedConnection);
 }
 
-void Browser::showMenu()
+// The Menu is built once and kept (two dozen buttons with icons take a while to make on this
+// processor); opening it only shows it. It is made again when what it holds changes.
+void Browser::buildMenu()
 {
-    hideKeyboard();
+    QElapsedTimer t; t.start();
+    const bool plugin = m_menu && m_menu->available();   // started from the KOReader plugin
+    const bool rot = m_eink && m_eink->canRotate();
+    QString sig = QString("%1%2%3%4").arg(plugin).arg(PageNavigator::enabled()).arg(rot)
+                      .arg(centralWidget()->width() > centralWidget()->height());
+    if (m_menuPanel && sig == m_menuSig) return;
+    delete m_menuPanel;
+    m_menuSig = sig;
     int top = m_bar->mapTo(centralWidget(), QPoint(0, m_bar->height())).y() + 4;
     MenuPanel *m = new MenuPanel(centralWidget(), top);
-    const bool plugin = m_menu && m_menu->available();   // started from the KOReader plugin
+    m->setKeep(true);
+    m->hide();
+    m_menuPanel = m;
     m->addSection("Go to");
     m->addAction("Home", this, SLOT(goHome()), false, "home");
     m->addAction("Bookmarks", this, SLOT(showBookmarks()), false, "bookmark");
@@ -1458,20 +1472,36 @@ void Browser::showMenu()
     if (PageNavigator::enabled()) m->addAction("Page overview", this, SLOT(showNavigator()), false, "appbar.pageview");
     m->addAction("Clean screen", this, SLOT(fullRefresh()), m->atRowStart(), "appbar.contrast");
     m->addSection("Settings");
-    m->addAction(HistoryStore::enabled() ? "History: on" : "History: off", this, SLOT(toggleHistory()), false, "back.top");
-    m->addAction(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off", this, SLOT(toggleAdBlock()), false, "cancel");
-    const bool rot = m_eink && m_eink->canRotate();
+    m_menuHistory = m->addAction("History: off", this, SLOT(toggleHistory()), false, "back.top");
+    m_menuAdBlock = m->addAction("Ad blocking: off", this, SLOT(toggleAdBlock()), false, "cancel");
     if (rot) m->addAction("Rotate screen", this, SLOT(showRotateMenu()), !plugin, "appbar.rotation");
     if (plugin) m->addAction("KOReader menu", this, SLOT(openKoreaderMenu()), !rot, "appbar.settings");
     m->addSpacer();
     if (plugin) m->addAction("Minimize", this, SLOT(minimize()), false, "zoom.page");
     m->addAction("Exit browser", this, SLOT(quit()), !plugin, "exit");
     connect(m, SIGNAL(closed()), this, SLOT(menuClosed()));
+    m->prepare();   // lay it out and load its icons now, not at the first tap
+    qDebug() << "menu: built in" << t.elapsed() << "ms";
+}
+
+void Browser::showMenu()
+{
+    QElapsedTimer t; t.start();
+    hideKeyboard();
+    buildMenu();
+    MenuPanel *m = m_menuPanel;
+    m_menuHistory->setText(HistoryStore::enabled() ? "History: on" : "History: off");
+    m_menuAdBlock->setText(AdBlock::instance()->isEnabled() ? "Ad blocking: on" : "Ad blocking: off");
+    // While the Menu is up it comes first: the page behind it is not repainted (a page that
+    // is still loading repaints over and over, and every repaint costs processor time and
+    // an e-ink update that the Menu's own taps then have to wait behind).
+    m_view->setUpdatesEnabled(false);
     m->popup();
     // No full-screen flash: the panel's own repaint is a plain partial update of its area.
     m_menuRect = QRect(m->mapTo(this, QPoint(0, 0)), m->size());
     foreach (QObject *o, m->children())
         if (QWidget *w = qobject_cast<QWidget *>(o)) { m_menuRect = QRect(w->mapTo(this, QPoint(0, 0)), w->size()); break; }
+    qDebug() << "menu: shown in" << t.elapsed() << "ms";
 }
 
 // The panel was drawn over the page: once the page has repainted there, give that area
@@ -1480,6 +1510,7 @@ void Browser::menuClosed()
 {
     // KoboEink flashes the area the panel covered once it is gone (kb_overlay).
     m_menuRect = QRect();
+    m_view->setUpdatesEnabled(true);   // the page catches up with whatever loaded meanwhile
 }
 
 void Browser::toggleAdBlock()
