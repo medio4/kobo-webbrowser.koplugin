@@ -57,6 +57,15 @@ export QT_QPA_PLATFORM=kobo
 # Touch / button input devices (override with KB_TOUCH_DEV / KB_KEYS_DEV)
 export KB_TOUCH_DEV="${KB_TOUCH_DEV:-/dev/input/event1}"
 export KB_KEYS_DEV="${KB_KEYS_DEV:-}"   # Kobo keys plugin off by default (set to /dev/input/event0 to try)
+# Which way the touch panel is mounted. The default (swap X/Y, mirror X) is the Clara BW's;
+# the Libra Colour (monza) mirrors Y instead, as in KOReader's device table for Kobo_monza.
+# Set KB_TOUCH_NOMIRRORX / KB_TOUCH_MIRRORY yourself to override.
+case "$PRODUCT" in
+    monza*)
+        if [ -z "$KB_TOUCH_NOMIRRORX" ] && [ -z "$KB_TOUCH_MIRRORY" ]; then
+            export KB_TOUCH_NOMIRRORX=1 KB_TOUCH_MIRRORY=1
+        fi ;;
+esac
 export KB_HOME="${KB_HOME:-https://lite.duckduckgo.com/lite/}"
 # Where "Save" puts EPUBs: KOReader's home folder (settings.reader.lua home_dir) + /Web
 if [ -z "$KB_LIBRARY_DIR" ]; then
