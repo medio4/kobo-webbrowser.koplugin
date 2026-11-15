@@ -13,6 +13,9 @@
 #include <QtCore/QFile>
 #include <QtCore/QCoreApplication>
 #include <QtWebKitWidgets/QWebFrame>
+#include <QtWebKitWidgets/QWebPage>
+#include <QtCore/QUrl>
+#include <QtCore/QTimer>
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
@@ -417,4 +420,62 @@ qint64 CssCompatReply::readData(char *data, qint64 maxSize)
     memcpy(data, m_data.constData() + m_pos, n);
     m_pos += n;
     return n;
+}
+
+// ---------------------------------------------------------------------------
+// Memory guard
+
+static long memAvailableKb()
+{
+    FILE *f = fopen("/proc/meminfo", "r");
+    if (!f) return -1;
+    char line[128];
+    long kb = -1;
+    while (fgets(line, sizeof line, f))
+        if (!strncmp(line, "MemAvailable:", 13)) { kb = atol(line + 13); break; }
+    fclose(f);
+    return kb;
+}
+
+void MemTune::watch(QWebView *view)
+{
+    m_view = view;
+    m_softKb = envInt("KB_MEM_SOFT_MB", 40) * 1024;
+    m_hardKb = envInt("KB_MEM_HARD_MB", 24) * 1024;
+    if (m_hardKb <= 0 || memAvailableKb() < 0) return;   // off, or a kernel without MemAvailable
+    connect(&m_guard, SIGNAL(timeout()), this, SLOT(guardTick()));
+    m_guard.start(1000);
+    qDebug() << "memguard: relief below" << m_softKb / 1024 << "MB, page stopped below" << m_hardKb / 1024
+             << "MB;" << memAvailableKb() / 1024 << "MB available now";
+}
+
+void MemTune::guardTick()
+{
+    const long avail = memAvailableKb();
+    if (avail < 0 || avail >= m_softKb || !m_view) return;
+    if (avail < m_hardKb) {
+        // The page is eating the Kobo's memory: take it away while we still can.
+        const QUrl url = m_view->url();
+        qWarning() << "memguard:" << avail / 1024 << "MB left, RSS" << vmRssKb() / 1024 << "MB: page stopped";
+        m_view->stop();
+        QString u = url.toString().toHtmlEscaped();
+        m_view->page()->mainFrame()->setHtml(
+            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Page stopped: not enough memory</title>"
+            "<style>body{font-family:sans-serif;font-size:22px;margin:40px 30px;line-height:1.5}h1{font-size:30px}"
+            "a.b{display:inline-block;border:2px solid #000;border-radius:8px;padding:12px 28px;color:#000;"
+            "text-decoration:none;margin-top:20px}</style></head><body><h1>Page stopped</h1>"
+            "<p>This page needs more memory than the Kobo has, so it was stopped before it could freeze the device.</p>"
+            "<p style=\"word-break:break-all;color:#444\">" + u + "</p>"
+            "<a class=\"b\" href=\"" + u + "\">Try again</a></body></html>", url);
+        QWebSettings::clearMemoryCaches();
+        m_lastRelief.start();
+        QTimer::singleShot(300, this, SLOT(trimNow()));
+        return;
+    }
+    // Getting low: give back what can be rebuilt (decoded images, dead cache entries).
+    if (m_lastRelief.isValid() && m_lastRelief.elapsed() < 5000) return;
+    m_lastRelief.start();
+    qDebug() << "memguard:" << avail / 1024 << "MB left: dropping caches";
+    QWebSettings::clearMemoryCaches();
+    trimNow();
 }

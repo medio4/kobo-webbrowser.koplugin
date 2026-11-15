@@ -7,10 +7,12 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QTimer>
 #include <QtCore/QPointer>
+#include <QtCore/QElapsedTimer>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
 #include "csscompat.h"
 class QWebSettings;
+#include <QtWebKitWidgets/QWebView>
 
 class MemTune : public QObject {
     Q_OBJECT
@@ -28,8 +30,20 @@ public slots:
     // KB_NO_TRIM=1 disables.
     void scheduleTrim();
     void trimNow();
+public:
+    // Memory guard: once a second, look at how much memory the Kobo has left. Below
+    // KB_MEM_SOFT_MB (40) the caches are dropped; below KB_MEM_HARD_MB (24) the page is
+    // stopped and replaced by a short note, before the whole device starts to crawl (it has
+    // no swap). run.sh has the last resort: it ends the browser below KB_MEM_KILL_MB (12).
+    void watch(QWebView *view);
+private slots:
+    void guardTick();
 private:
     QTimer m_timer;
+    QTimer m_guard;
+    QPointer<QWebView> m_view;
+    QElapsedTimer m_lastRelief;
+    int m_softKb, m_hardKb;
 };
 
 // Wraps image requests (Accept: image/... or *.gif) and rewrites the body when it

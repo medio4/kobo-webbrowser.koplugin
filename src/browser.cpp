@@ -297,7 +297,9 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     connect(m_view, SIGNAL(loadStarted()), this, SLOT(loadStarted()));
     connect(m_view, SIGNAL(loadProgress(int)), this, SLOT(loadProgress(int)));
     connect(m_view, SIGNAL(loadFinished(bool)), this, SLOT(loadFinished(bool)));
-    connect(m_view, SIGNAL(loadFinished(bool)), new MemTune(this), SLOT(scheduleTrim()));
+    MemTune *memTune = new MemTune(this);
+    connect(m_view, SIGNAL(loadFinished(bool)), memTune, SLOT(scheduleTrim()));
+    memTune->watch(m_view);
     if (m_eink)
         connect(m_view->pager(), SIGNAL(pageTurned()), m_eink, SLOT(hintPageTurn()));
 

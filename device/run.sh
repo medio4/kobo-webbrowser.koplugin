@@ -129,6 +129,25 @@ if [ -n "$KB_KOREADER_PID" ]; then
       fi ) &
     KPID=$!
 fi
+# Out of memory: a page that eats all the RAM freezes the whole Kobo (it has no swap) long
+# before the kernel steps in. The browser stops such a page itself (memguard in its log);
+# this is the last resort for when it can't: make the browser the first thing the kernel
+# would kill, and end it when less than KB_MEM_KILL_MB (12) MB is left (0 = off).
+echo 1000 > /proc/$BPID/oom_score_adj 2>/dev/null
+MPID=""
+if [ "${KB_MEM_KILL_MB:-12}" -gt 0 ] 2>/dev/null; then
+    ( LIMIT=$(( ${KB_MEM_KILL_MB:-12} * 1024 ))
+      while kill -0 $BPID 2>/dev/null; do
+          AVAIL=$(sed -n 's/^MemAvailable: *\([0-9]*\) kB/\1/p' /proc/meminfo)
+          if [ -n "$AVAIL" ] && [ "$AVAIL" -lt "$LIMIT" ]; then
+              echo "out of memory ($AVAIL kB left): browser ended" > "$ESCAPE_MARK"
+              kill -KILL $BPID 2>/dev/null
+              break
+          fi
+          sleep 1
+      done ) &
+    MPID=$!
+fi
 trap 'kill -TERM $BPID 2>/dev/null' TERM INT
 wait $BPID
 RC=$?
@@ -137,6 +156,7 @@ while kill -0 $BPID 2>/dev/null; do wait $BPID; RC=$?; done
 trap - TERM INT
 [ -n "$WPID" ] && kill -TERM $WPID 2>/dev/null
 [ -n "$KPID" ] && kill -TERM $KPID 2>/dev/null
+[ -n "$MPID" ] && kill -TERM $MPID 2>/dev/null
 if [ -f "$ESCAPE_MARK" ]; then
     echo "=== escape: $(cat "$ESCAPE_MARK")" >> "$LOG"
     # The browser died without restoring the screen: wipe it with a full flashing refresh
