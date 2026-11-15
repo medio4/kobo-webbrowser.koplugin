@@ -21,6 +21,11 @@ FbWriter::FbWriter() : m_fd(-1), m_mem(0), m_len(0), m_w(0), m_h(0), m_bpp(0), m
     m_mem = (unsigned char *)mmap(0, m_len, PROT_READ | PROT_WRITE, MAP_SHARED, m_fd, 0);
     if (m_mem == MAP_FAILED) { qWarning() << "fb: mmap failed" << strerror(errno); m_mem = 0; }
     qDebug() << "fb:" << m_w << "x" << m_h << "bpp" << m_bpp << "stride" << m_stride << "rota" << var.rotate;
+    // KOReader normally turns the panel to portrait before we start. If it is still sideways
+    // (some older boards), our copy assumes the wrong layout: say so in the log, which ends
+    // up in the plugin's "Device info for a bug report".
+    if (m_w > m_h)
+        qWarning() << "fb: the framebuffer is landscape; the picture may come out turned or cut off on this model";
 }
 
 FbWriter::~FbWriter()
