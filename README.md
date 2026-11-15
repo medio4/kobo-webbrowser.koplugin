@@ -47,6 +47,9 @@ older NXP and Allwinner models are untested.
   and right flicks work too), or touch, wait a moment and drag to scroll just a little.
   Hold and drag sideways on a wide table to slide it. Pinch to zoom, and use **Text size**
   (a small bar along the bottom with smaller, bigger and Done) for a size that is remembered. Text never shrinks below a readable minimum.
+- **Site menus:** many sites open their own menu (the three-lines button) with scripts this
+  engine can't run. When you tap such a button and nothing happens, the browser lists the
+  site's menu links itself.
 - **Contents** jumps to any heading on a long page.
 - **Page overview** (experimental, off by default): every screen of the page as a small
   picture, images shown as gray boxes; tap one to jump there. Turn it on in Tools → Web

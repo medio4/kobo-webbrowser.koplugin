@@ -41,6 +41,8 @@ class BookmarksOverlay : public QWidget {
 public:
     // history: show the browsing history (with Clear all) instead of the bookmarks.
     explicit BookmarksOverlay(QWidget *parent, bool history = false);
+    // A plain list of links to open (a site's own menu, see Browser::showSiteMenu): no Remove.
+    BookmarksOverlay(QWidget *parent, const QList<Bookmark> &links, const QString &heading);
 signals:
     void openUrl(const QString &url);
     void closed();
@@ -64,6 +66,8 @@ private:
     QPushButton *m_prev, *m_next;
     int m_page, m_perPage;
     bool m_history;
+    bool m_links;      // a given list of links, not the stored bookmarks or history
+    void init(const QString &heading);
     void store();
 };
 

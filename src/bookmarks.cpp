@@ -139,11 +139,23 @@ void HistoryStore::record(const QString &url, const QString &title)
 // ------------------------------------------------------------- overlay
 
 BookmarksOverlay::BookmarksOverlay(QWidget *parent, bool history)
-    : QWidget(parent), m_page(0), m_perPage(8), m_history(history)
+    : QWidget(parent), m_page(0), m_perPage(8), m_history(history), m_links(false)
 {
+    m_items = history ? HistoryStore::load() : BookmarkStore::load();
+    init(history ? (HistoryStore::enabled() ? "History" : "History (paused)") : "Bookmarks");
+}
+
+BookmarksOverlay::BookmarksOverlay(QWidget *parent, const QList<Bookmark> &links, const QString &heading)
+    : QWidget(parent), m_items(links), m_page(0), m_perPage(8), m_history(false), m_links(true)
+{
+    init(heading);
+}
+
+void BookmarksOverlay::init(const QString &heading)
+{
+    const bool history = m_history;
     setAttribute(Qt::WA_DeleteOnClose);
     setProperty("kb_overlay", true);   // e-ink: flash its area clean when it closes
-    m_items = history ? HistoryStore::load() : BookmarkStore::load();
     QFrame *box = new QFrame(this);
     m_box = box;
     box->setFrameStyle(QFrame::Box | QFrame::Plain);
@@ -158,7 +170,7 @@ BookmarksOverlay::BookmarksOverlay(QWidget *parent, bool history)
     v->setContentsMargins(20, 20, 20, 20);
     v->setSpacing(12);
     QFont f; f.setPixelSize(38);
-    QLabel *head = new QLabel(history ? (HistoryStore::enabled() ? "History" : "History (paused)") : "Bookmarks");
+    QLabel *head = new QLabel(heading);
     head->setFont(f); head->setAlignment(Qt::AlignCenter);
     v->addWidget(head);
     m_list = new QVBoxLayout;
@@ -194,7 +206,7 @@ BookmarksOverlay::BookmarksOverlay(QWidget *parent, bool history)
     connect(m_next, SIGNAL(clicked()), this, SLOT(nextPage()));
     connect(close, SIGNAL(clicked()), this, SLOT(closeClicked()));
 
-    if (parent) resize(parent->size());
+    if (parentWidget()) resize(parentWidget()->size());
     showPage(0);
     raise();
     show();
@@ -215,7 +227,7 @@ void BookmarksOverlay::showPage(int page)
     m_page = qBound(0, page, pages - 1);
     QFont f; f.setPixelSize(32);
     if (m_items.isEmpty()) {
-        QLabel *e = new QLabel(m_history
+        QLabel *e = new QLabel(m_links ? "No links found." : m_history
             ? (HistoryStore::enabled() ? "No history yet." : "History is off. Turn it on in the Menu.")
             : "No bookmarks yet. Open a page, then Menu > Add bookmark.");
         e->setFont(f); e->setWordWrap(true); e->setAlignment(Qt::AlignCenter);
@@ -226,7 +238,7 @@ void BookmarksOverlay::showPage(int page)
         row->setSpacing(10);
         QString t = m_items[i].title;
         QFontMetrics fm(f);
-        QPushButton *open = new QPushButton(fm.elidedText(t, Qt::ElideRight, qMax(200, width() - 380)));
+        QPushButton *open = new QPushButton(fm.elidedText(t, Qt::ElideRight, qMax(200, width() - (m_links ? 150 : 380))));
         open->setFont(f); open->setMinimumHeight(96); open->setFocusPolicy(Qt::NoFocus);
         open->setStyleSheet("QPushButton { text-align: left; padding-left: 16px; border: 2px solid black; border-radius: 8px; background: white; color: black; }");
         open->setProperty("idx", i);
@@ -237,7 +249,7 @@ void BookmarksOverlay::showPage(int page)
         connect(open, SIGNAL(clicked()), this, SLOT(entryClicked()));
         connect(del, SIGNAL(clicked()), this, SLOT(removeClicked()));
         row->addWidget(open, 1);
-        row->addWidget(del);
+        if (m_links) del->deleteLater(); else row->addWidget(del);
         m_list->addLayout(row);
     }
     m_pageLabel->setText(QString("%1 / %2").arg(m_page + 1).arg(pages));

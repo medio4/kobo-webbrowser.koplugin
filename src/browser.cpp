@@ -11,6 +11,7 @@
 #include <QtCore/QDateTime>
 #include "epub.h"
 #include "download.h"
+#include "sitemenu.h"
 #include "phoneshare.h"
 #include "menupanel.h"
 #include "bookmarks.h"
@@ -486,6 +487,8 @@ void Browser::keyboardGo()
 // above the keyboard.
 void Browser::pageTapped()
 {
+    // A site menu button that does nothing gets our own list of its links (sitemenu.h).
+    QTimer::singleShot(600, this, SLOT(checkSiteMenu()));
     QWebFrame *frame = m_view->page()->mainFrame();
     QWebHitTestResult hit = frame->hitTestContent(m_tapRelease);
     bool editable = hit.isContentEditable();
@@ -954,6 +957,7 @@ void Browser::loadFinished(bool ok)
         m_status->setText(ok ? m_view->title() : "Failed to load page");
     }
     if (m_phone) m_phone->setCurrentPage(m_view->title(), m_view->url().toString());
+    if (ok) m_view->page()->mainFrame()->evaluateJavaScript(QString::fromLatin1(kSiteMenuWatchJs));
     if (ok && !m_offlineShown) HistoryStore::record(m_view->url().toString(), m_view->title());
     if (ok && m_restoreY > 0) {
         m_view->page()->mainFrame()->setScrollPosition(QPoint(0, m_restoreY));
@@ -1696,4 +1700,33 @@ void Browser::downloadFinished(bool ok, const QString &msg)
     m_status->setText("Saved: " + shown);
     SavedDialog *d = new SavedDialog(msg, centralWidget());
     connect(d, SIGNAL(openRequested(QString)), this, SLOT(openSavedEpub(QString)));
+}
+
+// ---- Site menu (sitemenu.h): a site's own menu button that can't work here
+
+void Browser::checkSiteMenu()
+{
+    if (m_view->page()->mainFrame()->evaluateJavaScript(QString::fromLatin1(kSiteMenuDeadJs)).toInt())
+        showSiteMenu();
+}
+
+void Browser::showSiteMenu()
+{
+    QString found = m_view->page()->mainFrame()->evaluateJavaScript(QString::fromLatin1(kSiteMenuLinksJs)).toString();
+    QList<Bookmark> links;
+    foreach (const QString &line, found.split('\n', QString::SkipEmptyParts)) {
+        Bookmark b;
+        b.title = line.section('\t', 0, 0);
+        b.url = line.section('\t', 1);
+        if (!b.title.isEmpty() && !b.url.isEmpty()) links << b;
+    }
+    qDebug() << "sitemenu: the page's menu button did nothing," << links.size() << "navigation links";
+    if (links.size() < 3) {
+        m_status->setText("This site's menu needs scripts this browser can't run");
+        return;
+    }
+    hideKeyboard();
+    m_status->setText("Site menu: the site's own menu can't open here");
+    BookmarksOverlay *b = new BookmarksOverlay(centralWidget(), links, "Site menu");
+    connect(b, SIGNAL(openUrl(QString)), this, SLOT(phoneUrl(QString)));
 }
