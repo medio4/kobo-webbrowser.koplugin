@@ -13,6 +13,8 @@ public:
 protected:
     QString userAgentForUrl(const QUrl &url) const;
     bool acceptNavigationRequest(QWebFrame *frame, const QNetworkRequest &request, NavigationType type);
+    // Script errors go to the log (file name and line only), a few per page.
+    void javaScriptConsoleMessage(const QString &message, int lineNumber, const QString &sourceID);
 public:
     // A page that fails to load (no such site, no connection, timeout) shows a short
     // error page instead of silently keeping the previous one.
@@ -24,8 +26,12 @@ private slots:
     void runBingFixup();
     void adblockReset();
     void adblockReport();
+    void watchFrame(QWebFrame *frame);   // new frame: give its window the fill-ins too
+    void addFillIns();                   // src/js/polyfills.js, before the page's own scripts
 private:
     void applyUserCss();
     QByteArray m_userCss;
+    QString m_fillIns;
+    int m_jsMessages;
 };
 #endif

@@ -5,6 +5,7 @@
 #include <QtWebKitWidgets/QWebFrame>
 #include <QtNetwork/QNetworkRequest>
 #include <QtCore/QUrl>
+#include <QtCore/QFile>
 #include <QtCore/QUrlQuery>
 #include <QtCore/QTimer>
 #include <QtCore/QStringList>
@@ -96,6 +97,12 @@ KoboWebPage::KoboWebPage(QObject *parent) : QWebPage(parent)
     connect(mainFrame(), SIGNAL(loadFinished(bool)), this, SLOT(adblockReport()));
     setNetworkAccessManager(new KoboNetworkAccessManager(this));
     applyUserCss();
+    // Fill-ins for newer browser features (src/js/polyfills.js), in every frame.
+    m_jsMessages = 0;
+    QFile pf(":/js/js/polyfills.js");
+    if (pf.open(QIODevice::ReadOnly)) m_fillIns = QString::fromUtf8(pf.readAll());
+    watchFrame(mainFrame());
+    connect(this, SIGNAL(frameCreated(QWebFrame*)), this, SLOT(watchFrame(QWebFrame*)));
 }
 
 // The style sheet every page gets: e-ink colours, and with ad blocking on, no empty ad boxes.
@@ -175,6 +182,7 @@ void KoboWebPage::adblockReset()
 {
     AdBlock::instance()->refresh();   // settings changed in KOReader's menu apply from here on
     AdBlock::instance()->resetCount();
+    m_jsMessages = 0;
     applyUserCss();
 }
 
@@ -251,4 +259,30 @@ bool KoboWebPage::extension(Extension extension, const ExtensionOption *option, 
     ret->encoding = "utf-8";
     ret->baseUrl = opt->url;
     return true;
+}
+
+// ------------------------------------------------------------- scripts
+
+void KoboWebPage::watchFrame(QWebFrame *frame)
+{
+    if (!frame || m_fillIns.isEmpty() || getenv("KB_NO_FILL_INS")) return;
+    connect(frame, SIGNAL(javaScriptWindowObjectCleared()), this, SLOT(addFillIns()));
+}
+
+// A frame got a fresh window object (a new document is about to run its scripts).
+void KoboWebPage::addFillIns()
+{
+    QWebFrame *frame = qobject_cast<QWebFrame *>(sender());
+    if (frame) frame->evaluateJavaScript(m_fillIns);
+}
+
+// What stops a page's scripts on this engine is worth knowing (it ends up in the plugin's
+// Device info): the file name and line, never the address. A few per page.
+void KoboWebPage::javaScriptConsoleMessage(const QString &message, int lineNumber, const QString &sourceID)
+{
+    static const bool all = getenv("KB_JS_LOG") != 0;
+    if (!all && !message.contains("Error")) return;
+    if (++m_jsMessages > (all ? 200 : 12)) return;
+    QString file = sourceID.section('?', 0, 0).section('/', -1);
+    qDebug() << "js:" << file.left(60) << lineNumber << message.left(240);
 }
