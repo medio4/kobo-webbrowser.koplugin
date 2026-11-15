@@ -13,6 +13,7 @@
 //   - selectors: :is()/:where() -> :-webkit-any(), :not(a, b) -> :not(a):not(b), and a selector
 //     this WebKit can't read (:has(), :focus-visible, ...) is taken out of its list so the
 //     rest of the rule survives
+//   - media queries: (width>=960px) -> (min-width:960px) and the other range forms
 // The prefixed copy goes before the original declaration, so an engine that understands the
 // standard form still uses it. Declarations whose var() can't be resolved are left alone.
 // Works on bytes: ASCII-compatible encodings (UTF-8, Latin-1); UTF-16 input is passed through.
@@ -29,7 +30,8 @@ struct Stats {
     int decls;     // declarations changed
     int vars;      // var() references resolved
     int selectors; // selector lists changed
-    Stats() : decls(0), vars(0), selectors(0) {}
+    int media;     // media queries changed
+    Stats() : decls(0), vars(0), selectors(0), media(0) {}
 };
 
 // A whole style sheet (a .css file or the inside of a <style> element). Custom properties

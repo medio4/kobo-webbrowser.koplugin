@@ -137,6 +137,23 @@ int main(int argc, char **argv)
     check("nth-child kept", sheet("li:nth-child(2n+1):not(.a,.b){x:y}"), "li:nth-child(2n+1):not(.a):not(.b){x:y}");
     check("comment in selectors", sheet("a/*x*/:is(.b){x:y}"), "a :-webkit-any(.b){x:y}");
 
+    // Media query ranges
+    check("mq >=", sheet("@media screen and (width>=960px){a{x:y}}"), "@media screen and (min-width:960px){a{x:y}}");
+    check("mq <=", sheet("@media (width <= 479px) {a{x:y}}"), "@media (max-width:479px) {a{x:y}}");
+    check("mq two", sheet("@media screen and (width>=480px) and (width<=959px){a{x:y}}"),
+          "@media screen and (min-width:480px) and (max-width:959px){a{x:y}}");
+    check("mq < and >", sheet("@media (width<480px),(height>600.5px){a{x:y}}"),
+          "@media (max-width:479.99px),(min-height:600.51px){a{x:y}}");
+    check("mq value first", sheet("@media (400px<=width){a{x:y}}"), "@media (min-width:400px){a{x:y}}");
+    check("mq double", sheet("@media (400px <= width < 700px){a{x:y}}"),
+          "@media (min-width:400px) and (max-width:699.99px){a{x:y}}");
+    check("mq em", sheet("@media (width>=30em){a{order:1}}"), "@media (min-width:30em){a{-webkit-order:1;order:1}}");
+    check("mq old form untouched", sheet("@media (min-width:5px) and (orientation:portrait){a{x:y}}"),
+          "@media (min-width:5px) and (orientation:portrait){a{x:y}}");
+    check("mq unknown feature untouched", sheet("@media (scripting>=1){a{x:y}}"), "@media (scripting>=1){a{x:y}}");
+    check("mq nested", sheet("@media (width>=5px){@media (height<=9px){a{x:y}}}"),
+          "@media (min-width:5px){@media (max-height:9px){a{x:y}}}");
+
     // A <style> element of several megabytes, arriving in network-sized chunks
     {
         QByteArray rule = ".some-long-class-name-to-fill-space{order:1}\n", big = "<p>a</p><style>";

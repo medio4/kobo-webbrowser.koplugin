@@ -927,6 +927,96 @@ static QByteArray rewriteSelectorList(const QByteArray &prelude)
 }
 
 // ---------------------------------------------------------------------------
+// Media queries
+//
+// This WebKit ignores a whole @media block whose query it can't read, and it only knows
+// the min-/max- forms. The range forms of Media Queries 4 become those:
+//   (width>=960px)        -> (min-width:960px)
+//   (width<480px)         -> (max-width:479.99px)
+//   (400px<=width<=700px) -> (min-width:400px) and (max-width:700px)
+
+// "960px" moved by delta (so that > and < can be said with min- and max-).
+static QByteArray nudge(const QByteArray &value, double delta)
+{
+    char *end = 0;
+    double v = strtod(value.constData(), &end);
+    if (end == value.constData()) return value;   // calc(), a ratio, ...: close enough as it is
+    return QByteArray::number(v + delta, 'g', 10) + QByteArray(end);
+}
+
+// One comparison as a min-/max- feature in parentheses; op is "<", "<=", ">", ">=" or "=".
+static QByteArray rangeFeature(const QByteArray &feature, const QByteArray &op, const QByteArray &value)
+{
+    if (op == ">=") return "(min-" + feature + ":" + value + ")";
+    if (op == "<=") return "(max-" + feature + ":" + value + ")";
+    if (op == ">") return "(min-" + feature + ":" + nudge(value, 0.01) + ")";
+    if (op == "<") return "(max-" + feature + ":" + nudge(value, -0.01) + ")";
+    return "(" + feature + ":" + value + ")";
+}
+
+static QByteArray flipOp(const QByteArray &op)
+{
+    QByteArray f = op;
+    if (f[0] == '<') f[0] = '>'; else if (f[0] == '>') f[0] = '<';
+    return f;
+}
+
+// The inside of "(...)" if it is a range; empty if not (or not one we can express).
+static QByteArray rangeToMinMax(const QByteArray &inner)
+{
+    static const char *const features[] = { "width", "height", "device-width", "device-height", "aspect-ratio",
+        "device-aspect-ratio", "resolution", "color", "color-index", "monochrome", 0 };
+    QList<QByteArray> operands, ops;
+    const char *s = inner.constData();
+    int n = inner.size(), start = 0;
+    for (int i = 0; i < n; ++i) {
+        if (s[i] != '<' && s[i] != '>' && s[i] != '=') continue;
+        int e = i + 1;
+        if (e < n && s[e] == '=') ++e;
+        operands << range(s, start, i);
+        ops << QByteArray(s + i, e - i);
+        start = e;
+        i = e - 1;
+    }
+    operands << range(s, start, n);
+    foreach (const QByteArray &o, operands) if (o.isEmpty()) return QByteArray();
+    if (ops.size() == 1) {
+        QByteArray a = operands[0].toLower(), b = operands[1].toLower();
+        if (oneOf(a, features)) return rangeFeature(a, ops[0], operands[1]);
+        if (oneOf(b, features)) return rangeFeature(b, flipOp(ops[0]), operands[0]);
+    } else if (ops.size() == 2 && ops[0] != "=" && ops[1] != "=") {
+        QByteArray f = operands[1].toLower();
+        if (oneOf(f, features))
+            return rangeFeature(f, flipOp(ops[0]), operands[0]) + " and " + rangeFeature(f, ops[1], operands[2]);
+    }
+    return QByteArray();
+}
+
+// An @media prelude with its ranges rewritten; an empty array when nothing needs to change.
+static QByteArray rewriteMediaRanges(const QByteArray &prelude)
+{
+    const char *s = prelude.constData();
+    int n = prelude.size(), lit = 0;
+    if (!memchr(s, '<', n) && !memchr(s, '>', n)) return QByteArray();
+    QByteArray out;
+    for (int i = 0; i < n; ) {
+        if (s[i] == '"' || s[i] == '\'') { i = skipString(s, n, i); continue; }
+        if (s[i] != '(') { ++i; continue; }
+        int m = matchParen(s, n, i);
+        if (m < 0) break;
+        QByteArray inner(s + i + 1, m - i - 1);
+        QByteArray r = inner.contains('(') ? QByteArray() : rangeToMinMax(inner);
+        if (r.isEmpty()) { ++i; continue; }   // look inside: (not (width<5px)), calc(), ...
+        out.append(s + lit, i - lit);
+        out += r;
+        i = lit = m + 1;
+    }
+    if (lit == 0) return QByteArray();
+    out.append(s + lit, n - lit);
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // Style sheets
 
 static bool isRootSelector(const QByteArray &prelude)
@@ -1024,7 +1114,10 @@ struct Sheet {
                         if (q.contains("dark") || q.contains("print") || q.contains("forced-colors")
                             || q.contains("prefers-contrast")) sc = 2;
                     }
-                    emit(start, j + 1);
+                    QByteArray ranges;
+                    if (name == "media" && !collectOnly) ranges = rewriteMediaRanges(prelude);
+                    if (ranges.isEmpty()) emit(start, j + 1);
+                    else { emit(ranges); emit(j, j + 1); if (stats) ++stats->media; }
                     i = j + 1;
                     rules(i, true, sc);
                     if (i < n) { emit(i, i + 1); ++i; }
