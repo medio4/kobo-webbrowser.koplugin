@@ -19,6 +19,9 @@
 #ifndef ABS_MT_TRACKING_ID
 #define ABS_MT_TRACKING_ID 0x39
 #endif
+#ifndef ABS_MT_TOUCH_MAJOR
+#define ABS_MT_TOUCH_MAJOR 0x30
+#endif
 
 KoboTouchInput::KoboTouchInput(const QString &device, int screenW, int screenH,
                                bool swapXY, bool mirrorX, bool mirrorY, bool grab, QObject *parent)
@@ -43,12 +46,14 @@ KoboTouchInput::KoboTouchInput(const QString &device, int screenW, int screenH,
         if (ioctl(m_fd, EVIOCGABS(ABS_X), &ai) == 0) { m_minX = ai.minimum; m_maxX = ai.maximum; }
         if (ioctl(m_fd, EVIOCGABS(ABS_Y), &ai) == 0) { m_minY = ai.minimum; m_maxY = ai.maximum; }
     }
-    m_proto = KbTouchProto(kernelSlot());
+    // The plugin names the panel's kind (KB_TOUCH_PROTO); otherwise the events tell (touchproto.h).
+    m_proto = KbTouchProto(kernelSlot(), KbTouchProto::kindFromName(getenv("KB_TOUCH_PROTO")));
     if (grab && ioctl(m_fd, EVIOCGRAB, 1) != 0)
         qWarning() << "touch: EVIOCGRAB failed:" << strerror(errno);
     m_grab = grab; m_handedOff = false;
     qDebug() << "touch: opened" << device << "abs x" << m_minX << m_maxX << "y" << m_minY << m_maxY
-             << "swap" << m_swapXY << "mirrorX" << m_mirrorX << "mirrorY" << m_mirrorY;
+             << "swap" << m_swapXY << "mirrorX" << m_mirrorX << "mirrorY" << m_mirrorY
+             << "protocol" << m_proto.kindName();
     m_notifier = new QSocketNotifier(m_fd, QSocketNotifier::Read, this);
     connect(m_notifier, SIGNAL(activated(int)), this, SLOT(readable()));
 }
@@ -118,11 +123,20 @@ void KoboTouchInput::readable()
                     if (e.code == ABS_X) { m_rawX = e.value; } else { m_rawY = e.value; }
                     m_havePos = true; m_pendingDown = true;
                     break;
+                case ABS_MT_TOUCH_MAJOR:
+                    // Phoenix panels: 0 after a finger's id means that finger lifted.
+                    if (m_proto.onTouchMajor(e.value)) {
+                        if (m_proto.slot() == 0) m_pendingDown = false;
+                        else m_slot1Down = false;
+                    }
+                    break;
                 case ABS_MT_POSITION_X:
+                    if (m_proto.lifted()) break;   // where the lifted finger was: not a new touch
                     if (m_proto.slot() == 0) { m_rawX = e.value; m_havePos = true; m_pendingDown = true; }
                     else { m_raw1X = e.value; m_have1 = true; m_slot1Down = true; m_multiSeen = true; }
                     break;
                 case ABS_MT_POSITION_Y:
+                    if (m_proto.lifted()) break;
                     if (m_proto.slot() == 0) { m_rawY = e.value; m_havePos = true; m_pendingDown = true; }
                     else { m_raw1Y = e.value; m_have1 = true; m_slot1Down = true; m_multiSeen = true; }
                     break;

@@ -7,7 +7,7 @@
 static int failures = 0;
 #define CHECK(cond) do { if (!(cond)) { ++failures; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } } while (0)
 
-enum { SLOT, ID, X, BTN, SYN };
+enum { SLOT, ID, X, BTN, SYN, MAJOR };
 struct Ev { int kind, value; };
 
 // The part of KoboTouchInput that decides which finger is down.
@@ -15,7 +15,7 @@ struct Panel {
     KbTouchProto proto;
     bool down0, down1, multi;   // first finger, second finger, "a second finger was seen"
     int x0, x1;
-    explicit Panel(int kernelSlot = 0) : proto(kernelSlot), down0(false), down1(false), multi(false), x0(-1), x1(-1) {}
+    explicit Panel(int kernelSlot = 0, KbTouchProto::Kind kind = KbTouchProto::Auto) : proto(kernelSlot, kind), down0(false), down1(false), multi(false), x0(-1), x1(-1) {}
     void switched() { if (proto.takeSwitched()) { down1 = false; multi = false; } }
     void feed(const Ev *ev, int n)
     {
@@ -27,7 +27,10 @@ struct Panel {
                 switched();
                 if (proto.slot() == 0) down0 = down;
                 else { down1 = down; if (down) multi = true; }
+            } else if (e.kind == MAJOR) {
+                if (proto.onTouchMajor(e.value)) { if (proto.slot() == 0) down0 = false; else down1 = false; }
             } else if (e.kind == X) {
+                if (proto.lifted()) continue;
                 if (proto.slot() == 0) { x0 = e.value; down0 = true; }
                 else { x1 = e.value; down1 = true; multi = true; }
             } else if (e.kind == BTN) {
@@ -114,6 +117,48 @@ int main()
         snow.resync(1);          // a Snow panel has no slots: nothing changes
         CHECK(snow.slot() == 0 && !snow.typeB());
     }
+    {   // Named by the plugin: a standard panel whose ids happen to be 0 and 1 is not Snow.
+        Panel p(0, KbTouchProto::TypeB);
+        FEED(p, {ID, 1}, {X, 70}, {BTN, 1}, {SYN, 0});
+        CHECK(p.down0 && !p.down1 && !p.multi && p.x0 == 70);
+        FEED(p, {ID, -1}, {BTN, 0}, {SYN, 0});
+        CHECK(!p.down0);
+    }
+    {   // Named Snow: stays Snow whatever comes.
+        Panel p(0, KbTouchProto::Snow);
+        FEED(p, {SLOT, 1}, {ID, 0}, {X, 5}, {BTN, 1}, {SYN, 0});
+        CHECK(p.down0 && !p.down1 && !p.proto.typeB() && p.x0 == 5);
+    }
+    {   // Phoenix (Aura, Glo HD, ...): a finger lifts with TOUCH_MAJOR 0; the positions after
+        // it are where the finger was and must not count as a new touch.
+        Panel p(0, KbTouchProto::Phoenix);
+        FEED(p, {ID, 0}, {MAJOR, 1}, {X, 100}, {SYN, 0});
+        CHECK(p.down0 && !p.down1 && !p.multi && p.x0 == 100);
+        FEED(p, {ID, 0}, {MAJOR, 1}, {X, 110}, {ID, 1}, {MAJOR, 1}, {X, 600}, {SYN, 0});
+        CHECK(p.down0 && p.down1 && p.multi && p.x0 == 110 && p.x1 == 600);
+        FEED(p, {ID, 0}, {MAJOR, 1}, {X, 110}, {ID, 1}, {MAJOR, 0}, {X, 600}, {SYN, 0});
+        CHECK(p.down0 && !p.down1);
+        FEED(p, {ID, 0}, {MAJOR, 0}, {X, 110}, {SYN, 0});
+        CHECK(!p.down0 && !p.down1 && p.x0 == 110);
+        p.multi = false;
+        FEED(p, {ID, 0}, {MAJOR, 1}, {X, 300}, {SYN, 0});
+        CHECK(p.down0 && !p.multi && p.x0 == 300);
+    }
+    {   // Phoenix on the Aura H2O: the first finger is number 1, the second 2.
+        Panel p(0, KbTouchProto::Phoenix);
+        FEED(p, {ID, 1}, {MAJOR, 1}, {X, 40}, {SYN, 0});
+        CHECK(p.down0 && !p.down1 && !p.multi && p.x0 == 40);
+        FEED(p, {ID, 1}, {MAJOR, 1}, {X, 40}, {ID, 2}, {MAJOR, 1}, {X, 90}, {SYN, 0});
+        CHECK(p.down0 && p.down1 && p.x1 == 90);
+        FEED(p, {ID, 1}, {MAJOR, 0}, {X, 40}, {ID, 2}, {MAJOR, 0}, {X, 90}, {SYN, 0});
+        CHECK(!p.down0 && !p.down1);
+        FEED(p, {ID, 1}, {MAJOR, 1}, {X, 44}, {SYN, 0});
+        CHECK(p.down0 && !p.down1 && p.x0 == 44);
+    }
+    CHECK(KbTouchProto::kindFromName("phoenix") == KbTouchProto::Phoenix);
+    CHECK(KbTouchProto::kindFromName("standard") == KbTouchProto::TypeB);
+    CHECK(KbTouchProto::kindFromName("snow") == KbTouchProto::Snow);
+    CHECK(KbTouchProto::kindFromName(0) == KbTouchProto::Auto && KbTouchProto::kindFromName("") == KbTouchProto::Auto);
     printf(failures ? "%d FAILED\n" : "all passed\n", failures);
     return failures ? 1 : 0;
 }
