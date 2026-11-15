@@ -154,6 +154,7 @@ int main(int argc, char **argv)
     // What the KOReader plugin says about this Kobo (empty when started some other way).
     qDebug() << "device:" << qgetenv("KB_MODEL") << "soc" << qgetenv("KB_SOC") << "dpi" << qgetenv("KB_DPI")
              << (qgetenv("KB_COLOR") == "1" ? "colour" : "gray") << "product" << qgetenv("PRODUCT");
+    qDebug() << "engine: WebKit" << qWebKitVersion() << qgetenv("KB_ENGINE");
     qDebug() << "SSL support:" << QSslSocket::supportsSsl() << QSslSocket::sslLibraryVersionString();
 
     // Use our own up-to-date CA bundle (the firmware's store may be stale/missing).
