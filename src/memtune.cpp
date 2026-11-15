@@ -104,10 +104,18 @@ void MemTune::trimNow()
     // libQtWebKit but has no public header; look it up so a missing symbol isn't fatal.
     typedef void (*GcFn)();
     static GcFn gc = (GcFn)dlsym(RTLD_DEFAULT, "_ZN23DumpRenderTreeSupportQt23garbageCollectorCollectEv");
+    // QtWebKit 5.212 (the bundled engine) has no such helper, but exports WebCore's own:
+    // GCController::singleton().garbageCollectNow().
+    typedef void *(*SingletonFn)();
+    typedef void (*MemberFn)(void *);
+    static SingletonFn gcSingleton = (SingletonFn)dlsym(RTLD_DEFAULT, "_ZN7WebCore12GCController9singletonEv");
+    static MemberFn gcNow = (MemberFn)dlsym(RTLD_DEFAULT, "_ZN7WebCore12GCController17garbageCollectNowEv");
+    const bool collected = gc || (gcSingleton && gcNow);
     if (gc) gc();
+    else if (gcSingleton && gcNow) gcNow(gcSingleton());
     malloc_trim(0);
     qDebug() << "memtune: trim RSS" << before << "->" << vmRssKb() << "KB in" << t.elapsed() << "ms"
-             << (gc ? "" : "(no JS GC hook)");
+             << (collected ? "" : "(no JS GC hook)");
 }
 
 // ---------------------------------------------------------------------------
