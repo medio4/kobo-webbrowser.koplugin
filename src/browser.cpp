@@ -14,6 +14,7 @@
 #include "download.h"
 #include "sitemenu.h"
 #include "deadlinks.h"
+#include "lightpage.h"
 #include "phoneshare.h"
 #include "menupanel.h"
 #include "bookmarks.h"
@@ -970,6 +971,10 @@ void Browser::loadFinished(bool ok)
     if (m_phone) m_phone->setCurrentPage(m_view->title(), m_view->url().toString());
     if (ok) m_view->page()->mainFrame()->evaluateJavaScript(QString::fromLatin1(kSiteMenuWatchJs));
     if (ok) m_view->page()->mainFrame()->evaluateJavaScript(QString::fromLatin1(kDeadLinksJs));
+    if (ok && !getenv("KB_KEEP_DARK")) {   // a dark-themed page becomes black on white (lightpage.h)
+        lightenPage();
+        QTimer::singleShot(1500, this, SLOT(lightenPage()));
+    }
     if (ok && !m_offlineShown) HistoryStore::record(m_view->url().toString(), m_view->title());
     if (ok && m_restoreY > 0) {
         m_view->page()->mainFrame()->setScrollPosition(QPoint(0, m_restoreY));
@@ -1794,4 +1799,16 @@ void Browser::cleanUrlBar()
     // A real flash of just the field: the gentle clean-up refresh left the shadow there.
     qDebug() << "url bar: emptied, flashing" << r;
     m_eink->markDirty(r.adjusted(-4, -4, 4, 4), m_eink->flagsFull());
+}
+
+// ---- Dark pages become black on white (lightpage.h)
+
+void Browser::lightenPage()
+{
+    static QString last;
+    if (m_view->page()->mainFrame()->evaluateJavaScript(QString::fromLatin1(kLightPageJs)).toInt()
+            && last != m_view->url().toString()) {
+        last = m_view->url().toString();
+        qDebug() << "lightpage: a dark page, shown black on white";
+    }
 }

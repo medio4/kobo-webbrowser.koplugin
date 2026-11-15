@@ -1,6 +1,7 @@
 #include "webpage.h"
 #include "memtune.h"
 #include "adblock.h"
+#include "lightpage.h"
 #include <QtWebKit/QWebSettings>
 #include <QtWebKitWidgets/QWebFrame>
 #include <QtNetwork/QNetworkRequest>
@@ -109,7 +110,7 @@ KoboWebPage::KoboWebPage(QObject *parent) : QWebPage(parent)
 void KoboWebPage::applyUserCss()
 {
     QByteArray css;
-    if (!getenv("KB_NO_EINK_CSS")) css += kEinkCss;
+    if (!getenv("KB_NO_EINK_CSS")) { css += kEinkCss; css += kLightPageCss; }
     if (AdBlock::instance()->isEnabled()) css += kAdBoxCss;
     if (css == m_userCss) return;
     m_userCss = css;

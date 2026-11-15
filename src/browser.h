@@ -115,6 +115,7 @@ private slots:
     void pinchZoom(double ratio);   // two-finger pinch: ratio > 1 zooms in
     void openSavedEpub(const QString &path);
     void buildMenu();
+    void lightenPage();
     void showToc();
     void checkSiteMenu();        // after a tap: did a site's menu button do nothing? (sitemenu.h)
     void showSiteMenu();
