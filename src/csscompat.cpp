@@ -602,7 +602,7 @@ static bool interesting(const Decl &d)
 {
     if (d.value.contains('(')) return true;
     return needsPrefix(d.lname) || d.lname == "display" || d.lname == "position" || d.lname == "inset"
-           || logical(d.lname);
+           || logical(d.lname) || (d.lname == "overflow" && d.value.trimmed().contains(' '));
 }
 
 // Cheap test before splitting a block into declarations (most blocks need nothing).
@@ -615,7 +615,7 @@ static bool maybeInteresting(const char *s, int n)
 {
     static const char *const keys[] = { "var(", "calc(", "min(", "max(", "clamp(", "transform", "transition",
         "flex", "order", "justify-content", "align-", "position", "inset", "perspective", "backface",
-        "-inline", "-block", 0 };
+        "-inline", "-block", "overflow", 0 };
     for (int k = 0; keys[k]; ++k) if (has(s, n, keys[k])) return true;
     return false;
 }
@@ -679,6 +679,11 @@ static QByteArray rewriteBlock(const QByteArray &body, const Vars *file, const V
                 QByteArray t = p[0], r = p.size() > 1 ? p[1] : t, b = p.size() > 2 ? p[2] : t, l = p.size() > 3 ? p[3] : r;
                 out += "top:" + t + imp + ";right:" + r + imp + ";bottom:" + b + imp + ";left:" + l + imp + ';';
             }
+        } else if (d.lname == "overflow") {
+            // "overflow: auto hidden" (x then y) is newer than this WebKit: say it per axis.
+            QList<QByteArray> p = v.simplified().split(' ');
+            if (p.size() == 2 && !v.contains('(') && !present.contains("overflow-x") && !present.contains("overflow-y"))
+                out += "overflow-x:" + p[0] + imp + ";overflow-y:" + p[1] + imp + ';';
         } else if (const Logical *lg = logical(d.lname)) {
             QList<QByteArray> p = v.simplified().split(' ');
             if (p.size() <= (lg->end ? 2 : 1) && !v.contains('(') && !present.contains(lg->start)) {

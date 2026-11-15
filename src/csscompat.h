@@ -9,7 +9,7 @@
 //   - var(--x, fallback) resolved from the same rule, then :root/html custom properties
 //     (collected per page across style sheets), then the fallback
 //   - min()/max()/clamp() -> the argument that wins on a ~540 CSS px wide screen
-//   - inset: -> top/right/bottom/left; @layer blocks unwrapped
+//   - inset: -> top/right/bottom/left; overflow: x y -> overflow-x/-y; @layer blocks unwrapped
 //   - selectors: :is()/:where() -> :-webkit-any(), :not(a, b) -> :not(a):not(b), and a selector
 //     this WebKit can't read (:has(), :focus-visible, ...) is taken out of its list so the
 //     rest of the rule survives

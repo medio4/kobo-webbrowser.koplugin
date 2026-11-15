@@ -47,6 +47,11 @@ int main(int argc, char **argv)
     check("logical inset", sheet("m{inset-inline-start:0}"), "m{left:0;inset-inline-start:0}");
     check("logical margin", sheet("m{margin-inline:auto 1em}"), "m{-webkit-margin-start:auto;-webkit-margin-end:1em;margin-inline:auto 1em}");
     check("logical with physical present", sheet("m{left:2px;inset-inline-start:0}"), "m{left:2px;inset-inline-start:0}");
+    check("overflow two values", sheet("a{overflow:auto hidden}"), "a{overflow-x:auto;overflow-y:hidden;overflow:auto hidden}");
+    check("overflow two values important", sheet("a{overflow: scroll hidden !important}"),
+          "a{overflow-x:scroll !important;overflow-y:hidden !important;overflow: scroll hidden !important}");
+    check("overflow one value", sheet("a{overflow:hidden}"), "a{overflow:hidden}");
+    check("overflow axis present", sheet("a{overflow-x:scroll;overflow:auto hidden}"), "a{overflow-x:scroll;overflow:auto hidden}");
     check("untouched", sheet("p{color:red; margin:0 auto}\n"), "p{color:red; margin:0 auto}\n");
 
     // calc
