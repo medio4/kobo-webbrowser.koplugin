@@ -1,5 +1,6 @@
 // TouchWebView: the page view with swipe/drag scrolling and edge gestures.
 #include "browser.h"
+#include "uiscale.h"
 #include "crashhandler.h"
 #include "touchinput.h"
 #include "eink.h"
@@ -70,11 +71,51 @@
 #include <unistd.h>
 
 
+// ---------------------------------------------------------------- EdgeBadge
+
+// The round arrow that shows while a back / forward swipe from the edge is held, like the
+// one in Chrome on a phone: let go to go back, slide back to the edge to cancel. An
+// in-window child of the page view, so it reaches the e-ink grab path; "kb_overlay" gets
+// its area refreshed cleanly when it goes away.
+class EdgeBadge : public QWidget {
+public:
+    explicit EdgeBadge(QWidget *parent) : QWidget(parent), m_forward(false)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setProperty("kb_overlay", true);
+        const int d = kbPx(132);
+        resize(d, d);
+        hide();
+    }
+    void setForward(bool forward) { m_forward = forward; }
+protected:
+    void paintEvent(QPaintEvent *)
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const int w = width(), pen = qMax(3, kbPx(5));
+        p.setPen(QPen(Qt::black, pen));
+        p.setBrush(Qt::white);
+        p.drawEllipse(QRectF(pen, pen, w - 2 * pen, w - 2 * pen));
+        // An arrow: shaft and head, pointing left for back.
+        const qreal c = w / 2.0, a = w * 0.22, dir = m_forward ? 1.0 : -1.0;
+        QPen ap(Qt::black, qMax(4, kbPx(9)), Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        p.setPen(ap);
+        p.drawLine(QPointF(c - dir * a, c), QPointF(c + dir * a, c));
+        QPolygonF head;
+        head << QPointF(c + dir * a * 0.15, c - a * 0.85) << QPointF(c + dir * a, c) << QPointF(c + dir * a * 0.15, c + a * 0.85);
+        p.setBrush(Qt::NoBrush);
+        p.drawPolyline(head);
+    }
+private:
+    bool m_forward;
+};
+
 // ---------------------------------------------------------------- TouchWebView
 
 TouchWebView::TouchWebView(QWidget *parent)
     : QWebView(parent), m_pressed(false), m_dragging(false), m_forwarding(false),
-      m_horizontal(false), m_live(false), m_light(NoLight), m_lightStart(0)
+      m_horizontal(false), m_live(false), m_light(NoLight), m_lightStart(0), m_edge(NoEdge), m_edgeArmed(false)
 {
     const char *le = getenv("KB_LIGHT_EDGE");
     m_lightEdge = (le && *le) ? atoi(le) : 48;
@@ -82,6 +123,9 @@ TouchWebView::TouchWebView(QWidget *parent)
     // Edge swipes: in from the left = back one page in history, in from the right = forward.
     connect(m_pager, SIGNAL(goBack()), this, SLOT(back()));
     connect(m_pager, SIGNAL(goForward()), this, SLOT(forward()));
+    m_badge = new EdgeBadge(this);
+    m_badgeTimer.setSingleShot(true);
+    connect(&m_badgeTimer, SIGNAL(timeout()), this, SLOT(showEdgeBadge()));
 }
 
 bool TouchWebView::event(QEvent *e)
@@ -103,6 +147,7 @@ void TouchWebView::mousePressEvent(QMouseEvent *e)
     m_horizontal = false;
     m_live = false;
     m_light = NoLight;
+    endEdgeDrag();
     m_pressPos = e->pos();
     m_lastPos = e->pos();
     m_pressTime.start();
@@ -117,7 +162,7 @@ void TouchWebView::mouseMoveEvent(QMouseEvent *e)
 {
     if (m_forwarding) { QWebView::mouseMoveEvent(e); return; }
     if (!m_pressed) return;
-    if (KoboTouchInput::gestureActive()) { m_pressed = false; m_dragging = false; e->accept(); return; }
+    if (KoboTouchInput::gestureActive()) { m_pressed = false; m_dragging = false; endEdgeDrag(); e->accept(); return; }
     QPoint fromPress = e->pos() - m_pressPos;
     if (!m_dragging && fromPress.manhattanLength() > 25) {
         m_dragging = true;
@@ -128,12 +173,32 @@ void TouchWebView::mouseMoveEvent(QMouseEvent *e)
             if (m_pressPos.x() < m_lightEdge) { m_light = LightBrightness; m_lightStart = fl->brightness(); }
             else if (m_pressPos.x() >= width() - m_lightEdge && fl->hasWarmth()) { m_light = LightWarmth; m_lightStart = fl->warmth(); }
         }
+        // Horizontal drag in from the very left / right edge = history back / forward.
+        const int ep = m_pager->edgePx();
+        if (m_horizontal && ep > 0) {
+            if (m_pressPos.x() < ep && fromPress.x() > 0) m_edge = EdgeBack;
+            else if (m_pressPos.x() >= width() - ep && fromPress.x() < 0) m_edge = EdgeForward;
+        }
     }
     if (m_light != NoLight) {
         // Up = brighter / warmer. Three quarters of the page height covers the full range.
         KoboFrontlight *fl = KoboFrontlight::instance();
         int v = m_lightStart + (-fromPress.y()) * 100 / qMax(1, height() * 3 / 4);
         if (m_light == LightBrightness) fl->setBrightness(v); else fl->setWarmth(v);
+        e->accept();
+        return;
+    }
+    if (m_edge != NoEdge) {
+        // Armed once the finger is a swipe's length in from the edge. Held there, the round
+        // arrow appears (after the flick time, so a quick flick doesn't draw it for nothing).
+        const int along = m_edge == EdgeBack ? fromPress.x() : -fromPress.x();
+        const bool armed = along >= m_pager->swipeMin();
+        m_edgePos = e->pos();
+        if (armed != m_edgeArmed) {
+            m_edgeArmed = armed;
+            if (armed) m_badgeTimer.start(qMax(0, m_pager->flickMs() - int(m_pressTime.elapsed())));
+            else { m_badgeTimer.stop(); m_badge->hide(); }
+        }
         e->accept();
         return;
     }
@@ -169,7 +234,7 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
     if (m_forwarding) { QWebView::mouseReleaseEvent(e); return; }
     if (!m_pressed) return;
     m_pressed = false;
-    if (KoboTouchInput::gestureActive() || e->pos().x() < 0) { m_dragging = false; m_light = NoLight; e->accept(); return; }
+    if (KoboTouchInput::gestureActive() || e->pos().x() < 0) { m_dragging = false; m_light = NoLight; endEdgeDrag(); e->accept(); return; }
     if (m_light != NoLight) {
         KoboFrontlight::instance()->announce(m_light == LightWarmth);
         m_light = NoLight;
@@ -179,6 +244,15 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
     }
     if (m_dragging) {
         m_dragging = false;
+        if (m_edge != NoEdge) {
+            // Back / forward from the edge: go if the finger ended far enough in, else cancel.
+            const EdgeDrag edge = m_edge;
+            const bool go = m_edgeArmed;
+            endEdgeDrag();
+            if (go) { if (edge == EdgeBack) back(); else forward(); }
+            e->accept();
+            return;
+        }
         QPoint d = e->pos() - m_pressPos;
         if (m_live) {
             // Finish the live drag/pan: scroll by the remaining delta.
@@ -203,4 +277,25 @@ void TouchWebView::mouseReleaseEvent(QMouseEvent *e)
     QWebView::mouseReleaseEvent(&release);
     m_forwarding = false;
     e->accept();
+}
+
+void TouchWebView::showEdgeBadge()
+{
+    if (m_edge == NoEdge || !m_edgeArmed) return;
+    EdgeBadge *b = static_cast<EdgeBadge *>(m_badge);
+    b->setForward(m_edge == EdgeForward);
+    const int margin = kbPx(28);
+    int x = m_edge == EdgeBack ? margin : width() - b->width() - margin;
+    int y = qBound(margin, m_edgePos.y() - b->height() / 2, qMax(margin, height() - b->height() - margin));
+    b->move(x, y);
+    b->raise();
+    b->show();
+}
+
+void TouchWebView::endEdgeDrag()
+{
+    m_edge = NoEdge;
+    m_edgeArmed = false;
+    m_badgeTimer.stop();
+    if (m_badge->isVisible()) m_badge->hide();
 }

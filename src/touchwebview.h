@@ -34,6 +34,8 @@ protected:
     void mousePressEvent(QMouseEvent *e);
     void mouseMoveEvent(QMouseEvent *e);
     void mouseReleaseEvent(QMouseEvent *e);
+private slots:
+    void showEdgeBadge();
 private:
     QPoint m_pressPos;
     QPoint m_lastPos;
@@ -49,6 +51,16 @@ private:
     LightDrag m_light;
     int m_lightStart;       // brightness/warmth when the drag started
     int m_lightEdge;        // KB_LIGHT_EDGE, px (0 = off)
+    // A horizontal drag in from the left / right edge: back / forward. Held past the swipe
+    // distance it is "armed": the round arrow shows, letting go goes there, sliding back to
+    // the edge cancels. (A quick flick from the edge goes there without showing it.)
+    enum EdgeDrag { NoEdge, EdgeBack, EdgeForward };
+    EdgeDrag m_edge;
+    bool m_edgeArmed;
+    QPoint m_edgePos;       // where the finger is
+    QWidget *m_badge;
+    QTimer m_badgeTimer;
+    void endEdgeDrag();
     QElapsedTimer m_pressTime;
     PageScroller *m_pager;
 };

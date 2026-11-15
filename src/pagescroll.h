@@ -26,6 +26,7 @@ public:
     void panHorizontal(const HTarget &t, int dx);   // dx > 0 scrolls content to the left
     int swipeMin() const { return m_swipeMin; }
     int flickMs() const { return m_flickMs; }
+    int edgePx() const { return m_edgePx; }
 
 public slots:
     void nextPage();
