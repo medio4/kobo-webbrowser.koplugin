@@ -830,6 +830,43 @@ function KoboWebBrowser:trimLog()
     end
 end
 
+-- What KOReader knows about this Kobo model, for the browser, which otherwise assumes a
+-- Clara BW: the touch panel (device, protocol, how it is mounted), the screen and the
+-- light. On a Clara BW these are the browser's own defaults, so nothing changes there.
+-- The light paths are only hints: the browser tries the ones it knows first.
+function KoboWebBrowser:deviceEnv()
+    local env = {}
+    local ok, err = pcall(function()
+        local d = Device
+        env.KB_MODEL = tostring(d.model or "")
+        env.KB_SOC = d:isMTK() and "mtk" or d:isSunxi() and "sunxi" or d:isMk7() and "nxp-mk7" or "nxp"
+        if type(d.display_dpi) == "number" then env.KB_DPI = tostring(d.display_dpi) end
+        if d:hasColorScreen() then env.KB_COLOR = "1" end
+        if type(d.touch_dev) == "string" and d.touch_dev ~= "" then env.KB_TOUCH_DEV = d.touch_dev end
+        if d.touch_switch_xy == false then env.KB_TOUCH_NOSWAP = "1" end
+        if d.touch_mirrored_x == false then env.KB_TOUCH_NOMIRRORX = "1" end
+        if d.touch_mirrored_y then env.KB_TOUCH_MIRRORY = "1" end
+        if d.touch_snow_protocol then
+            env.KB_TOUCH_PROTO = "snow"
+        elseif d.touch_phoenix_protocol then
+            env.KB_TOUCH_PROTO = "phoenix"
+        elseif d:hasMultitouch() then
+            env.KB_TOUCH_PROTO = "standard"
+        end
+        local fl = d.frontlight_settings
+        if type(fl) == "table" then
+            if type(fl.frontlight_white) == "string" then env.KB_FL_HINT_BRIGHTNESS = fl.frontlight_white end
+            if type(fl.frontlight_mixer) == "string" then
+                env.KB_FL_HINT_MIXER = fl.frontlight_mixer
+                if type(fl.nl_max) == "number" then env.KB_FL_HINT_MIXER_MAX = tostring(fl.nl_max) end
+                if fl.nl_inverted ~= nil then env.KB_FL_HINT_MIXER_INVERTED = fl.nl_inverted and "1" or "0" end
+            end
+        end
+    end)
+    if not ok then logger.warn("KoboWebBrowser: device details not available:", err) end
+    return env
+end
+
 -- extra (optional): { args = { ... }, env = { NAME = value } } for this launch only
 -- (used to open an address, or to reopen the browser on the same page after a sleep).
 function KoboWebBrowser:run(extra)
@@ -851,6 +888,7 @@ function KoboWebBrowser:run(extra)
         KB_SLEEP_PAGE_FILE = self.sleep_page,
         KB_READER_DIR = self.reader_dir,
     }
+    for k, v in pairs(self:deviceEnv()) do env[k] = v end
     if self.settings.home then env.KB_HOME = self.settings.home end
     self:writeAdblockFiles()
     os.remove(self.kbd_request); os.remove(self.kbd_reply)
