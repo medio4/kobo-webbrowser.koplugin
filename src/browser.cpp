@@ -13,6 +13,7 @@
 #include "epub.h"
 #include "download.h"
 #include "sitemenu.h"
+#include "deadlinks.h"
 #include "phoneshare.h"
 #include "menupanel.h"
 #include "bookmarks.h"
@@ -960,6 +961,7 @@ void Browser::loadFinished(bool ok)
     }
     if (m_phone) m_phone->setCurrentPage(m_view->title(), m_view->url().toString());
     if (ok) m_view->page()->mainFrame()->evaluateJavaScript(QString::fromLatin1(kSiteMenuWatchJs));
+    if (ok) m_view->page()->mainFrame()->evaluateJavaScript(QString::fromLatin1(kDeadLinksJs));
     if (ok && !m_offlineShown) HistoryStore::record(m_view->url().toString(), m_view->title());
     if (ok && m_restoreY > 0) {
         m_view->page()->mainFrame()->setScrollPosition(QPoint(0, m_restoreY));

@@ -69,6 +69,8 @@ the browser, so a model KOReader supports starts with the right touch settings.
 - **Site menus:** many sites open their own menu (the three-lines button) with scripts this
   engine can't run. When you tap such a button and nothing happens, the browser lists the
   site's menu links itself.
+- **Links that need scripts:** some sites leave a link's address to a script this engine can't
+  run, so tapping it does nothing. When that happens the browser opens the address itself.
 - **Contents** jumps to any heading on a long page.
 - **Page overview** (experimental, off by default): every screen of the page as a small
   picture, images shown as gray boxes; tap one to jump there. Turn it on in Tools → Web
