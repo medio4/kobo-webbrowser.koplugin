@@ -26,6 +26,10 @@ enum { HWTCON_UPDATE_MODE_PARTIAL = 0, HWTCON_UPDATE_MODE_FULL = 1 };
 HwtconRefresh::HwtconRefresh(int fd) : m_fd(fd), m_ok(fd >= 0), m_marker(0), m_failures(0)
 {
     if (getenv("KB_NO_HWTCON")) m_ok = false;
+    // The plugin says which SoC this is: only MediaTek boards have this driver. Elsewhere,
+    // skip the five failed tries and refresh through fbink from the start.
+    const QByteArray soc = qgetenv("KB_SOC");
+    if (!soc.isEmpty() && soc != "mtk") m_ok = false;
 }
 
 bool HwtconRefresh::refresh(const QRect &r, Waveform w, bool full)
