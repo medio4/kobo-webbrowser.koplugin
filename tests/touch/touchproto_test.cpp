@@ -155,6 +155,31 @@ int main()
         FEED(p, {ID, 1}, {MAJOR, 1}, {X, 44}, {SYN, 0});
         CHECK(p.down0 && !p.down1 && p.x0 == 44);
     }
+    {   // Standard panel that puts a lone finger in slot 1 (the kernel was left on slot 1 and
+        // says nothing new): still the first finger, a plain tap, not a two-finger gesture.
+        Panel p(1, KbTouchProto::TypeB);
+        FEED(p, {ID, 90}, {X, 250}, {BTN, 1}, {SYN, 0});
+        CHECK(p.down0 && !p.down1 && !p.multi && p.x0 == 250);
+        FEED(p, {X, 260}, {SYN, 0});
+        CHECK(p.down0 && !p.multi && p.x0 == 260);
+        FEED(p, {ID, -1}, {BTN, 0}, {SYN, 0});
+        CHECK(!p.down0 && !p.down1);
+        // A second finger then lands in slot 0: it is the second finger while the first is down.
+        FEED(p, {ID, 91}, {X, 300}, {BTN, 1}, {SYN, 0});
+        FEED(p, {SLOT, 0}, {ID, 92}, {X, 700}, {SYN, 0});
+        CHECK(p.down0 && p.down1 && p.multi && p.x0 == 300 && p.x1 == 700);
+        FEED(p, {ID, -1}, {SYN, 0});
+        CHECK(p.down0 && !p.down1);
+        FEED(p, {SLOT, 1}, {ID, -1}, {BTN, 0}, {SYN, 0});
+        CHECK(!p.down0 && !p.down1);
+    }
+    {   // The same without being told the kind: found out from the events.
+        Panel p(1);
+        FEED(p, {ID, 300}, {X, 80}, {BTN, 1}, {SYN, 0});
+        CHECK(p.proto.typeB() && p.down0 && !p.down1 && !p.multi && p.x0 == 80);
+        FEED(p, {ID, -1}, {BTN, 0}, {SYN, 0});
+        CHECK(!p.down0);
+    }
     CHECK(KbTouchProto::kindFromName("phoenix") == KbTouchProto::Phoenix);
     CHECK(KbTouchProto::kindFromName("standard") == KbTouchProto::TypeB);
     CHECK(KbTouchProto::kindFromName("snow") == KbTouchProto::Snow);

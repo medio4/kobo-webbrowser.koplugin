@@ -29,7 +29,7 @@ public:
     // EVIOCGABS; 0 if it has no such axis). The kernel only reports a slot when it changes.
     explicit KbTouchProto(int kernelSlot = 0, Kind kind = Auto)
         : m_kind(kind), m_typeB(kind == TypeB), m_kernelSlot(kernelSlot), m_slot(kind == TypeB ? kernelSlot : 0),
-          m_switched(false), m_firstId(-1), m_down(0), m_lifted(false) {}
+          m_switched(false), m_firstId(-1), m_down(0), m_primary(-1), m_lifted(false) {}
 
     // "snow", "phoenix" or "standard" (KB_TOUCH_PROTO); anything else: find out from the events.
     static Kind kindFromName(const char *name)
@@ -47,7 +47,9 @@ public:
 
     bool typeB() const { return m_typeB; }
     // The finger the following position events belong to (0 = first, anything else = second).
-    int slot() const { return m_slot; }
+    // On a standard panel the first finger is whichever slot went down first, and stays that
+    // slot until every finger is up: a lone finger is not always put in slot 0.
+    int slot() const { return m_typeB ? (m_primary < 0 || m_slot == m_primary ? 0 : 1) : m_slot; }
     // True once, right after the event that made us switch to type B: the caller should
     // forget a contact it filed under the wrong finger.
     bool takeSwitched() { bool s = m_switched; m_switched = false; return s; }
@@ -73,7 +75,12 @@ public:
             return true;
         }
         if (m_kind == Auto && !m_typeB && (id < 0 || id > 1)) becomeTypeB();
-        if (m_typeB) return id >= 0;
+        if (m_typeB) {
+            const int bit = 1 << (m_slot & 31);
+            if (id >= 0) { if (!m_down) m_primary = m_slot; m_down |= bit; }
+            else m_down &= ~bit;
+            return id >= 0;
+        }
         m_slot = id < 0 ? 0 : id;
         return true;
     }
@@ -107,14 +114,15 @@ public:
     }
 
 private:
-    void becomeTypeB() { m_typeB = true; m_slot = m_kernelSlot; m_switched = true; }
+    void becomeTypeB() { m_typeB = true; m_slot = m_kernelSlot; m_switched = true; m_down = 0; m_primary = -1; }
     Kind m_kind;
     bool m_typeB;
     int m_kernelSlot;
     int m_slot;
     bool m_switched;
     int m_firstId;   // Phoenix: the id of the finger that went down first
-    int m_down;      // Phoenix: bit 0 / bit 1 = first / second finger down
+    int m_down;      // Phoenix: bit 0 / bit 1 = first / second finger down. Standard: one bit per slot
+    int m_primary;   // standard: the slot of the first finger (-1: none yet)
     bool m_lifted;
 };
 
