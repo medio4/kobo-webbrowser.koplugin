@@ -7,9 +7,8 @@ export LD_LIBRARY_PATH=/usr/local/Kobo:/usr/local/Qt-5.2.1-arm/lib:/usr/local/Tr
 # A newer browser engine shipped with the plugin (bin/webkit/libQt5WebKit.so.5 and
 # libQt5WebKitWidgets.so.5, QtWebKit 5.212) is used instead of the firmware's 2013 one when it
 # is there. It reads modern pages itself, so the style translation is switched off.
-# KB_FIRMWARE_WEBKIT=1 goes back to the firmware's engine without removing the folder.
-if [ -f "$DIR/webkit/libQt5WebKit.so.5" ] && [ -z "$KB_FIRMWARE_WEBKIT" ]; then
-    export LD_LIBRARY_PATH="$DIR/webkit:$LD_LIBRARY_PATH"
+# (The browser finds it through its run path, $ORIGIN/webkit. Remove the folder to go back.)
+if [ -f "$DIR/webkit/libQt5WebKit.so.5" ]; then
     export KB_ENGINE=webkit-5.212
     [ -n "$KB_KEEP_CSS_COMPAT" ] || export KB_NO_CSS_COMPAT=1
 fi
