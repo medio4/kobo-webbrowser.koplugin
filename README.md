@@ -126,7 +126,8 @@ open it on your phone.
 ### Cleaner, better-looking pages
 
 - **Ad blocking** with a built-in list of about 42,000 ad and tracker sites. You can allow
-  ads on sites you want to support, or block extra sites.
+  ads on sites you want to support, or block extra sites. The empty boxes pages leave for
+  ads are hidden too.
 - **Modern page styles:** the browser engine in Kobo's firmware dates from about 2013. Pages
   written for today's browsers are translated on the fly, so their menus and layouts
   display properly.

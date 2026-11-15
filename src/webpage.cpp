@@ -28,6 +28,17 @@ static const char *kEinkCss =
     ".mw-indicators,.pre-content .page-actions-menu,.last-modified-bar{display:none !important}"
     ".mw-body,.mw-page-container,.mw-content-container,.vector-body{margin:0 !important;padding:0 8px !important;max-width:none !important}";
 
+// With ad blocking on, the ads themselves never load, but the boxes pages reserve for them
+// stay: an empty band above a site's header, gaps between paragraphs. These are the usual
+// names of such boxes (Google Publisher Tags, AdSense, and the common "ad-slot" classes).
+static const char *kAdBoxCss =
+    "[id^=\"div-gpt-ad\"],[id^=\"google_ads_\"],ins.adsbygoogle,[data-ad-slot],[data-ad-unit],"
+    "[class^=\"ad-slot\"],[class*=\" ad-slot\"],[class^=\"adSlot\"],[class*=\" adSlot\"],"
+    "[class^=\"ad-container\"],[class*=\" ad-container\"],[class^=\"ad-wrapper\"],[class*=\" ad-wrapper\"],"
+    "[class^=\"ad-unit\"],[class*=\" ad-unit\"],[class^=\"ad-banner\"],[class*=\" ad-banner\"],"
+    "[id^=\"taboola-\"],[class^=\"taboola\"],[class^=\"OUTBRAIN\"],[id^=\"outbrain_\"]"
+    "{display:none !important}";
+
 // Bing Images stands in for Google Images (see mobileVariant). Its results page draws
 // its thumbnails and viewer with JavaScript this WebKit can't run, so the page is
 // replaced with a plain grid built from the result data Bing puts in each tile's link:
@@ -84,10 +95,18 @@ KoboWebPage::KoboWebPage(QObject *parent) : QWebPage(parent)
     connect(mainFrame(), SIGNAL(loadStarted()), this, SLOT(adblockReset()));
     connect(mainFrame(), SIGNAL(loadFinished(bool)), this, SLOT(adblockReport()));
     setNetworkAccessManager(new KoboNetworkAccessManager(this));
-    if (!getenv("KB_NO_EINK_CSS")) {
-        QByteArray css(kEinkCss);
-        settings()->setUserStyleSheetUrl(QUrl("data:text/css;charset=utf-8;base64," + css.toBase64()));
-    }
+    applyUserCss();
+}
+
+// The style sheet every page gets: e-ink colours, and with ad blocking on, no empty ad boxes.
+void KoboWebPage::applyUserCss()
+{
+    QByteArray css;
+    if (!getenv("KB_NO_EINK_CSS")) css += kEinkCss;
+    if (AdBlock::instance()->isEnabled()) css += kAdBoxCss;
+    if (css == m_userCss) return;
+    m_userCss = css;
+    settings()->setUserStyleSheetUrl(css.isEmpty() ? QUrl() : QUrl("data:text/css;charset=utf-8;base64," + css.toBase64()));
 }
 
 QString KoboWebPage::userAgentForUrl(const QUrl &url) const
@@ -156,6 +175,7 @@ void KoboWebPage::adblockReset()
 {
     AdBlock::instance()->refresh();   // settings changed in KOReader's menu apply from here on
     AdBlock::instance()->resetCount();
+    applyUserCss();
 }
 
 void KoboWebPage::adblockReport()

@@ -3,6 +3,7 @@
 #ifndef WEBPAGE_H
 #define WEBPAGE_H
 #include <QtWebKitWidgets/QWebPage>
+#include <QtCore/QByteArray>
 class KoboWebPage : public QWebPage {
     Q_OBJECT
 public:
@@ -23,5 +24,8 @@ private slots:
     void runBingFixup();
     void adblockReset();
     void adblockReport();
+private:
+    void applyUserCss();
+    QByteArray m_userCss;
 };
 #endif
