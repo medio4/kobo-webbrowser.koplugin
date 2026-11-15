@@ -56,19 +56,34 @@ KoboFrontlight::KoboFrontlight(QObject *parent)
     QStringList cands;
     if (b && *b) cands << QString::fromLocal8Bit(b);
     else cands << "/sys/class/backlight/lm3630a_led/brightness" << "/sys/class/backlight/mxc_msp430.0/brightness";
+    // Other models: the light KOReader knows for this device (passed by the plugin), tried
+    // last so the two above keep winning where they exist. KOReader names either the
+    // brightness file or its folder.
+    const char *hb = getenv("KB_FL_HINT_BRIGHTNESS");
+    if (hb && *hb && !(b && *b)) {
+        QString h = QString::fromLocal8Bit(hb);
+        cands << (QFileInfo(h).isDir() ? h + "/brightness" : h);
+    }
     foreach (const QString &bp, cands) {
-        if (!QFile::exists(bp)) continue;
+        if (!QFile::exists(bp) || QFileInfo(bp).isDir()) continue;
         m_brightPath = bp;
         m_bright = qBound(0, readLine(bp).toInt(), 100);
         break;
     }
     const char *m = getenv("KB_FL_MIXER");
     QString mp = (m && *m) ? QString::fromLocal8Bit(m) : QString("/sys/class/backlight/lm3630a_led/color");
-    if (QFile::exists(mp)) {
+    bool hinted = false;
+    const char *hm = getenv("KB_FL_HINT_MIXER");
+    if (!(m && *m) && !QFile::exists(mp) && hm && *hm && QFile::exists(QString::fromLocal8Bit(hm))) {
+        mp = QString::fromLocal8Bit(hm);
+        hinted = true;
+    }
+    if (QFile::exists(mp) && !QFileInfo(mp).isDir()) {
         m_mixerPath = mp;
         int maxColor = readLine(QFileInfo(mp).path() + "/max_color").toInt();
+        if (maxColor <= 0 && hinted) maxColor = envInt("KB_FL_HINT_MIXER_MAX", 10);
         m_mixerMax = envInt("KB_FL_MIXER_MAX", maxColor > 0 ? maxColor : 10);
-        m_mixerInverted = envInt("KB_FL_MIXER_INVERTED", 1) != 0;
+        m_mixerInverted = envInt("KB_FL_MIXER_INVERTED", hinted ? envInt("KB_FL_HINT_MIXER_INVERTED", 1) : 1) != 0;
         int raw = qBound(0, readLine(mp).toInt(), m_mixerMax);
         int w = m_mixerInverted ? m_mixerMax - raw : raw;
         m_warmth = m_mixerMax > 0 ? w * 100 / m_mixerMax : 0;

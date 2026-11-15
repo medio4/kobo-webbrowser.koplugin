@@ -1025,7 +1025,11 @@ void Browser::sleepToKoreader()
 // wlan0 exists, it must also be "up".
 static bool deviceOnline()
 {
-    QFile oper("/sys/class/net/wlan0/operstate");
+    // The Wi-Fi interface is wlan0 on most Kobos, eth0 on some older ones: KOReader and
+    // Nickel export its name as INTERFACE.
+    QByteArray ifc = qgetenv("INTERFACE");
+    if (ifc.isEmpty() || ifc.contains('/')) ifc = "wlan0";
+    QFile oper("/sys/class/net/" + QString::fromLatin1(ifc) + "/operstate");
     if (oper.open(QIODevice::ReadOnly)) {
         QByteArray state = oper.readAll().trimmed();
         if (state != "up") return false;

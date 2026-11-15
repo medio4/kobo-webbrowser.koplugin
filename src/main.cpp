@@ -151,6 +151,9 @@ int main(int argc, char **argv)
     const char *hbFile = getenv("KB_HEARTBEAT_FILE");
     if (hbFile && *hbFile) new Heartbeat(hbFile, &app);
 
+    // What the KOReader plugin says about this Kobo (empty when started some other way).
+    qDebug() << "device:" << qgetenv("KB_MODEL") << "soc" << qgetenv("KB_SOC") << "dpi" << qgetenv("KB_DPI")
+             << (qgetenv("KB_COLOR") == "1" ? "colour" : "gray") << "product" << qgetenv("PRODUCT");
     qDebug() << "SSL support:" << QSslSocket::supportsSsl() << QSslSocket::sslLibraryVersionString();
 
     // Use our own up-to-date CA bundle (the firmware's store may be stale/missing).
