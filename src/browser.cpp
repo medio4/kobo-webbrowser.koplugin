@@ -1741,11 +1741,13 @@ void Browser::showSiteMenu()
 
 // ---- Address bar emptied while typing: the deleted characters leave a gray shadow on
 // e-ink under the "Search or address" hint. Once the empty field has been drawn, refresh
-// its area cleanly (a short flash of just the field).
+// its area with a flashing refresh of just the field.
 
 void Browser::urlTextChanged(const QString &text)
 {
-    if (!text.isEmpty() || !m_eink || QApplication::focusWidget() != m_url) return;
+    // Typing: with KOReader's keyboard (m_live), our own, or simply with the field focused.
+    const bool typing = m_live || m_kbd->isVisible() || QApplication::focusWidget() == m_url;
+    if (!text.isEmpty() || !m_eink || !typing) return;
     QTimer::singleShot(250, this, SLOT(cleanUrlBar()));
 }
 
@@ -1753,5 +1755,7 @@ void Browser::cleanUrlBar()
 {
     if (!m_eink || !m_url->text().isEmpty()) return;   // typing went on meanwhile
     QRect r(m_url->mapTo(this, QPoint(0, 0)), m_url->size());
-    m_eink->cleanRect(r.adjusted(-4, -4, 4, 4));
+    // A real flash of just the field: the gentle clean-up refresh left the shadow there.
+    qDebug() << "url bar: emptied, flashing" << r;
+    m_eink->markDirty(r.adjusted(-4, -4, 4, 4), m_eink->flagsFull());
 }
