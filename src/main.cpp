@@ -183,9 +183,17 @@ int main(int argc, char **argv)
             QScreen *s0 = app.primaryScreen();
             int sw = s0 ? s0->geometry().width() : 1072;
             int sh = s0 ? s0->geometry().height() : 1448;
+            // Touch panel orientation per model, as in KOReader's frontend/device/kobo/device.lua
+            // (PRODUCT is Nickel's code name, passed on by run.sh). Default: swap + mirror X.
+            const QByteArray product = qgetenv("PRODUCT");
+            bool mirX = true, mirY = false;
+            if (product == "monza" || product == "condor") { mirX = false; mirY = true; }   // Libra Colour, Elipsa 2E
+            else if (product == "io" || product == "snow") { mirX = false; }                // Libra 2, Aura H2O 2
             bool swap = !getenv("KB_TOUCH_NOSWAP");
-            bool mirX = !getenv("KB_TOUCH_NOMIRRORX");
-            bool mirY = getenv("KB_TOUCH_MIRRORY") != 0;
+            if (getenv("KB_TOUCH_MIRRORX")) mirX = true;
+            if (getenv("KB_TOUCH_NOMIRRORX")) mirX = false;
+            if (getenv("KB_TOUCH_MIRRORY")) mirY = true;
+            if (getenv("KB_TOUCH_NOMIRRORY")) mirY = false;
             bool grab = !getenv("KB_TOUCH_NOGRAB");
             touchInput = new KoboTouchInput(QString::fromLatin1(touchDev), sw, sh, swap, mirX, mirY, grab, &app);
         }

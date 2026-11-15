@@ -27,8 +27,14 @@ KoboTouchInput::KoboTouchInput(const QString &device, int screenW, int screenH,
       m_minX(0), m_maxX(0), m_minY(0), m_maxY(0),
       m_slot(0), m_rawX(0), m_rawY(0), m_down(false), m_pendingDown(false),
       m_havePos(false), m_sentDown(false), m_slot1Down(false), m_multiSeen(false),
-      m_raw1X(0), m_raw1Y(0), m_have1(false), m_pinchStart(0), m_pinchLast(0), m_haveMT(false)
+      m_raw1X(0), m_raw1Y(0), m_have1(false), m_pinchStart(0), m_pinchLast(0), m_haveMT(false),
+      m_protoB(false), m_protoFixed(false), m_primary(-1)
 {
+    // KB_TOUCH_PROTO=b | snow forces the multitouch protocol; otherwise it starts as Snow and
+    // switches to B as soon as the events show it (see readable()).
+    const QByteArray proto = qgetenv("KB_TOUCH_PROTO").toLower();
+    if (proto == "b") { m_protoB = true; m_protoFixed = true; }
+    else if (proto == "snow") { m_protoFixed = true; }
     m_fd = open(device.toLocal8Bit().constData(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (m_fd < 0) {
         qWarning() << "touch: cannot open" << device << strerror(errno);
@@ -47,7 +53,8 @@ KoboTouchInput::KoboTouchInput(const QString &device, int screenW, int screenH,
         qWarning() << "touch: EVIOCGRAB failed:" << strerror(errno);
     m_grab = grab; m_handedOff = false;
     qDebug() << "touch: opened" << device << "abs x" << m_minX << m_maxX << "y" << m_minY << m_maxY
-             << "swap" << m_swapXY << "mirrorX" << m_mirrorX << "mirrorY" << m_mirrorY;
+             << "swap" << m_swapXY << "mirrorX" << m_mirrorX << "mirrorY" << m_mirrorY
+             << "proto" << (m_protoB ? "B" : m_protoFixed ? "snow" : "auto");
     m_notifier = new QSocketNotifier(m_fd, QSocketNotifier::Read, this);
     connect(m_notifier, SIGNAL(activated(int)), this, SLOT(readable()));
 }
@@ -78,10 +85,26 @@ void KoboTouchInput::readable()
             if (e.type == EV_ABS) {
                 switch (e.code) {
                 case ABS_MT_SLOT:
+                    // Snow panels never send this one.
+                    if (!m_protoB && !m_protoFixed) useProtocolB(e.value, "ABS_MT_SLOT seen");
                     m_slot = e.value;
                     break;
                 case ABS_MT_TRACKING_ID:
-                    if (e.value == -1) {
+                    // Snow panels never lift with -1 and only use the ids 0 and 1; anything
+                    // else is standard protocol B (KOReader drops its Snow quirks the same way).
+                    if (!m_protoB && !m_protoFixed && (e.value == -1 || e.value > 1))
+                        useProtocolB(0, e.value == -1 ? "tracking id -1 seen" : "tracking id above 1 seen");
+                    if (m_protoB) {
+                        if (e.value == -1) {
+                            if (primary()) m_pendingDown = false;
+                            else m_slot1Down = false;
+                            // Keep following the same slot until every finger is up, so the
+                            // other finger of a pinch is not taken for the first one.
+                            if (!m_pendingDown && !m_slot1Down) m_primary = -1;
+                        } else if (m_primary < 0 || m_slot == m_primary) {
+                            m_primary = m_slot; m_pendingDown = true;
+                        } else { m_slot1Down = true; m_multiSeen = true; }
+                    } else if (e.value == -1) {
                         if (m_slot == 0) m_pendingDown = false;
                         else m_slot1Down = false;
                     } else {
@@ -103,18 +126,20 @@ void KoboTouchInput::readable()
                     m_havePos = true; m_pendingDown = true;
                     break;
                 case ABS_MT_POSITION_X:
-                    if (m_slot == 0) { m_rawX = e.value; m_havePos = true; m_pendingDown = true; }
+                    if (primary()) { if (m_protoB) m_primary = m_slot; m_rawX = e.value; m_havePos = true; m_pendingDown = true; }
                     else { m_raw1X = e.value; m_have1 = true; m_slot1Down = true; m_multiSeen = true; }
                     break;
                 case ABS_MT_POSITION_Y:
-                    if (m_slot == 0) { m_rawY = e.value; m_havePos = true; m_pendingDown = true; }
+                    if (primary()) { if (m_protoB) m_primary = m_slot; m_rawY = e.value; m_havePos = true; m_pendingDown = true; }
                     else { m_raw1Y = e.value; m_have1 = true; m_slot1Down = true; m_multiSeen = true; }
                     break;
                 default: break;
                 }
             } else if (e.type == EV_KEY && e.code == BTN_TOUCH) {
                 m_pendingDown = (e.value != 0);
-                if (e.value == 0) { m_slot1Down = false; m_slot = 0; }
+                // Lift of the last finger. Snow: back to the first finger's slot. Protocol B:
+                // the kernel's current slot stays where it is, only our followed finger is gone.
+                if (e.value == 0) { m_slot1Down = false; if (m_protoB) m_primary = -1; else m_slot = 0; }
             } else if (e.type == EV_SYN && e.code == SYN_REPORT) {
                 emitState();
                 // The current slot persists: a frame may omit both ABS_MT_SLOT and
@@ -122,6 +147,17 @@ void KoboTouchInput::readable()
             }
         }
     }
+}
+
+// The events turned out to be standard protocol B: forget what was assembled under the Snow
+// reading (a growing tracking id looks like a second finger there) and start over.
+void KoboTouchInput::useProtocolB(int slot, const char *why)
+{
+    m_protoB = true;
+    m_slot = slot; m_primary = -1;
+    m_slot1Down = false; m_multiSeen = false; m_have1 = false; s_gesture = false;
+    m_pinchStart = m_pinchLast = 0;
+    qDebug() << "touch: standard multitouch protocol B (" << why << ")";
 }
 
 void KoboTouchInput::emitState()
@@ -208,7 +244,7 @@ void KoboTouchInput::setHandedOff(bool off)
     if (off) {
         // Forget any contact in progress so no stale press is completed later.
         m_pendingDown = false; m_sentDown = false; m_havePos = false;
-        m_slot1Down = false; m_multiSeen = false; s_gesture = false;
+        m_slot1Down = false; m_multiSeen = false; s_gesture = false; m_primary = -1;
         if (m_grab && ioctl(m_fd, EVIOCGRAB, 0) != 0)
             qWarning() << "touch: EVIOCGRAB release failed:" << strerror(errno);
     } else {

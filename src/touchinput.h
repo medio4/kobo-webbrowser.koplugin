@@ -30,6 +30,8 @@ private slots:
     void readable();
 private:
     void emitState();
+    void useProtocolB(int slot, const char *why);
+    bool primary() const { return m_protoB ? (m_primary < 0 || m_slot == m_primary) : m_slot == 0; }
     static bool s_gesture;
     int m_fd;
     QSocketNotifier *m_notifier;
@@ -52,5 +54,10 @@ private:
     bool m_haveMT;               // device reports ABS_MT_POSITION_*; ignore ABS_X/ABS_Y then
     bool m_grab;                 // we were asked to grab the device
     bool m_handedOff;
+    // Standard multitouch protocol B (Libra Colour and other non-Snow panels): contacts live
+    // in ABS_MT_SLOT slots and ABS_MT_TRACKING_ID is an ever-growing number, -1 on lift.
+    // Off = the Snow variant (Clara BW). Detected from the events, or forced with KB_TOUCH_PROTO.
+    bool m_protoB, m_protoFixed;
+    int m_primary;               // protocol B: slot of the finger we follow, -1 = none
 };
 #endif
