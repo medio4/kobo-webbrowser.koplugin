@@ -5,6 +5,7 @@
 #include <QtCore/QObject>
 #include <QtCore/QString>
 #include <QtCore/QPoint>
+#include "touchproto.h"
 class QSocketNotifier;
 class KoboTouchInput : public QObject {
     Q_OBJECT
@@ -37,7 +38,9 @@ private:
     bool m_swapXY, m_mirrorX, m_mirrorY;
     int m_minX, m_maxX, m_minY, m_maxY;
     // current frame state
-    int m_slot;          // current MT slot (we only follow the first contact)
+    KbTouchProto m_proto;   // which finger an event belongs to (Snow or standard multitouch)
+    void protoSwitched();
+    int kernelSlot() const;
     int m_rawX, m_rawY;  // last raw position of followed contact
     bool m_down;         // contact currently down (as of last SYN)
     bool m_pendingDown;  // state being assembled in this frame
