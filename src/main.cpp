@@ -201,7 +201,7 @@ int main(int argc, char **argv)
     QString home = QString::fromLocal8Bit(getenv("KB_HOME"));
     for (int i = 1; i < argc; ++i) {
         QString a = QString::fromLocal8Bit(argv[i]);
-        if (a.startsWith("http://") || a.startsWith("https://")) { home = a; setenv("KB_START_FROM_ARG", "1", 1); }
+        if (a.startsWith("http://") || a.startsWith("https://") || a.startsWith("file:///")) { home = a; setenv("KB_START_FROM_ARG", "1", 1); }
     }
     if (home.isEmpty()) home = "https://lite.duckduckgo.com/lite/";
 
