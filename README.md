@@ -173,7 +173,7 @@ open it on your phone.
 
 | To | Do this |
 | --- | --- |
-| Turn a page | Swipe up or down (hold and drag to scroll freely) |
+| Turn a page | Swipe up or down (hold and drag to scroll freely), or the page-turn buttons on Kobos that have them |
 | Go back / forward | **Back** / **Fwd**, or swipe in from the left / right edge. Keep your finger down and a round arrow shows: let go to go there, or slide back to the edge to cancel |
 | Type an address or search | Tap the address, type, press **Go** on the keyboard |
 | Zoom | Pinch; or **Menu → Text size** for the text only |

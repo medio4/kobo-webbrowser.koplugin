@@ -128,6 +128,23 @@ local WhiteCover = InputContainer:extend{
 function WhiteCover:init()
     local Screen = Device.screen
     self.dimen = Geom:new{ x = 0, y = 0, w = Screen:getWidth(), h = Screen:getHeight() }
+    -- KOReader still gets the device's buttons while the browser is on screen (the browser
+    -- only takes the touchscreen). The page-turn buttons are passed on to it (on_page).
+    if Device:hasKeys() then
+        local Input = Device.input
+        self.key_events = {
+            BrowserNextPage = { { Input.group.PgFwd } },
+            BrowserPrevPage = { { Input.group.PgBack } },
+        }
+    end
+end
+function WhiteCover:onBrowserNextPage()
+    if self.on_page then self.on_page("next") end
+    return true
+end
+function WhiteCover:onBrowserPrevPage()
+    if self.on_page then self.on_page("prev") end
+    return true
 end
 function WhiteCover:paintTo(bb, x, y)
     bb:paintRect(x, y, self.dimen.w, self.dimen.h, Blitbuffer.COLOR_WHITE)
@@ -976,6 +993,9 @@ function KoboWebBrowser:run(extra)
         KB_READER_DIR = self.reader_dir,
     }
     for k, v in pairs(self:deviceEnv()) do env[k] = v end
+    -- Page-turn buttons: the browser listens on this FIFO (in /tmp: the user partition is FAT).
+    self.cmd_fifo = "/tmp/kobo-browser.cmd"
+    if Device:hasKeys() then env.KB_CMD_FIFO = self.cmd_fifo end
     if self.settings.home then env.KB_HOME = self.settings.home end
     self:writeAdblockFiles()
     os.remove(self.kbd_request); os.remove(self.kbd_reply)
@@ -2056,9 +2076,27 @@ function KoboWebBrowser:clearReaderDir()
     end
 end
 
+-- One word ("next", "prev") to the running browser, through the FIFO it made at
+-- self.cmd_fifo (KB_CMD_FIFO). Opened without blocking: if the browser isn't listening
+-- (an older binary, or it has just gone), the word is simply dropped.
+pcall(ffi.cdef, "int open(const char *path, int flags, ...); long write(int fd, const void *buf, unsigned long n); int close(int fd);")
+local O_WRONLY, O_NONBLOCK = 1, 2048
+function KoboWebBrowser:sendCommand(word)
+    if not (self.job and self.cmd_fifo) then return end
+    if lfs.attributes(self.cmd_fifo, "mode") ~= "named pipe" then return end
+    local ok, err = pcall(function()
+        local fd = ffi.C.open(self.cmd_fifo, bit.bor(O_WRONLY, O_NONBLOCK))
+        if fd < 0 then return end
+        local line = word .. "\n"
+        ffi.C.write(fd, line, #line)
+        ffi.C.close(fd)
+    end)
+    if not ok then logger.warn("KoboWebBrowser: could not send", word, err) end
+end
+
 function KoboWebBrowser:showCover()
     if self.cover then return end
-    self.cover = WhiteCover:new{}
+    self.cover = WhiteCover:new{ on_page = function(word) self:sendCommand(word) end }
     UIManager:show(self.cover)
 end
 
