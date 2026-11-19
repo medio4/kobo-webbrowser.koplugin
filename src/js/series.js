@@ -78,6 +78,37 @@
       .replace(/^\s+|\s+$/g, '');
   }
   function mask(t) { return t.toLowerCase().replace(/\d+/g, '#'); }
+  // Last resort: a numbered list of parts whose titles all differ ("1: The Start",
+  // "2: Next Day", or "Chapter 1 - ...") and whose addresses differ only in their numbers,
+  // wherever on the site they live. The numbers have to count up from 1 without a gap.
+  function numberedList() {
+    var sets = {}, names = [];
+    for (var i = 0; i < links.length; i++) {
+      var a = links[i], u = parse(a.href);
+      if (!u || u.host !== here.host || u.path === here.path) continue;
+      var t = (a.textContent || '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+      var m = /^(?:(?:chapter|part|episode|ch\.?|pt\.?|ep\.?)\s*)?(\d{1,3})\s*[:.)–—-]\s*\S/i.exec(t);
+      if (!m) continue;
+      var k = u.path.replace(/\d+/g, '#');
+      if (k.indexOf('#') < 0) continue;
+      if (!sets[k]) { sets[k] = { byNum: {}, count: 0 }; names.push(k); }
+      var n = parseInt(m[1], 10), url = u.origin + u.path;
+      if (sets[k].byNum[n]) continue;      // the first link with that number wins
+      sets[k].byNum[n] = { url: url, title: t };
+      sets[k].count++;
+    }
+    var best = null;
+    for (var s = 0; s < names.length; s++) {
+      var set = sets[names[s]], run = 0;
+      while (set.byNum[run + 1]) run++;
+      if (run < 2 || run !== set.count) continue;
+      if (!best || run > best.count) best = set;
+    }
+    if (!best) return JSON.stringify({ chapters: [], title: '' });
+    var list = [];
+    for (var c = 1; c <= best.count; c++) list.push(best.byNum[c]);
+    return JSON.stringify({ chapters: list, title: document.title || '' });
+  }
   var listPage = p.charAt(p.length - 1) === '/';
   var hereKey = mask((document.title || '').replace(/\s+/g, ' '));
   var groups = {}, order = [];
@@ -101,7 +132,7 @@
     if (distinct < 2 || (!listPage && hereKey.indexOf(order[b].replace(/^\[[^\]]*\]\s*/, '')) < 0)) continue;
     if (!bestK || cand.items.length > groups[bestK].items.length) bestK = order[b];
   }
-  if (!bestK) return JSON.stringify({ chapters: [], title: '' });
+  if (!bestK) return numberedList();
   var items = groups[bestK].items;
   if (!listPage) items.push({ url: here.origin + here.path, title: document.title || '', key: natKey(document.title || '') });
   items.sort(function (x, y) { return x.key < y.key ? -1 : x.key > y.key ? 1 : 0; });
