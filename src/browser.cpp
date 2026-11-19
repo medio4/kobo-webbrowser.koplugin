@@ -15,6 +15,7 @@
 #include "sitemenu.h"
 #include "deadlinks.h"
 #include "lightpage.h"
+#include "remotecmd.h"
 #include "phoneshare.h"
 #include "menupanel.h"
 #include "bookmarks.h"
@@ -279,6 +280,8 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     // Build the Menu a few seconds in, while nothing else is going on, so its first opening is quick.
     m_menuHistory = m_menuAdBlock = 0;
     QTimer::singleShot(4000, this, SLOT(buildMenu()));
+    // The device's page-turn buttons, passed on by the KOReader plugin (remotecmd.h).
+    connect(new RemoteCommands(this), SIGNAL(command(QString)), this, SLOT(remoteCommand(QString)));
     // KOReader's own keyboard (when launched by the plugin with KB_KBD_FILE set).
     m_touch = 0;
     m_native = new NativeTextEntry("KB_KBD_FILE", "KB_KBD_REPLY", this);
@@ -1811,4 +1814,19 @@ void Browser::lightenPage()
         last = m_view->url().toString();
         qDebug() << "lightpage: a dark page, shown black on white";
     }
+}
+
+// ---- Page-turn buttons (remotecmd.h): one screen down or up, like a swipe
+
+void Browser::remoteCommand(const QString &word)
+{
+    // Not while a list, dialog or the Menu is up, or while typing: the buttons turn the page.
+    foreach (QObject *o, centralWidget()->children()) {
+        QWidget *w = qobject_cast<QWidget *>(o);
+        if (w && w->isVisible() && w->property("kb_overlay").toBool()) return;
+    }
+    if (m_live || m_kbd->isVisible()) return;
+    if (word == "next") m_view->pager()->nextPage();
+    else if (word == "prev") m_view->pager()->prevPage();
+    else qDebug() << "commands: unknown" << word;
 }

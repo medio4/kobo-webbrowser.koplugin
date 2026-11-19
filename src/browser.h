@@ -116,6 +116,7 @@ private slots:
     void openSavedEpub(const QString &path);
     void buildMenu();
     void lightenPage();
+    void remoteCommand(const QString &word);   // "next" / "prev" from the plugin (page-turn buttons)
     void showToc();
     void checkSiteMenu();        // after a tap: did a site's menu button do nothing? (sitemenu.h)
     void showSiteMenu();
