@@ -282,6 +282,13 @@ Browser::Browser(const QString &home, KoboEink *eink, QWidget *parent)
     QTimer::singleShot(4000, this, SLOT(buildMenu()));
     // The device's page-turn buttons, passed on by the KOReader plugin (remotecmd.h).
     connect(new RemoteCommands(this), SIGNAL(command(QString)), this, SLOT(remoteCommand(QString)));
+    // Developer aid: when the folder /tmp/kb-dev is there at start, a script written to
+    // /tmp/kb-dev/eval.js is run on the page and its answer put in /tmp/kb-dev/result.txt.
+    if (QFileInfo("/tmp/kb-dev").isDir()) {
+        QTimer *dev = new QTimer(this);
+        connect(dev, SIGNAL(timeout()), this, SLOT(devEval()));
+        dev->start(2000);
+    }
     // KOReader's own keyboard (when launched by the plugin with KB_KBD_FILE set).
     m_touch = 0;
     m_native = new NativeTextEntry("KB_KBD_FILE", "KB_KBD_REPLY", this);
@@ -1829,4 +1836,19 @@ void Browser::remoteCommand(const QString &word)
     if (word == "next") m_view->pager()->nextPage();
     else if (word == "prev") m_view->pager()->prevPage();
     else qDebug() << "commands: unknown" << word;
+}
+
+// ---- Developer aid: ask the page on the device a question (see the constructor)
+
+void Browser::devEval()
+{
+    QFile in("/tmp/kb-dev/eval.js");
+    if (!in.open(QIODevice::ReadOnly)) return;
+    const QString js = QString::fromUtf8(in.readAll());
+    in.close();
+    in.remove();
+    const QString answer = m_view->page()->mainFrame()->evaluateJavaScript(js).toString();
+    QFile out("/tmp/kb-dev/result.txt");
+    if (out.open(QIODevice::WriteOnly)) out.write(answer.toUtf8());
+    qDebug() << "dev eval:" << js.size() << "chars in," << answer.size() << "out";
 }

@@ -117,6 +117,7 @@ private slots:
     void buildMenu();
     void lightenPage();
     void remoteCommand(const QString &word);   // "next" / "prev" from the plugin (page-turn buttons)
+    void devEval();              // developer aid: run /tmp/kb-dev/eval.js on the page
     void showToc();
     void checkSiteMenu();        // after a tap: did a site's menu button do nothing? (sitemenu.h)
     void showSiteMenu();
