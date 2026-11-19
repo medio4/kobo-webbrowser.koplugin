@@ -285,5 +285,7 @@ void KoboWebPage::javaScriptConsoleMessage(const QString &message, int lineNumbe
     if (!all && !message.contains("Error")) return;
     if (++m_jsMessages > (all ? 200 : 12)) return;
     QString file = sourceID.section('?', 0, 0).section('/', -1);
+    // A script written into the page itself is reported under the page's own address.
+    if (!file.endsWith(".js") && !file.endsWith(".mjs")) file = "(page)";
     qDebug() << "js:" << file.left(60) << lineNumber << message.left(240);
 }
