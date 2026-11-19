@@ -357,7 +357,9 @@ function KoboWebBrowser:init()
                 if me and not (active and active.job) then
                     logger.info("KoboWebBrowser: remote launch request", url)
                     local extra
-                    if url:match("^https?://") then extra = { args = { url }, env = {} } end
+                    if url:match("^https?://") or url:match("^file:///") then
+                        extra = { args = { url }, env = {} }
+                    end
                     me:launch(extra)
                 end
             end
