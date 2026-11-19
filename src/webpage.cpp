@@ -112,6 +112,11 @@ void KoboWebPage::applyUserCss()
     QByteArray css;
     if (!getenv("KB_NO_EINK_CSS")) { css += kEinkCss; css += kLightPageCss; }
     if (AdBlock::instance()->isEnabled()) css += kAdBoxCss;
+    // On the newer engine, a box that draws its own scrollbar (a fixed top bar with
+    // overflow:scroll, say) makes the text of whatever is drawn after it land in the wrong
+    // place on this Qt: a dialog's words sit above its boxes and its button labels are
+    // clipped away. Without their scrollbars such boxes still scroll, and all is drawn right.
+    if (qWebKitMajorVersion() >= 600) css += "::-webkit-scrollbar{display:none}";
     if (css == m_userCss) return;
     m_userCss = css;
     settings()->setUserStyleSheetUrl(css.isEmpty() ? QUrl() : QUrl("data:text/css;charset=utf-8;base64," + css.toBase64()));
